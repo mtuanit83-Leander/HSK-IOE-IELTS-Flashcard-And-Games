@@ -1,0 +1,86 @@
+/*
+ * @file src/index.css
+ * @description File CSS toàn cục. Nạp Tailwind và các CSS tĩnh không gian 3D kế thừa từ Tầng 1.
+ * @origin Giai đoạn 1 - Tái chế CSS từ tang_1.txt
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    /* Chống bôi đen rác và tối ưu cảm ứng trên mobile */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    
+    /* Tránh bị tai thỏ/bottom bar của iOS che khuất */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Nhả quyền bôi đen lại cho các ô nhập liệu */
+  input, textarea {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}
+
+@layer utilities {
+  /* Thanh cuộn siêu mỏng tùy chỉnh */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background-color: #cbd5e1;
+    border-radius: 20px;
+  }
+
+  /* Core 3D Flip (Dành cho lật thẻ Flashcard) */
+  .perspective-1000 {
+    perspective: 1000px;
+  }
+  .preserve-3d {
+    transform-style: preserve-3d;
+  }
+  .backface-hidden {
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
+
+  /* Safe Area Padding cho Bottom Nav */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Hoạt ảnh mượt mà khi hiện phần tử */
+  .animate-in {
+    animation: fadeIn 0.3s ease-out;
+  }
+}
+
+/* Hoạt ảnh Fade In dùng chung */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Hình nền Lưới tập viết chữ Hán của tính năng Hanzi Writer (Tầng 4) */
+.hanzi-grid-bg {
+  background-image:
+    linear-gradient(to right, #fca5a5 1px, transparent 1px),
+    linear-gradient(to bottom, #fca5a5 1px, transparent 1px);
+  background-size: 100% 100%;
+  background-position: center;
+}
