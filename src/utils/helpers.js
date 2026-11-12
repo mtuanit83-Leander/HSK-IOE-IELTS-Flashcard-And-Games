@@ -6,8 +6,14 @@
 
 import { STORAGE_KEYS, CONFIG_SAMPLES } from '@/config/constants';
 import { DEFAULT_PROMPTS } from '@/config/prompts';
+// [BẢN VÁ] Import các hàm AI từ dịch vụ lõi để làm cổng nối cho toàn bộ ứng dụng
+import { callGeminiApi, fillCardWithAi } from '@/services/geminiApi';
 
 export const Utils = {
+  // Gắn các hàm AI vào Utils để các Components gọi qua cổng này
+  callGeminiApi,
+  fillCardWithAi,
+
   safeJsonParse: (key, f) => {
     try {
       const i = localStorage.getItem(key);
