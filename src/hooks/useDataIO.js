@@ -14,6 +14,9 @@ export const useDataIO = (core, latestStateRef, callbacks) => {
   const { t, showToast } = callbacks;
   const { lang } = core;
 
+  // Ref chống gọi trùng lặp khi Auto-Hydrate ở lần đầu kho rỗng
+  const autoHydrateRef = React.useRef({});
+
   // ==================================================================================
   // 1. HỆ THỐNG DỌN RÁC BỘ NHỚ (GARBAGE COLLECTION)
   // ==================================================================================
@@ -44,16 +47,18 @@ export const useDataIO = (core, latestStateRef, callbacks) => {
           } else {
             Object.keys(sessions).forEach(langKey => {
               const langSessions = sessions[langKey];
-              Object.keys(langSessions).forEach(gameType => {
-                const session = langSessions[gameType];
-                if (now - session.timestamp > THREE_DAYS) {
-                  delete langSessions[gameType];
+              if (langSessions && typeof langSessions === 'object') {
+                Object.keys(langSessions).forEach(gameType => {
+                  const session = langSessions[gameType];
+                  if (session && now - session.timestamp > THREE_DAYS) {
+                    delete langSessions[gameType];
+                    sessionChanged = true;
+                  }
+                });
+                if (Object.keys(langSessions).length === 0) {
+                  delete sessions[langKey];
                   sessionChanged = true;
                 }
-              });
-              if (Object.keys(langSessions).length === 0) {
-                delete sessions[langKey];
-                sessionChanged = true;
               }
             });
           }
@@ -66,14 +71,16 @@ export const useDataIO = (core, latestStateRef, callbacks) => {
         const chatStr = localStorage.getItem('fc_ai_chat_history');
         if (chatStr) {
           let chatHistory = JSON.parse(chatStr);
-          if (isEmergency) {
-            chatHistory = chatHistory.slice(-1);
-            localStorage.setItem('fc_ai_chat_history', JSON.stringify(chatHistory));
-            hasChanges = true;
-          } else if (chatHistory.length > 20) {
-            chatHistory = chatHistory.slice(-20);
-            localStorage.setItem('fc_ai_chat_history', JSON.stringify(chatHistory));
-            hasChanges = true;
+          if (Array.isArray(chatHistory)) {
+            if (isEmergency) {
+              chatHistory = chatHistory.slice(-1);
+              localStorage.setItem('fc_ai_chat_history', JSON.stringify(chatHistory));
+              hasChanges = true;
+            } else if (chatHistory.length > 20) {
+              chatHistory = chatHistory.slice(-20);
+              localStorage.setItem('fc_ai_chat_history', JSON.stringify(chatHistory));
+              hasChanges = true;
+            }
           }
         }
       } catch (e) {
@@ -170,12 +177,12 @@ export const useDataIO = (core, latestStateRef, callbacks) => {
   };
 
   // Cách 2 (Tuyệt chiêu): Quét từng Tab trực tiếp bằng Google GViz (Bỏ qua Proxy)
-  const fetchDirectGvizTabs = async (sheetId, lang) => {
+  const fetchDirectGvizTabs = async (sheetId, targetLang) => {
     let allNewItems = [];
     let masterDataObj = {};
     let total = 0;
     
-    const levelPrefix = lang === 'zh' ? 'zh_level_' : 'en_level_';
+    const levelPrefix = targetLang === 'zh' ? 'zh_level_' : 'en_level_';
     const fetchTab = async (sheetName) => {
       const encodedName = encodeURIComponent(sheetName);
       const gvizUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodedName}`;
@@ -185,7 +192,7 @@ export const useDataIO = (core, latestStateRef, callbacks) => {
         const text = await res.text();
         if (text.trim().startsWith('<')) return null;
         return Utils.parseAndMapCSV(text);
-      } catch(e) { return null; }
+      } catch (e) { return null; }
     };
     
     for (let i = 1; i <= 9; i++) {
@@ -228,7 +235,7 @@ export const useDataIO = (core, latestStateRef, callbacks) => {
               }
             }
           }
-        } catch(e) {}
+        } catch (e) {}
       }
     }
     
@@ -239,7 +246,8 @@ export const useDataIO = (core, latestStateRef, callbacks) => {
   // 4. IMPORT / EXPORT ĐA TẦNG (MULTI-DIMENSIONAL DATA SYNC)
   // ==================================================================================
   const handleImport = async (url, sourceType = 'vocab') => {
-    if (!url) { showToast("Vui lòng nhập URL!", "error"); return; }
+    if (!url || !url.trim()) { showToast("Vui lòng nhập URL!", "error"); return; }
+    const cleanInputUrl = url.trim();
     core.setIsAiLoading(true);
     
     try {
@@ -247,14 +255,14 @@ export const useDataIO = (core, latestStateRef, callbacks) => {
       let totalCards = 0;
       const levelPrefix = lang === 'zh' ? 'zh_level_' : 'en_level_';
       
-      if (url.includes('docs.google.com')) {
-        const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+      if (cleanInputUrl.includes('docs.google.com')) {
+        const match = cleanInputUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
         if (!match) throw new Error("Link không hợp lệ. Không tìm thấy ID của Google Sheet.");
         const sheetId = match[1];
         let useGvizFallback = false;
         
         try {
-          const buffer = await safeFetchExcel(url);
+          const buffer = await safeFetchExcel(cleanInputUrl);
           const workbook = XLSX.read(buffer, { type: 'array' });
           const numTabs = Math.min(workbook.SheetNames.length, 9);
           
@@ -285,8 +293,8 @@ export const useDataIO = (core, latestStateRef, callbacks) => {
             throw new Error("Không thể tải file (File chưa được chia sẻ Public).");
           }
         }
-      } else if (url.endsWith('.xlsx')) {
-        const res = await Utils.fetchWithFallback(url);
+      } else if (cleanInputUrl.endsWith('.xlsx')) {
+        const res = await Utils.fetchWithFallback(cleanInputUrl);
         const arrayBuffer = await res.arrayBuffer();
         const workbook = XLSX.read(arrayBuffer, { type: 'array' });
         const numTabs = Math.min(workbook.SheetNames.length, 9);
@@ -303,7 +311,7 @@ export const useDataIO = (core, latestStateRef, callbacks) => {
           }
         }
       } else {
-        const res = await Utils.fetchWithFallback(url);
+        const res = await Utils.fetchWithFallback(cleanInputUrl);
         const text = await res.text();
         const parsedCards = Utils.parseAndMapCSV(text);
         if (parsedCards.length > 0) {
@@ -313,13 +321,31 @@ export const useDataIO = (core, latestStateRef, callbacks) => {
       }
       
       if (totalCards > 0) {
-        const storageKey = `fc_master_data_${lang}_${sourceType}`;
+        // 1. Lưu kho Master Data vào LocalStorage
+        const storageKey = 'fc_master_data_' + lang + '_' + sourceType;
         Utils.safeLocalStorageSet(storageKey, masterData);
-        const firstLevelKey = `${levelPrefix}1`;
-        if (masterData[firstLevelKey]) {
-          core.setCards(masterData[firstLevelKey]);
+
+        // 2. Tự động lưu luôn URL vừa nạp vào Default URL để người dùng không bị quên bấm "Lưu"
+        const defaultUrlKey = (STORAGE_KEYS.DEFAULT_URL || 'fc_default_url') + '_' + lang + '_' + sourceType;
+        localStorage.setItem(defaultUrlKey, cleanInputUrl);
+
+        // 3. Đồng bộ chế độ dữ liệu (vocab / sentence) nếu người dùng nạp tab khác với chế độ hiện tại
+        if (core.dataMode !== sourceType && core.setDataMode) {
+          core.setDataMode(sourceType);
         }
-        showToast(`Đã nạp thành công ${totalCards} thẻ!`, "success");
+
+        // 4. Kích hoạt tín hiệu cho Động cơ "Vòi Nước" tại useCoreState lọc lại dữ liệu và lưu xuống fc_data_${lang}
+        if (core.setMasterDataVersion) {
+          core.setMasterDataVersion(prev => prev + 1);
+        } else {
+          const firstAvailableKey = Object.keys(masterData)[0];
+          if (firstAvailableKey && masterData[firstAvailableKey]) {
+            core.setCards(masterData[firstAvailableKey]);
+            Utils.safeLocalStorageSet('fc_data_' + lang, masterData[firstAvailableKey]);
+          }
+        }
+
+        showToast('Đã nạp thành công ' + totalCards + ' thẻ!', "success");
         core.setShowLinkManager(false);
       } else {
         throw new Error("Không tìm thấy dữ liệu hợp lệ");
@@ -330,6 +356,41 @@ export const useDataIO = (core, latestStateRef, callbacks) => {
       core.setIsAiLoading(false);
     }
   };
+
+  // ==================================================================================
+  // 4b. CHỐT CHẶN CACHE-FIRST & AUTO-HYDRATE KHI KHO RỖNG (LẦN ĐẦU MỞ APP)
+  // ==================================================================================
+  React.useEffect(() => {
+    if (!core.isDbReady) return;
+    if (core.isStudyingNotebook || core.studySourceName) return;
+
+    const currentMode = core.dataMode || 'vocab';
+    const masterKey = 'fc_master_data_' + lang + '_' + currentMode;
+    const cachedMaster = Utils.safeJsonParse(masterKey, null);
+
+    // Kiểm tra xem trong Cache đã có ít nhất 1 Level chứa thẻ chưa
+    const hasValidCache = cachedMaster && typeof cachedMaster === 'object' && Object.values(cachedMaster).some(
+      arr => Array.isArray(arr) && arr.length > 0
+    );
+
+    // [CACHE-FIRST]: Nếu đã có dữ liệu trong LocalStorage thì DỪNG NGAY, tuyệt đối không gọi mạng!
+    if (hasValidCache) {
+      return;
+    }
+
+    // Nếu kho thực sự RỖNG (Lần đầu tiên mở App hoặc vừa xóa sạch Cache), tự động tải từ Default Sheet
+    const hydrateSignature = lang + '_' + currentMode;
+    if (autoHydrateRef.current[hydrateSignature]) return;
+
+    const defaultUrlKey = (STORAGE_KEYS.DEFAULT_URL || 'fc_default_url') + '_' + lang + '_' + currentMode;
+    const targetUrl = localStorage.getItem(defaultUrlKey) || DEFAULT_SHEETS?.[lang]?.[currentMode];
+
+    if (targetUrl && targetUrl.trim().length > 5) {
+      autoHydrateRef.current[hydrateSignature] = true;
+      console.log('[Cache-First] Kho dữ liệu (' + hydrateSignature + ') đang trống. Khởi chạy Auto-Hydrate từ Sheet mặc định...');
+      handleImport(targetUrl, currentMode);
+    }
+  }, [lang, core.dataMode, core.isDbReady]);
 
   const handleImportToNotebook = async (url) => {
     if (!url) { showToast("Vui lòng nhập URL!", "error"); return; }
@@ -391,7 +452,7 @@ export const useDataIO = (core, latestStateRef, callbacks) => {
           const updated = [...prev, ...uniqueItems];
           // Ghi ngầm Sổ tay xuống IndexedDB (Đã bỏ localStorage)
           if (FcDB) FcDB.set('fc_notebook_' + lang, updated);
-          showToast(`Đã gộp ${uniqueItems.length} thẻ mới vào Sổ tay!`, "success");
+          showToast('Đã gộp ' + uniqueItems.length + ' thẻ mới vào Sổ tay!', "success");
           return updated;
         });
         core.setShowLinkManager(false);
@@ -432,13 +493,26 @@ export const useDataIO = (core, latestStateRef, callbacks) => {
         }
         
         if (totalCards > 0) {
-          const storageKey = `fc_master_data_${lang}_${sourceType}`;
+          const targetMode = typeof sourceType === 'string' ? sourceType : (core.dataMode || 'vocab');
+          const storageKey = 'fc_master_data_' + lang + '_' + targetMode;
           Utils.safeLocalStorageSet(storageKey, masterData);
-          const firstLevelKey = `${levelPrefix}1`;
-          if (masterData[firstLevelKey]) {
-            core.setCards(masterData[firstLevelKey]);
+
+          if (core.dataMode !== targetMode && core.setDataMode) {
+            core.setDataMode(targetMode);
           }
-          showToast(`Đã tải lên thành công ${totalCards} thẻ từ ${numTabs} Tabs (.xlsx)!`, "success");
+
+          if (core.setMasterDataVersion) {
+            core.setMasterDataVersion(prev => prev + 1);
+          } else {
+            const firstAvailableKey = Object.keys(masterData)[0];
+            if (firstAvailableKey && masterData[firstAvailableKey]) {
+              core.setCards(masterData[firstAvailableKey]);
+              Utils.safeLocalStorageSet('fc_data_' + lang, masterData[firstAvailableKey]);
+            }
+          }
+
+          showToast('Đã tải lên thành công ' + totalCards + ' thẻ từ ' + numTabs + ' Tabs (.xlsx)!', "success");
+          core.setShowLinkManager(false);
         } else {
           showToast("Tệp không chứa dữ liệu hợp lệ", "error");
         }
@@ -466,7 +540,7 @@ export const useDataIO = (core, latestStateRef, callbacks) => {
     const updated = [...core.cards, ...items];
     core.setCards(updated);
     Utils.safeLocalStorageSet('fc_data_' + lang, updated);
-    showToast(`Thêm ${items.length} thẻ thành công!`, "success");
+    showToast('Thêm ' + items.length + ' thẻ thành công!', "success");
   };
 
   const handleExportExcel = () => {
@@ -517,7 +591,7 @@ export const useDataIO = (core, latestStateRef, callbacks) => {
               const fetchedText = await res.text();
               if (!fetchedText.trim().startsWith('<')) text = fetchedText;
             }
-          } catch(e) {
+          } catch (e) {
             console.warn("GViz Proxy Fetch failed:", e);
           }
         }
@@ -532,7 +606,7 @@ export const useDataIO = (core, latestStateRef, callbacks) => {
       if (keys.length > 0) {
         Utils.safeLocalStorageSet('fc_apikey_pool', keys);
         core.setApiKey(keys[0]);
-        showToast(`Đã nạp ${keys.length} API Key!`, "success");
+        showToast('Đã nạp ' + keys.length + ' API Key!', "success");
       } else {
         showToast("Không tìm thấy Key hợp lệ", "warning");
       }
@@ -560,10 +634,14 @@ export const useDataIO = (core, latestStateRef, callbacks) => {
 
   const handleReloadDefault = () => {
     if (core.resetPending) {
-      const linkToLoad = localStorage.getItem(STORAGE_KEYS.DEFAULT_URL + '_' + lang + '_vocab') || DEFAULT_SHEETS?.[lang]?.vocab;
-      if (linkToLoad) handleImport(linkToLoad, 'vocab');
-      else {
-        core.setCards([]); Utils.safeLocalStorageSet('fc_data_' + lang, []);
+      const currentMode = core.dataMode || 'vocab';
+      const defaultUrlKey = (STORAGE_KEYS.DEFAULT_URL || 'fc_default_url') + '_' + lang + '_' + currentMode;
+      const linkToLoad = localStorage.getItem(defaultUrlKey) || DEFAULT_SHEETS?.[lang]?.[currentMode];
+      if (linkToLoad) {
+        handleImport(linkToLoad, currentMode);
+      } else {
+        core.setCards([]);
+        Utils.safeLocalStorageSet('fc_data_' + lang, []);
         showToast("Đã làm trống dữ liệu!", "success");
       }
       core.setResetPending(false);
@@ -589,9 +667,20 @@ export const useDataIO = (core, latestStateRef, callbacks) => {
         }
       }
       
-      // Bổ sung dữ liệu từ IndexedDB vào chung file Backup. [V1.03] Đã gọt sạch các keys '_vi'
+      // Bổ sung dữ liệu từ IndexedDB vào chung file Backup (Chuẩn hóa đúng tên Key của từng ngôn ngữ)
       if (FcDB) {
-        const dbKeys = ['fc_ai_harvest_pool', 'fc_global_retry_bag', 'fc_notebook_en', 'fc_notebook_zh', 'fc_mastered_en', 'fc_mastered_zh', 'fc_incorrect_list_en', 'fc_incorrect_list_zh'];
+        const incBase = STORAGE_KEYS.INCORRECT_LIST || 'fc_incorrect_list';
+        const dbKeys = [
+          'fc_ai_harvest_pool',
+          'fc_global_retry_bag_en',
+          'fc_global_retry_bag_zh',
+          'fc_notebook_en',
+          'fc_notebook_zh',
+          'fc_mastered_en',
+          'fc_mastered_zh',
+          incBase + '_en',
+          incBase + '_zh'
+        ];
         for (const key of dbKeys) {
           const data = await FcDB.get(key);
           if (data) {
@@ -634,15 +723,14 @@ export const useDataIO = (core, latestStateRef, callbacks) => {
           let count = 0;
           for (const key in importedData) {
             if (key.startsWith('fc_')) {
-              // Đổ tất cả vào LocalStorage. Khi reload lại trang, Block 2.1 (FcDB.init) sẽ tự động dọn dẹp và chuyển những gì cần thiết vào IndexedDB.
+              // Đổ tất cả vào LocalStorage. Khi reload lại trang, useCoreState (initPersistence) sẽ tự động chuyển những gì cần thiết vào IndexedDB.
               localStorage.setItem(key, importedData[key]);
               count++;
             }
           }
           
           if (count > 0) {
-            showToast(`Đã phục hồi ${count} mục. Đang khởi động lại...`, "success");
-            // Gỡ bỏ confirm ở tầng này để không vi phạm hiến pháp, UI đã tự xử lý qua file input
+            showToast('Đã phục hồi ' + count + ' mục. Đang khởi động lại...', "success");
             setTimeout(() => { window.location.reload(); }, 1500);
             resolve(true);
           } else {

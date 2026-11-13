@@ -1,15 +1,19 @@
 /**
- * @file src/utils/helpers.js
- * @description Chứa các hàm tiện ích lõi (Core Utilities) xử lý chuỗi, mảng, thời gian, thuật toán SRS và Trí nhớ AI trên RAM.
- * @origin Tầng 2 - Block 2.1b (Core Data Utilities)
- */
-
+* @file src/utils/helpers.js
+* @description Chứa các hàm tiện ích lõi (Core Utilities) xử lý chuỗi, mảng, thời gian, thuật toán SRS và Trí nhớ AI trên RAM.
+* @origin Tầng 2 - Block 2.1b (Core Data Utilities)
+*/
 
 import { STORAGE_KEYS, CONFIG_SAMPLES } from '@/config/constants';
 import { DEFAULT_PROMPTS } from '@/config/prompts';
-
+// [BẢN VÁ] Import các hàm AI từ dịch vụ lõi để làm cổng nối cho toàn bộ ứng dụng
+import { callGeminiApi, fillCardWithAi } from '@/services/geminiApi';
 
 export const Utils = {
+  // Gắn các hàm AI vào Utils để các Components gọi qua cổng này
+  callGeminiApi,
+  fillCardWithAi,
+
   safeJsonParse: (key, f) => {
     try {
       const i = localStorage.getItem(key);
@@ -18,7 +22,7 @@ export const Utils = {
       return f;
     }
   },
- 
+
   getFontFamily: (settings) => {
     const font = settings?.fontFamily || 'sans';
     switch (font) {
@@ -29,7 +33,7 @@ export const Utils = {
       default: return 'ui-sans-serif, system-ui, sans-serif';
     }
   },
- 
+
   advancedNormalize: (str, langCode) => {
     if (!str) return "";
     let s = str.toLowerCase();
@@ -65,13 +69,59 @@ export const Utils = {
     });
     return s.replace(/[^\p{L}\p{N}]/gu, "").trim();
   },
- 
+
   safeLocalStorageSet: (k, v) => {
     try {
       localStorage.setItem(k, typeof v === 'object' ? JSON.stringify(v) : v);
     } catch { }
   },
- 
+
+  // ============================================================================
+  // ĐỘNG CƠ VƯỢT RÀO CORS & FETCH DATA (CÓ LƯỚI CHỐNG RÁC HTML)
+  // ============================================================================
+  fetchWithFallback: async (url, options = {}) => {
+    // [BẢN VÁ] Lưới lọc an ninh: Quét nội dung tải về trước khi đưa vào hệ thống
+    const guardResponse = async (res) => {
+      const clone = res.clone(); // Clone để không làm tiêu hao stream của res gốc
+      const text = await clone.text();
+      const snippet = text.trim().substring(0, 20).toLowerCase();
+      
+      // Nếu phát hiện tải nhầm trang HTML (Trang đăng nhập/Báo lỗi của Google) thì khóa ngay
+      if (snippet.startsWith('<!doctype') || snippet.startsWith('<html')) {
+        throw new Error("Bị chặn: Google trả về trang web HTML thay vì Dữ liệu thô. Vui lòng kiểm tra lại quyền truy cập của Link.");
+      }
+      return res;
+    };
+
+    try {
+      // Thử tải trực tiếp trước (Tối ưu nhất nếu server đích mở CORS)
+      const res = await fetch(url, options);
+      if (!res.ok) throw new Error(`Direct fetch failed with status: ${res.status}`);
+      return await guardResponse(res);
+    } catch (e1) {
+      console.warn("Direct fetch failed, trying Proxy 1 (allorigins)...", e1);
+      try {
+        // Fallback 1: Dùng allorigins.win (Trả về nội dung thô)
+        const proxy1 = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+        const res1 = await fetch(proxy1, options);
+        if (!res1.ok) throw new Error(`Proxy 1 failed with status: ${res1.status}`);
+        return await guardResponse(res1);
+      } catch (e2) {
+        console.warn("Proxy 1 failed, trying Proxy 2 (corsproxy.io)...", e2);
+        try {
+          // Fallback 2: Dùng corsproxy.io (Mạnh nhưng thỉnh thoảng sập)
+          const proxy2 = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+          const res2 = await fetch(proxy2, options);
+          if (!res2.ok) throw new Error(`Proxy 2 failed with status: ${res2.status}`);
+          return await guardResponse(res2);
+        } catch (e3) {
+          console.error("All fetch attempts failed.");
+          throw new Error("Không thể tải dữ liệu. Vui lòng kiểm tra lại kết nối mạng hoặc quyền truy cập của Link Google Sheet.");
+        }
+      }
+    }
+  },
+
   // ============================================================================
   // HỆ THỐNG TRÍ NHỚ AI TRÊN RAM (HYBRID MEMORY BUFFER)
   // ============================================================================
@@ -143,7 +193,7 @@ export const Utils = {
       window.addEventListener('beforeunload', flushHandler);
     }
   },
- 
+
   shuffleArray: (a) => {
     if (!Array.isArray(a)) return [];
     let r = [...a];
@@ -153,12 +203,12 @@ export const Utils = {
     }
     return r;
   },
- 
+
   cleanText: (text) => {
     if (!text) return "";
     return text.replace(/[\*#_`~]/g, '').replace(/^\s*-\s/gm, '• ').replace(/\n{3,}/g, '\n\n').trim();
   },
- 
+
   // BỘ LỌC GIẢI MÃ UNICODE THÔNG MINH
   parseAiJson: (text) => {
     try {
@@ -179,7 +229,7 @@ export const Utils = {
       throw new Error("AI trả về dữ liệu không hợp lệ.");
     }
   },
- 
+
   getPrompt: (key, params) => {
     let template = DEFAULT_PROMPTS[key];
     if (!template) return "";
@@ -188,11 +238,11 @@ export const Utils = {
     }
     return template;
   },
- 
+
   getStorageConfig: (lang) => CONFIG_SAMPLES[lang] || CONFIG_SAMPLES['en'],
- 
+
   wakeLock: null,
- 
+
   requestWakeLock: async () => {
     if ('wakeLock' in navigator) {
       try {
@@ -203,7 +253,7 @@ export const Utils = {
       }
     }
   },
- 
+
   releaseWakeLock: async () => {
     if (Utils.wakeLock !== null) {
       await Utils.wakeLock.release();
@@ -211,7 +261,7 @@ export const Utils = {
       console.log("Wake Lock released.");
     }
   },
- 
+
   convertRawRowsToCards: (rows) => {
     if (!rows || rows.length === 0) return [];
     return rows.slice(1).map(row => {
@@ -231,13 +281,13 @@ export const Utils = {
       };
     }).filter(card => card !== null);
   },
- 
+
   parseAndMapCSV: (csvText) => {
     if (!csvText || csvText.length < 5) return [];
     const rows = csvText.split('\n').filter(l => l.trim()).map(line => line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(p => p.replace(/^"|"$/g, '').trim()));
     return Utils.convertRawRowsToCards(rows);
   },
- 
+
   sanitizeCards: (rawCards) => {
     if (!Array.isArray(rawCards)) return [];
     return rawCards.map(c => ({
@@ -254,13 +304,13 @@ export const Utils = {
       grammar_type: Array.isArray(c.grammar_type) ? c.grammar_type : (typeof c.grammar_type === 'string' && c.grammar_type.trim() !== '' ? c.grammar_type.split(',').map(s => s.trim()).filter(Boolean) : [])
     })).filter(c => c.term.trim() !== "");
   },
- 
+
   detectSentence: (text) => {
     if (!text) return false;
     const str = text.trim();
     return /[.?!。？！]/.test(str) || str.split(/\s+/).length > 4 || (str.length > 7 && /[\u4e00-\u9fa5]/.test(str));
   },
- 
+
   jsonToTsv: (data) => {
     if (!Array.isArray(data) || data.length === 0) return "";
     // Định nghĩa chính xác 10 cột để xuất ra TSV (Clipboard)
@@ -274,7 +324,7 @@ export const Utils = {
     }).join('\t'));
     return rows.join('\n');
   },
- 
+
   calculateSimilarity: (str1, str2) => {
     if (!str1 || !str2) return 0;
     const clean1 = String(str1).toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
@@ -297,7 +347,7 @@ export const Utils = {
     }
     return (2.0 * intersection) / (clean1.length - 1 + clean2.length - 1);
   },
- 
+
   comparePinyin: (input, targetPinyin) => {
     if (!input || !targetPinyin) return false;
     const cleanStr = (s) => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z]/g, '').toLowerCase();
@@ -305,7 +355,7 @@ export const Utils = {
     const cleanTarget = cleanStr(targetPinyin);
     return cleanInput.length > 0 && cleanInput === cleanTarget;
   },
- 
+
   generateQuizQuestion: (cards, correctIndex, lang) => {
     const correctCard = cards[correctIndex];
     const options = [correctCard];
@@ -323,7 +373,7 @@ export const Utils = {
       }))
     };
   },
- 
+
   parseSrsTime: (str) => {
     if (!str) return 0;
     let d = 0, h = 0, m = 0;
@@ -332,7 +382,7 @@ export const Utils = {
     const matchM = str.match(/(\d+)m/); if (matchM) m = parseInt(matchM[1]);
     return d + (h / 24) + (m / 1440);
   },
- 
+
   calculateSRS: (card, grade, settings) => {
     let prevInterval = card.srs_interval || 0;
     let prevRep = card.srs_repetition || 0;
@@ -371,7 +421,7 @@ export const Utils = {
       srs_due: dueDate
     };
   },
- 
+
   getSrsTimeLabel: (days) => {
     if (!days) return "New";
     if (days < 1) {
@@ -382,7 +432,7 @@ export const Utils = {
     }
     return `${Math.round(days)}d`;
   },
- 
+
   generateTrickyVariant: (correctText, otherCards) => {
     if (!correctText || !otherCards || otherCards.length === 0) return correctText;
     let words = correctText.split(' ');
@@ -414,4 +464,3 @@ export const Utils = {
     return words.join(isChinese ? '' : ' ');
   }
 };
-

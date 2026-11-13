@@ -9,7 +9,6 @@ import React from 'react';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary.jsx';
 import { AppProvider, useAppContext } from '@/context/AppContext.jsx';
 import { Icons } from '@/components/common/Icons.jsx';
-import { Utils } from '@/utils/helpers'; // [BẢN VÁ] Import Utils để cứu sống LinkManagerModal
 
 // Layout & UI
 import { AppHeader } from '@/components/layout/AppHeader.jsx';
@@ -41,6 +40,18 @@ const MainApp = () => {
   const handleGlobalClick = () => {
     if (state.showWordSelect) {
       setters.setShowWordSelect(false);
+    }
+  };
+
+  // [BẢN VÁ] Lưu chuỗi URL phẳng vào LocalStorage (không bị bọc dư dấu nháy kép "") và hiển thị Toast xác nhận
+  const handleSaveLinkSettings = (key, val) => {
+    try {
+      if (!key) return;
+      const cleanVal = typeof val === 'string' ? val.trim() : String(val || '');
+      localStorage.setItem(key, cleanVal);
+      actions.showToast("Đã lưu liên kết mặc định!", "success");
+    } catch (e) {
+      actions.showToast("Lỗi khi lưu liên kết!", "error");
     }
   };
 
@@ -87,7 +98,12 @@ const MainApp = () => {
                   <div className="text-6xl mb-4">📭</div>
                   <h3 className="text-xl font-bold text-gray-700 mb-2">Chưa có dữ liệu</h3>
                   <p className="text-sm text-gray-500 mb-6">Hãy thêm thẻ thủ công, tải lên file Excel hoặc đồng bộ từ Google Sheets.</p>
-                  <button onClick={() => setters.setShowLinkManager(true)} className={`w-full py-3 bg-${state.mainColor}-600 text-white font-bold rounded-xl shadow-md hover:bg-${state.mainColor}-700 transition-colors`}>
+                  <button
+                    onClick={() => setters.setShowLinkManager(true)}
+                    className={`w-full py-3 text-white font-bold rounded-xl shadow-md transition-colors ${
+                      state.mainColor === 'red' ? 'bg-red-600 hover:bg-red-700' : 'bg-sky-600 hover:bg-sky-700'
+                    }`}
+                  >
                     Nạp Dữ Liệu Ngay
                   </button>
                 </div>
@@ -178,7 +194,7 @@ const MainApp = () => {
         apiKeySheetUrl={state.apiKeySheetUrl} setApiKeySheetUrl={setters.setApiKeySheetUrl} 
         onImport={actions.handleImport} onExportLink={actions.handleExportLink} 
         onExportExcel={actions.handleExportExcel} onFileImport={actions.handleFileImport} 
-        onSaveSettings={Utils.safeLocalStorageSet} onFetchKey={actions.handleFetchApiKey} 
+        onSaveSettings={handleSaveLinkSettings} onFetchKey={actions.handleFetchApiKey} 
         onDownloadTemplate={actions.handleDownloadTemplate} lang={state.lang}
         onImportToNotebook={actions.handleImportToNotebook}
         aiHarvestPool={state.aiHarvestPool}

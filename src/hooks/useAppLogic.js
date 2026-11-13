@@ -7,6 +7,8 @@
 import { useRef, useCallback, useEffect } from 'react';
 import { Utils } from '@/utils/helpers';
 import { UI_TEXT } from '@/config/i18n';
+import { FcDB } from '@/services/db';
+import { STORAGE_KEYS } from '@/config/constants';
 
 // Import các sub-hooks (Lắp ráp logic)
 import { useAiLogic } from './useAiLogic';
@@ -31,7 +33,7 @@ export const useAppLogic = (core) => {
 
   // [VÁ LỖI ĐỨT CÁP THU HOẠCH] Sử dụng Proxy Pattern để truyền hàm thu hoạch vào useExamLogic
   const handleAutoHarvestToPoolRef = useRef(null);
-  
+ 
   const harvestProxy = useCallback((item, targetLang, level, topic, typeToHarvest) => {
     if (handleAutoHarvestToPoolRef.current) {
       handleAutoHarvestToPoolRef.current(item, targetLang, level, topic, typeToHarvest);
@@ -60,7 +62,7 @@ export const useAppLogic = (core) => {
     if (!UI_TEXT) return key;
     const dict = UI_TEXT[uiLang] || UI_TEXT['en'] || {};
     let text = dict[key] || key;
-    
+   
     if (typeof text === 'string') {
       Object.keys(params).forEach(p => text = text.replace(`{${p}}`, params[p]));
     }
@@ -74,7 +76,7 @@ export const useAppLogic = (core) => {
   const getCardStyle = (isBack = false) => {
     const size = isBack ? (settings.backFontSize || 1.25) : (settings.fontSize || 3);
     const style = { fontSize: `${size}rem`, fontWeight: settings.fontWeight };
-    
+   
     switch (settings.fontFamily) {
       case 'serif': style.fontFamily = '"Noto Serif SC", serif'; break;
       case 'kaiti': style.fontFamily = '"KaiTi", "STKaiti", "楷体", "LXGW WenKai Lite", serif'; break;
@@ -94,13 +96,13 @@ export const useAppLogic = (core) => {
       const numSamples = Math.floor(sampleRate * duration);
       const buffer = new ArrayBuffer(44 + numSamples * 2);
       const view = new DataView(buffer);
-      
+     
       const writeString = (view, offset, string) => {
         for (let i = 0; i < string.length; i++) {
           view.setUint8(offset + i, string.charCodeAt(i));
         }
       };
-      
+     
       // Viết Header chuẩn cho file .WAV
       writeString(view, 0, 'RIFF');
       view.setUint32(4, 36 + numSamples * 2, true);
@@ -115,7 +117,7 @@ export const useAppLogic = (core) => {
       view.setUint16(34, 16, true); // 16 bit
       writeString(view, 36, 'data');
       view.setUint32(40, numSamples * 2, true);
-      
+     
       // Tạo sóng Sine 10Hz với hiệu lượng không đổi (không fade-out)
       for (let i = 0; i < numSamples; i++) {
         const t = i / sampleRate;
@@ -123,14 +125,14 @@ export const useAppLogic = (core) => {
         const sample = amplitude * Math.sin(2 * Math.PI * 10 * t);
         view.setInt16(44 + i * 2, sample, true);
       }
-      
+     
       const blob = new Blob([buffer], { type: 'audio/wav' });
       const audio = new Audio(URL.createObjectURL(blob));
       audio.setAttribute('playsinline', 'true');
       audio.setAttribute('webkit-playsinline', 'true');
       audio.preload = "auto";
       audio.loop = true; // Cho phép lặp vô tận tạo lớp Khiên bền vững
-      
+     
       window.fc_tingAudio = audio;
       return audio;
     } catch (e) {
@@ -175,7 +177,7 @@ export const useAppLogic = (core) => {
     const safeOnEnd = () => { if (onEnd) onEnd(); };
     if (core.audioTimeoutRef.current) clearTimeout(core.audioTimeoutRef.current);
     if (!text || text.trim() === '') { safeOnEnd(); return; }
-    
+   
     if (core.isMuted) {
       const simulatedDuration = 1200 + (text.length * 80);
       core.audioTimeoutRef.current = setTimeout(() => {
@@ -183,27 +185,27 @@ export const useAppLogic = (core) => {
       }, simulatedDuration);
       return;
     }
-    
+   
     if (!window.speechSynthesis) { safeOnEnd(); return; }
-    
+   
     // Kích hoạt "Khiên Sưởi Ấm Liên Tục" trước khi đọc TTS
     playTing();
     window.speechSynthesis.cancel();
     if (window.speechSynthesis.paused) window.speechSynthesis.resume();
-    
+   
     const createAndSpeak = () => {
       const u = new SpeechSynthesisUtterance(text);
       window.fc_currentUtterance = u;
-      
+     
       const detectLang = (str) => {
         if (/[\u4e00-\u9fa5]/.test(str)) return 'zh-CN';
         return 'en-US';
       };
-      
+     
       const detectedLang = detectLang(text);
       u.lang = detectedLang;
       let v = voice;
-      
+     
       if (!v) {
         if (settings.selectedVoice) {
           const pref = voices.find(vo => vo.name === settings.selectedVoice);
@@ -211,24 +213,24 @@ export const useAppLogic = (core) => {
         }
         if (!v) v = voices.find(x => x.lang === detectedLang) || voices.find(x => x.lang.startsWith(detectedLang.split('-')[0]));
       }
-      
+     
       if (v) u.voice = v;
       u.rate = rate || settings.rate || 0.9;
       u.pitch = settings.pitch || 1;
-      
+     
       u.onend = () => {
         window.fc_currentUtterance = null;
         releaseShieldDebounced(); // Hẹn giờ 3.5s thu hồi khiên
         safeOnEnd();
       };
-      
+     
       u.onerror = (e) => {
         window.fc_currentUtterance = null;
-        releaseShieldDebounced(); 
+        releaseShieldDebounced();
         // LUÔN LUÔN gọi safeOnEnd() kể cả khi bị interrupted để Game không bị đơ
         safeOnEnd();
       };
-      
+     
       window.speechSynthesis.speak(u);
     };
     core.audioTimeoutRef.current = setTimeout(createAndSpeak, 300);
@@ -249,7 +251,7 @@ export const useAppLogic = (core) => {
     core.setIsFlipped(false);
     core.setIsContentHidden(false);
     stopSpeaking();
-    
+   
     setTimeout(() => {
       if (isShuffle) {
         if (currentCardIndex >= cards.length - 1) {
@@ -357,7 +359,7 @@ export const useAppLogic = (core) => {
       const currentBag = prev[gameType] || [];
       const termToCheck = questionData.term || questionData.origin?.term || questionData.displaySentence || questionData.wrongSentence || questionData.oddWord;
       if (!termToCheck) return prev;
-      
+     
       const isDup = currentBag.some(item => {
         const itemTerm = item.term || item.origin?.term || item.displaySentence || item.wrongSentence || item.oddWord;
         if (gameType === 'oddoneout' && item.words && questionData.words) {
@@ -365,11 +367,11 @@ export const useAppLogic = (core) => {
         }
         return itemTerm === termToCheck;
       });
-      
+     
       if (isDup) return prev;
       const nextBag = { ...prev, [gameType]: [...currentBag, questionData] };
-      // Ghi ngầm bằng FcDB để đồng bộ IndexedDB
-      if (window.FcDB && core.isDbReady) window.FcDB.set('fc_global_retry_bag_' + core.lang, nextBag);
+      // Ghi ngầm bằng FcDB chuẩn ES Module để đồng bộ IndexedDB
+      if (FcDB && core.isDbReady) FcDB.set('fc_global_retry_bag_' + core.lang, nextBag);
       return nextBag;
     });
   }, [core.setGlobalRetryBag, core.isDbReady, core.lang]);
@@ -388,10 +390,10 @@ export const useAppLogic = (core) => {
         }
         return itemTerm !== termToRemove;
       });
-      
+     
       if (newBag.length === currentBag.length) return prev;
       const nextBag = { ...prev, [gameType]: newBag };
-      if (window.FcDB && core.isDbReady) window.FcDB.set('fc_global_retry_bag_' + core.lang, nextBag);
+      if (FcDB && core.isDbReady) FcDB.set('fc_global_retry_bag_' + core.lang, nextBag);
       return nextBag;
     });
   }, [core.setGlobalRetryBag, core.isDbReady, core.lang]);
@@ -399,10 +401,10 @@ export const useAppLogic = (core) => {
   // ==================================================================================
   // 5. LẮP RÁP CÁC MODULE (SUB-HOOKS ASSEMBLY)
   // ==================================================================================
-  // Khởi tạo các Sub-Hooks ES Modules 
+  // Khởi tạo các Sub-Hooks ES Modules
   const aiLogic = useAiLogic(core, latestStateRef, { speak, handleNext, showToast, stopSpeaking });
   const sharedCallbacks = { t, showToast, handleNext, processAiQueue: aiLogic.processAiQueue };
-  
+ 
   const dataIO = useDataIO(core, latestStateRef, { t, showToast });
   const studyProgress = useStudyProgress(core, latestStateRef, sharedCallbacks);
   const aiCurator = useAiCurator(core, latestStateRef, { t, showToast });
@@ -416,10 +418,12 @@ export const useAppLogic = (core) => {
   // ==================================================================================
   const handleOpenIncorrect = () => core.setShowIncorrectModal(true);
   const handleCloseIncorrect = () => core.setShowIncorrectModal(false);
-  
+ 
   const handleRemoveAllIncorrect = () => {
     core.setIncorrectList([]);
-    if(window.FcDB) window.FcDB.set((window.STORAGE_KEYS?.INCORRECT_LIST || 'fc_incorrect_list') + '_' + lang, []);
+    if (FcDB && core.isDbReady) {
+      FcDB.set((STORAGE_KEYS.INCORRECT_LIST || 'fc_incorrect_list') + '_' + lang, []);
+    }
     showToast("Đã xóa toàn bộ danh sách cần nhớ", "success");
     core.setShowIncorrectModal(false);
   };
@@ -430,17 +434,17 @@ export const useAppLogic = (core) => {
       showToast("Không có dữ liệu để ôn tập!", "warning");
       return;
     }
-    
+   
     let targetList = [...sourceData];
     if (core.isShuffle) targetList = Utils.shuffleArray(targetList);
-    
+   
     core.setCards(targetList);
     core.setIsStudyingNotebook(true);
-    
+   
     // Đóng các Modal
     core.setShowNotebook(false);
     core.setShowIncorrectModal(false);
-    
+   
     if (gameType === 'flashcard') {
       core.setStudySourceName(sourceName);
       core.setViewMode('learn');
@@ -455,7 +459,7 @@ export const useAppLogic = (core) => {
       const suffix = gameNames[gameType] || gameType;
       core.setStudySourceName(`${sourceName} (${suffix})`);
       core.setViewMode('game');
-      
+     
       // Đặt cờ toàn cục để Tầng 5 (GameView) có thể bắt được và nhảy thẳng vào Setup
       window.__pendingGameRoute = `${gameType}_setup`;
       showToast(`Chuyển sang Game để ôn tập ${sourceName}!`);
@@ -466,7 +470,7 @@ export const useAppLogic = (core) => {
     const savedData = Utils?.safeJsonParse('fc_data_' + core.lang, []);
     let targetList = savedData || [];
     if (core.isShuffle) targetList = Utils.shuffleArray([...targetList]);
-    
+   
     core.setCards(targetList);
     core.setStudySourceName(null);
     core.setIsStudyingNotebook(false);
@@ -476,7 +480,7 @@ export const useAppLogic = (core) => {
 
   const handleOpenHelp = () => core.setShowHelp(true);
   const handleCloseHelp = () => core.setShowHelp(false);
-  
+ 
   const handleOpenHanziStudy = (textOrEvent) => {
     const text = (typeof textOrEvent === 'string') ? textOrEvent : (cards[currentCardIndex]?.term || '');
     core.setWordSelectTarget(text);
@@ -492,7 +496,7 @@ export const useAppLogic = (core) => {
       if (viewMode !== 'learn') return; // Chặn phím tắt tác động vào Exam Mode (Chỉ chạy ở Learn Mode)
       if (core.showSettings || core.showApiKeyModal || core.showNotebook || core.showManual || core.showLinkManager || core.showWordSelect || core.showMastered || core.showIncorrectModal || core.showHelp || core.showHanziSelector || core.showHanziWriter || core.showSaveLoadModal || core.showAiChat || core.showExamPoolManager || core.showAiConfigModal) return;
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-      
+     
       switch (e.key) {
         case 'ArrowRight': case 'd': case 'D': handleNext(); break;
         case 'ArrowLeft': case 'a': case 'A': handlePrev(); break;
@@ -515,7 +519,7 @@ export const useAppLogic = (core) => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [viewMode, core.showSettings, core.showApiKeyModal, core.showNotebook, core.showManual, core.showLinkManager, core.showWordSelect, core.showMastered, core.showIncorrectModal, core.showHelp, core.showHanziSelector, core.showHanziWriter, core.showSaveLoadModal, core.showAiChat, core.showExamPoolManager, core.showAiConfigModal, handleNext, handlePrev, cards, currentCardIndex, speak, toggleAutoPlay, handleStopAutoPlay, handleToggleMute, handleToggleShuffle]);
+  }, [viewMode, core.showSettings, core.showApiKeyModal, core.showNotebook || core.showManual, core.showLinkManager, core.showWordSelect, core.showMastered, core.showIncorrectModal, core.showHelp, core.showHanziSelector, core.showHanziWriter, core.showSaveLoadModal, core.showAiChat, core.showExamPoolManager, core.showAiConfigModal, handleNext, handlePrev, cards, currentCardIndex, speak, toggleAutoPlay, handleStopAutoPlay, handleToggleMute, handleToggleShuffle]);
 
   // 8. RETURN MERGED ACTIONS (Lắp ráp API cho Tầng 7)
   return {
@@ -549,7 +553,7 @@ export const useAppLogic = (core) => {
       handleOpenIncorrect,
       handleCloseIncorrect,
       handleRemoveAllIncorrect,
-      handleReviewWithGame, 
+      handleReviewWithGame,
       handleExitStudyMode,
       handleOpenHelp,
       handleCloseHelp,

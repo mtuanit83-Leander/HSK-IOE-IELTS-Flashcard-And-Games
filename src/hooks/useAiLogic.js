@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { Utils } from '@/utils/helpers';
 import { CONFIG_SAMPLES } from '@/config/constants';
 import { FcDB } from '@/services/db';
+import { STORAGE_KEYS } from '@/config/constants';
 
 export const useAiLogic = (core, latestStateRef, callbacks) => {
   const { speak, handleNext } = callbacks;

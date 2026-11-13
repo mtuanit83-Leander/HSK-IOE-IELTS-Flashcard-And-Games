@@ -32,7 +32,7 @@ const parseArrayStorage = (key, defaultArr) => {
     if (Array.isArray(parsed)) return parsed;
     if (typeof parsed === 'string') return [parsed];
     return defaultArr;
-  } catch(e) {
+  } catch (e) {
     // Fallback cứu hộ: Lọc bỏ nháy kép và ngoặc vuông rác
     const cleanRaw = raw.replace(/["\\[\]]/g, '').trim();
     return cleanRaw ? [cleanRaw] : defaultArr;
@@ -80,7 +80,7 @@ export const useCoreState = () => {
             initialVal = Array.isArray(settingsObj.currentLevel) ? settingsObj.currentLevel : [settingsObj.currentLevel];
           }
         }
-      } catch(e) {}
+      } catch (e) {}
     }
     
     // Chốt chặn cuối cùng: Trả về Mặc định nếu vẫn rỗng
@@ -93,6 +93,9 @@ export const useCoreState = () => {
   const [currentTopic, setCurrentTopic] = useState(() => {
     return parseArrayStorage('fc_current_topic_' + lang, []);
   });
+
+  // [BẢN VÁ ĐỒNG BỘ] Tín hiệu kích hoạt Động cơ "Vòi Nước" khi nạp dữ liệu mới từ useDataIO
+  const [masterDataVersion, setMasterDataVersion] = useState(0);
 
   // Data States
   const [cards, setCards] = useState([]);
@@ -151,8 +154,11 @@ export const useCoreState = () => {
   const [isAiModeGame, setIsAiModeGame] = useState(false);
   const [resetPending, setResetPending] = useState(false);
 
-  // URLs
-  const [exportUrl, setExportUrl] = useState(() => localStorage.getItem(STORAGE_KEYS.EXPORT_URL || 'fc_export_url') || "");
+  // URLs - Đồng bộ chính xác theo từng ngôn ngữ
+  const [exportUrl, setExportUrl] = useState(() => {
+    const baseKey = STORAGE_KEYS.EXPORT_URL || 'fc_export_url';
+    return localStorage.getItem(baseKey + '_' + lang) || localStorage.getItem(baseKey) || "";
+  });
   const [apiKeySheetUrl, setApiKeySheetUrl] = useState(() => localStorage.getItem(STORAGE_KEYS.API_KEY_SHEET || 'fc_apikey_sheet') || "");
   const [importUrl, setImportUrl] = useState('');
   const [defaultUrl, setDefaultUrl] = useState('');
@@ -199,7 +205,7 @@ export const useCoreState = () => {
 
   // --- INITIALIZATION EFFECTS ---
 
-  // ĐỘNG CƠ KHỞI TẠO CƠ SỞ DỮ LIỆU (INDEXEDDB INIT)
+  // ĐỘNG CƠ KHỞI TẠO CƠ SỞ DỮ LIỆU (INDEXEDDB INIT & BACKUP MIGRATION)
   useEffect(() => {
     const initPersistence = async () => {
       if (!FcDB) {
@@ -209,6 +215,44 @@ export const useCoreState = () => {
       }
       try {
         await FcDB.init();
+
+        // [BẢN VÁ BACKUP RESTORE] Chuyển giao dữ liệu từ LocalStorage sang IndexedDB nếu vừa nạp file Backup
+        const incBase = STORAGE_KEYS.INCORRECT_LIST || 'fc_incorrect_list';
+        const dbMigrationKeys = [
+          'fc_ai_harvest_pool',
+          'fc_global_retry_bag_en',
+          'fc_global_retry_bag_zh',
+          'fc_notebook_en',
+          'fc_notebook_zh',
+          'fc_mastered_en',
+          'fc_mastered_zh',
+          incBase + '_en',
+          incBase + '_zh'
+        ];
+
+        for (const mKey of dbMigrationKeys) {
+          const rawLs = localStorage.getItem(mKey);
+          if (rawLs !== null) {
+            try {
+              const parsedData = JSON.parse(rawLs);
+              await FcDB.set(mKey, parsedData);
+              localStorage.removeItem(mKey);
+            } catch (migErr) {
+              console.warn('[CoreState] Migration skipped for ' + mKey, migErr);
+            }
+          }
+        }
+
+        // Tương thích ngược nếu file backup cũ lưu key 'fc_global_retry_bag' không hậu tố
+        const legacyRetryRaw = localStorage.getItem('fc_global_retry_bag');
+        if (legacyRetryRaw !== null) {
+          try {
+            const parsedLegacy = JSON.parse(legacyRetryRaw);
+            await FcDB.set('fc_global_retry_bag_' + lang, parsedLegacy);
+            localStorage.removeItem('fc_global_retry_bag');
+          } catch (e) {}
+        }
+
         const pool = await FcDB.get('fc_ai_harvest_pool');
         if (pool) setAiHarvestPool(pool);
         
@@ -220,7 +264,7 @@ export const useCoreState = () => {
           const incorrectKey = STORAGE_KEYS.INCORRECT_LIST ? STORAGE_KEYS.INCORRECT_LIST + '_vi' : 'fc_incorrect_list_vi';
           await FcDB.set(incorrectKey, []);
           await FcDB.set('fc_global_retry_bag_vi', {});
-        } catch(err) {
+        } catch (err) {
           console.warn('[CoreState] Silenced Cleanup Error:', err);
         }
         
@@ -266,6 +310,10 @@ export const useCoreState = () => {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.LANG || 'fc_lang', JSON.stringify(lang));
     
+    // Đồng bộ lại exportUrl tương ứng với ngôn ngữ đang chọn
+    const baseExportKey = STORAGE_KEYS.EXPORT_URL || 'fc_export_url';
+    setExportUrl(localStorage.getItem(baseExportKey + '_' + lang) || localStorage.getItem(baseExportKey) || "");
+
     const loadUserData = async () => {
       if (isDbReady && FcDB) {
         const savedNote = await FcDB.get('fc_notebook_' + lang) || [];
@@ -307,11 +355,11 @@ export const useCoreState = () => {
   useEffect(() => {
     if (isStudyingNotebook || studySourceName) return;
     
-    const storageKey = `fc_master_data_${lang}_${dataMode}`;
+    const storageKey = 'fc_master_data_' + lang + '_' + dataMode;
     const masterData = Utils.safeJsonParse(storageKey, null);
     
     let targetCards = [];
-    if (masterData) {
+    if (masterData && typeof masterData === 'object') {
       // Cưỡng chế Mảng, đề phòng lỗi State bất thường
       const levelsArr = Array.isArray(currentLevel) ? currentLevel : (currentLevel ? [currentLevel] : []);
       const topicsArr = Array.isArray(currentTopic) ? currentTopic : (currentTopic ? [currentTopic] : []);
@@ -327,11 +375,29 @@ export const useCoreState = () => {
             targetCards = targetCards.concat(masterData[lv]);
           }
         });
+
+        // [PHÒNG HỘ THÔNG MINH] Nếu Level đang chọn không tồn tại trong kho dữ liệu mới, tự động nhảy về Level đầu tiên có dữ liệu
+        if (targetCards.length === 0) {
+          const availableLevels = Object.keys(masterData).filter(
+            k => Array.isArray(masterData[k]) && masterData[k].length > 0
+          );
+          if (availableLevels.length > 0) {
+            const fallbackLevel = [availableLevels[0]];
+            targetCards = [...masterData[availableLevels[0]]];
+            setCurrentLevel(fallbackLevel);
+          }
+        }
       }
       
       // BƯỚC 2: Lọc theo Topic
-      if (topicsArr.length > 0) {
-        targetCards = targetCards.filter(c => topicsArr.includes(c.topic));
+      if (topicsArr.length > 0 && targetCards.length > 0) {
+        const topicFiltered = targetCards.filter(c => topicsArr.includes(c.topic));
+        // Nếu Topic cũ không khớp với bộ thẻ mới, tự động mở khóa Topic để không bị trắng màn hình
+        if (topicFiltered.length > 0) {
+          targetCards = topicFiltered;
+        } else {
+          setCurrentTopic([]);
+        }
       }
     }
     
@@ -345,7 +411,7 @@ export const useCoreState = () => {
       Utils.safeLocalStorageSet('fc_data_' + lang, []);
       setCurrentCardIndex(0);
     }
-  }, [lang, dataMode, currentLevel, currentTopic, isStudyingNotebook, studySourceName]);
+  }, [lang, dataMode, currentLevel, currentTopic, isStudyingNotebook, studySourceName, masterDataVersion]);
 
   // 4. Persistence Effects
   useEffect(() => { if (toast) { const t = setTimeout(() => setToast(null), 3000); return () => clearTimeout(t); } }, [toast]);
@@ -386,8 +452,19 @@ export const useCoreState = () => {
     }
   }, [isShuffle]);
 
-  // 6. Auto-load API Key
+  // 6. Auto-load API Key (CHỐT CHẶN CACHE-FIRST: Chỉ gọi mạng khi chưa có Key trong máy)
   useEffect(() => {
+    const existingKey = localStorage.getItem(STORAGE_KEYS.API_KEY || 'fc_apikey');
+    const existingPool = Utils.safeJsonParse('fc_apikey_pool', []);
+    
+    // Nếu đã có sẵn API Key hoặc Pool Key trong Cache thì dùng luôn, tuyệt đối không gọi mạng khi F5
+    if ((existingKey && existingKey.trim().length > 20) || (Array.isArray(existingPool) && existingPool.length > 0)) {
+      if ((!existingKey || existingKey.trim().length <= 20) && existingPool.length > 0) {
+        setApiKey(existingPool[0]);
+      }
+      return;
+    }
+
     const savedSheetUrl = localStorage.getItem(STORAGE_KEYS.API_KEY_SHEET || 'fc_apikey_sheet');
     if (savedSheetUrl && savedSheetUrl.trim().length > 5) {
       Utils.fetchWithFallback(savedSheetUrl)
@@ -397,8 +474,8 @@ export const useCoreState = () => {
           if (keys.length > 0) {
             Utils.safeLocalStorageSet('fc_apikey_pool', keys);
             setApiKey(keys[0]);
-            console.log(`[System] Auto-set API Key from Sheet (Pool size: ${keys.length})`);
-            if (window.globalShowToast) window.globalShowToast(`Đã cập nhật ${keys.length} API Key từ Sheet`, "success");
+            console.log('[System] Auto-set API Key from Sheet (Pool size: ' + keys.length + ')');
+            if (window.globalShowToast) window.globalShowToast('Đã cập nhật ' + keys.length + ' API Key từ Sheet', 'success');
           }
         })
         .catch(e => console.warn("Auto load API Key failed:", e));
@@ -409,7 +486,7 @@ export const useCoreState = () => {
     // State
     viewMode, lang, uiLang, cards, notebook, mastered, masteredCount: mastered.length, isStudyingNotebook,
     incorrectList, studySourceName, apiKey, totalTokens, aiHarvestPool, globalRetryBag, systemLogs,
-    isDbReady, aiConfig, aiModel, layoutAlign,
+    isDbReady, aiConfig, aiModel, layoutAlign, masterDataVersion,
     
     // Multi-dimensional State
     dataMode, setDataMode,
@@ -429,6 +506,7 @@ export const useCoreState = () => {
     // Setters
     setViewMode, setLang, setUiLang, setCards, setNotebook, setMastered, setIsStudyingNotebook,
     setIncorrectList, setStudySourceName, setApiKey, setTotalTokens, setAiHarvestPool, setGlobalRetryBag, setSystemLogs, setAiConfig, setAiModel, setLayoutAlign,
+    setMasterDataVersion,
     setShowSettings, setShowApiKeyModal, setShowNotebook, setShowManual, setShowLinkManager, setShowWordSelect, setShowMastered, setShowIncorrectModal,
     setShowAiChat, setShowHelp, setShowSaveLoadModal, setShowHanziSelector, setShowHanziWriter, setCurrentHanziChar, setShowExamPoolManager, setShowAiConfigModal,
     setWordSelectTarget, setToast, setIsAiLoading, setIsAiModeLearn, setIsAiModeGame, setResetPending,
