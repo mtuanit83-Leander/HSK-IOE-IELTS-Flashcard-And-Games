@@ -1,8 +1,8 @@
 /**
-* @file src/utils/helpers.js
-* @description Chứa các hàm tiện ích lõi (Core Utilities) xử lý chuỗi, mảng, thời gian, thuật toán SRS và Trí nhớ AI trên RAM.
-* @origin Tầng 2 - Block 2.1b (Core Data Utilities)
-*/
+ * @file src/utils/helpers.js
+ * @description Chứa các hàm tiện ích lõi (Core Utilities) xử lý chuỗi, mảng, thời gian, thuật toán SRS và Trí nhớ AI trên RAM.
+ * @origin Tầng 2 - Block 2.1b (Core Data Utilities)
+ */
 
 import { STORAGE_KEYS, CONFIG_SAMPLES } from '@/config/constants';
 import { DEFAULT_PROMPTS } from '@/config/prompts';
@@ -165,6 +165,17 @@ export const Utils = {
       }
       this._isDirty = true;
       this._scheduleSave();
+    },
+    clear: function() {
+      this._buffer = [];
+      this._isDirty = false;
+      if (this._saveTimeout) {
+        clearTimeout(this._saveTimeout);
+        this._saveTimeout = null;
+      }
+      try {
+        localStorage.removeItem('fc_ai_memory');
+      } catch (e) {}
     },
     _scheduleSave: function() {
       if (this._saveTimeout) clearTimeout(this._saveTimeout);
