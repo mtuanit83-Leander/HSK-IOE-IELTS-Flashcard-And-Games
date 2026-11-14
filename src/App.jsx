@@ -2,7 +2,8 @@
  * @file src/App.jsx
  * @description Bo mạch chủ (Root Component) của Flashcard 3D. 
  * Lắp ráp toàn bộ Layout, Component, Modals và bọc trong Context Provider.
- * @origin Tầng 7 - Root App
+ * Đồng bộ 100% với Bản đồ Kiến trúc Tầng 7 (Ẩn AppHeader khi ở tab Game, ẩn BottomNav khi đang chơi, hỗ trợ Layout Alignment).
+ * @origin Tầng 7 - Root App (V1.15)
  */
 
 import React from 'react';
@@ -43,7 +44,7 @@ const MainApp = () => {
     }
   };
 
-  // [BẢN VÁ] Lưu chuỗi URL phẳng vào LocalStorage (không bị bọc dư dấu nháy kép "") và hiển thị Toast xác nhận
+  // Lưu chuỗi URL phẳng vào LocalStorage (không bị bọc dư dấu nháy kép "") và hiển thị Toast xác nhận
   const handleSaveLinkSettings = (key, val) => {
     try {
       if (!key) return;
@@ -55,53 +56,146 @@ const MainApp = () => {
     }
   };
 
+  // Hàm phân luồng dấu trang thông minh (Smart Bookmark) từ Tầng 7
+  const handleSmartBookmark = (data) => {
+    if (typeof data === 'string' || (data && data.isSmartTarget === true)) {
+      const targetText = typeof data === 'string' ? data : (data.text || data.term || '');
+      if (actions.handleOpenWordSelector) {
+        actions.handleOpenWordSelector(targetText);
+      }
+    } else if (actions.handleNotebookSave) {
+      actions.handleNotebookSave(data);
+    }
+  };
+
+  // --- ĐỘNG CƠ CĂN LỀ & BẢO VỆ 3D (Fluid Alignment & Anti-Shift V1.15) ---
+  const layoutAlign = state.layoutAlign || 'center';
+  let alignClass = 'mx-auto';
+  if (layoutAlign === 'left') {
+    alignClass = 'md:ml-[2vw] lg:ml-[4vw] md:mr-auto mx-auto';
+  } else if (layoutAlign === 'right') {
+    alignClass = 'md:mr-[2vw] lg:mr-[4vw] md:ml-auto mx-auto';
+  }
+
   return (
-    <div className="flex flex-col h-screen w-full bg-gray-50 overflow-hidden font-sans selection:bg-blue-200" onClick={handleGlobalClick}>
-      
-      {/* 1. HEADER (Khu vực Top) */}
-      <div className="p-3 pb-0 sm:p-4 sm:pb-0 shrink-0">
-        <AppHeader 
-          lang={state.lang} 
-          setLang={setters.setLang} 
-          notebookCount={state.notebook.length} 
-          masteredCount={state.masteredCount}
-          incorrectCount={state.incorrectCount}
-          onOpenNotebook={() => setters.setShowNotebook(true)} 
-          onOpenMastered={() => setters.setShowMastered(true)} 
-          onOpenIncorrect={actions.handleOpenIncorrect}
-          onOpenLinkManager={() => setters.setShowLinkManager(true)} 
-          onOpenManual={() => setters.setShowManual(true)} 
-          onOpenHelp={actions.handleOpenHelp}
-          onReload={actions.handleReloadDefault}
-          t={actions.t} 
-          studySourceName={state.studySourceName} 
-          onExitStudyMode={actions.handleExitStudyMode}
-          onOpenSaveLoad={actions.handleOpenSaveLoad}
-          dataMode={state.dataMode}
-          setDataMode={setters.setDataMode}
-          currentLevel={state.currentLevel}
-          setCurrentLevel={setters.setCurrentLevel}
-          currentTopic={state.currentTopic}
-          setCurrentTopic={setters.setCurrentTopic}
-        />
-      </div>
+    <div
+      className="flex flex-col h-screen w-full bg-gray-50 overflow-hidden font-sans selection:bg-blue-200"
+      onClick={handleGlobalClick}
+    >
+      {/* 1. HEADER (Chỉ hiển thị khi ở chế độ Học - Ẩn hoàn toàn khi sang tab Game như bản Original) */}
+      {state.viewMode !== 'game' && (
+        <div className="p-3 pb-0 sm:p-4 sm:pb-0 shrink-0">
+          <div className="max-w-7xl mx-auto w-full relative">
+            <AppHeader
+              lang={state.lang}
+              setLang={setters.setLang}
+              notebookCount={state.notebook.length}
+              masteredCount={state.masteredCount}
+              incorrectCount={state.incorrectCount}
+              onOpenNotebook={() => setters.setShowNotebook(true)}
+              onOpenMastered={() => setters.setShowMastered(true)}
+              onOpenIncorrect={actions.handleOpenIncorrect}
+              onOpenLinkManager={() => setters.setShowLinkManager(true)}
+              onOpenManual={() => setters.setShowManual(true)}
+              onOpenHelp={actions.handleOpenHelp}
+              onReload={actions.handleReloadDefault}
+              t={actions.t}
+              studySourceName={state.studySourceName}
+              onExitStudyMode={actions.handleExitStudyMode}
+              onOpenSaveLoad={actions.handleOpenSaveLoad}
+              dataMode={state.dataMode}
+              setDataMode={setters.setDataMode}
+              currentLevel={state.currentLevel}
+              setCurrentLevel={setters.setCurrentLevel}
+              currentTopic={state.currentTopic}
+              setCurrentTopic={setters.setCurrentTopic}
+            />
+          </div>
+        </div>
+      )}
 
       {/* 2. BODY (Khu vực Main Content) */}
-      <div className="flex-1 w-full max-w-7xl mx-auto flex flex-col relative overflow-hidden custom-scrollbar px-3 pb-3 pt-1">
+      <div className="flex-1 w-full max-w-7xl mx-auto flex flex-col relative overflow-x-hidden overflow-y-auto custom-scrollbar px-3 pb-3 pt-1">
         {state.viewMode === 'game' ? (
-          <GameView state={state} actions={actions} setters={setters} />
+          <GameView
+            state={state}
+            actions={{ ...actions, handleSmartBookmark }}
+            setters={setters}
+          />
         ) : (
-          <div className="flex-1 flex flex-col h-full animate-in fade-in">
+          <div className="flex-1 flex flex-col h-full min-w-0 animate-in fade-in relative">
+            {/* Widget Điều khiển Căn Lề (Chỉ hiện trên Desktop ở chế độ Học) */}
+            {setters.setLayoutAlign && (
+              <div className="hidden md:flex items-center gap-1 self-end mb-1 bg-white/80 backdrop-blur-sm px-2 py-1 rounded-lg border border-gray-200 shadow-sm z-20">
+                <span className="text-[10px] font-bold text-gray-400 mr-1 uppercase">Vị trí:</span>
+                <button
+                  type="button"
+                  onClick={() => setters.setLayoutAlign('left')}
+                  className={`p-1 rounded transition-colors ${
+                    layoutAlign === 'left'
+                      ? 'bg-sky-100 text-sky-600'
+                      : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                  }`}
+                  title="Căn trái"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="17" y1="10" x2="3" y2="10"></line>
+                    <line x1="21" y1="6" x2="3" y2="6"></line>
+                    <line x1="21" y1="14" x2="3" y2="14"></line>
+                    <line x1="17" y1="18" x2="3" y2="18"></line>
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setters.setLayoutAlign('center')}
+                  className={`p-1 rounded transition-colors ${
+                    layoutAlign === 'center'
+                      ? 'bg-sky-100 text-sky-600'
+                      : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                  }`}
+                  title="Căn giữa"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="10" x2="6" y2="10"></line>
+                    <line x1="21" y1="6" x2="3" y2="6"></line>
+                    <line x1="21" y1="14" x2="3" y2="14"></line>
+                    <line x1="18" y1="18" x2="6" y2="18"></line>
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setters.setLayoutAlign('right')}
+                  className={`p-1 rounded transition-colors ${
+                    layoutAlign === 'right'
+                      ? 'bg-sky-100 text-sky-600'
+                      : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                  }`}
+                  title="Căn phải"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="21" y1="10" x2="7" y2="10"></line>
+                    <line x1="21" y1="6" x2="3" y2="6"></line>
+                    <line x1="21" y1="14" x2="3" y2="14"></line>
+                    <line x1="21" y1="18" x2="7" y2="18"></line>
+                  </svg>
+                </button>
+              </div>
+            )}
+
             {state.cards.length === 0 ? (
               <div className="flex-1 flex items-center justify-center">
                 <div className="bg-white p-8 rounded-2xl shadow-xl text-center max-w-sm border border-gray-100">
                   <div className="text-6xl mb-4">📭</div>
                   <h3 className="text-xl font-bold text-gray-700 mb-2">Chưa có dữ liệu</h3>
-                  <p className="text-sm text-gray-500 mb-6">Hãy thêm thẻ thủ công, tải lên file Excel hoặc đồng bộ từ Google Sheets.</p>
+                  <p className="text-sm text-gray-500 mb-6">
+                    Hãy thêm thẻ thủ công, tải lên file Excel hoặc đồng bộ từ Google Sheets.
+                  </p>
                   <button
                     onClick={() => setters.setShowLinkManager(true)}
                     className={`w-full py-3 text-white font-bold rounded-xl shadow-md transition-colors ${
-                      state.mainColor === 'red' ? 'bg-red-600 hover:bg-red-700' : 'bg-sky-600 hover:bg-sky-700'
+                      state.mainColor === 'red'
+                        ? 'bg-red-600 hover:bg-red-700'
+                        : 'bg-sky-600 hover:bg-sky-700'
                     }`}
                   >
                     Nạp Dữ Liệu Ngay
@@ -109,150 +203,250 @@ const MainApp = () => {
                 </div>
               </div>
             ) : (
-              <>
-                <FlashcardDisplay 
-                  isFlipped={state.isFlipped} setIsFlipped={setters.setIsFlipped} 
-                  isAutoPlaying={state.isAutoPlaying} currentCardIndex={state.currentCardIndex} 
-                  cards={state.cards} settings={state.settings} mainColor={state.mainColor} 
-                  speak={actions.speak} getCardStyle={actions.getCardStyle} 
-                  isAiMode={state.isAiModeLearn} setAiMode={setters.setIsAiModeLearn} 
-                  t={actions.t} onMissingKey={actions.onMissingKey} isLoading={state.isAiLoading}
+              <div className={`w-full max-w-2xl flex-1 flex flex-col justify-between transition-all duration-300 ${alignClass}`}>
+                <FlashcardDisplay
+                  isFlipped={state.isFlipped}
+                  setIsFlipped={setters.setIsFlipped}
+                  isAutoPlaying={state.isAutoPlaying}
+                  currentCardIndex={state.currentCardIndex}
+                  cards={state.cards}
+                  settings={state.settings}
+                  mainColor={state.mainColor}
+                  speak={actions.speak}
+                  getCardStyle={actions.getCardStyle}
+                  isAiMode={state.isAiModeLearn}
+                  setAiMode={setters.setIsAiModeLearn}
+                  t={actions.t}
+                  onMissingKey={actions.onMissingKey}
+                  isLoading={state.isAiLoading}
                   onEnrichCard={actions.handleAiEnrichCard}
-                  onNext={actions.handleNext} onPrev={actions.handlePrev}
+                  onNext={actions.handleNext}
+                  onPrev={actions.handlePrev}
                   onExplainGrammar={actions.handleExplainGrammar}
-                  onSrsGrade={actions.handleSrsGrade} onResetSrs={actions.handleResetSrs}
+                  onSrsGrade={actions.handleSrsGrade}
+                  onResetSrs={actions.handleResetSrs}
                   isContentHidden={state.isContentHidden}
-                  isMuted={state.isMuted} onToggleMute={actions.handleToggleMute}
+                  isMuted={state.isMuted}
+                  onToggleMute={actions.handleToggleMute}
                   lang={state.lang}
                   onOpenHanzi={actions.handleOpenHanziStudy}
                   onJumpToCard={actions.handleJumpToCard}
                 />
-                <ControlBar 
-                  isShuffle={state.isShuffle} setIsShuffle={setters.setIsShuffle} 
-                  handlePrev={actions.handlePrev} handleNext={actions.handleNext} 
-                  isAutoPlaying={state.isAutoPlaying} toggleAutoPlay={actions.toggleAutoPlay} 
-                  isAutoMode={state.isAutoMode} handleStopAutoPlay={actions.handleStopAutoPlay}
-                  isFlipLocked={state.isFlipLocked} setIsFlipLocked={setters.setIsFlipLocked}
+                <ControlBar
+                  isShuffle={state.isShuffle}
+                  setIsShuffle={setters.setIsShuffle}
+                  handlePrev={actions.handlePrev}
+                  handleNext={actions.handleNext}
+                  isAutoPlaying={state.isAutoPlaying}
+                  toggleAutoPlay={actions.toggleAutoPlay}
+                  isAutoMode={state.isAutoMode}
+                  handleStopAutoPlay={actions.handleStopAutoPlay}
+                  isFlipLocked={state.isFlipLocked}
+                  setIsFlipLocked={setters.setIsFlipLocked}
                   handleOpenWordSelector={actions.handleOpenWordSelector}
                   handleMarkMastered={actions.handleMarkMastered}
-                  t={actions.t} mainColor={state.mainColor}
+                  t={actions.t}
+                  mainColor={state.mainColor}
                   isCurrentCardInNotebook={state.isCurrentCardInNotebook}
                   onToggleBatterySaver={actions.toggleBatterySaver}
                 />
-              </>
+              </div>
             )}
           </div>
         )}
       </div>
 
-      {/* 3. FOOTER (Bottom Navigation) */}
-      <BottomNav 
-        onNavigate={setters.setViewMode} 
-        onApiKey={() => setters.setShowApiKeyModal(true)} 
-        onOpenAiChat={() => setters.setShowAiChat(true)}
-        onSettings={actions.handleOpenSettings}
-        t={actions.t} 
-        mainColor={state.mainColor}
-        currentMode={state.viewMode}
-      />
+      {/* 3. FOOTER (Bottom Navigation - Tự động ẩn khi đang trong ván chơi hoặc đang làm bài thi) */}
+      {!state.isGamePlaying && (
+        <BottomNav
+          onNavigate={setters.setViewMode}
+          onApiKey={() => setters.setShowApiKeyModal(true)}
+          onOpenAiChat={() => setters.setShowAiChat(true)}
+          onSettings={actions.handleOpenSettings}
+          t={actions.t}
+          mainColor={state.mainColor}
+          currentMode={state.viewMode}
+        />
+      )}
 
       {/* 4. HỆ THỐNG MODALS (Portals) */}
-      <SettingsModal 
-        isOpen={state.showSettings} onClose={actions.handleCloseSettings} 
-        onApply={actions.handleCloseSettings} initialSettings={state.settings} 
-        voices={state.voices} testSpeak={actions.speak} 
-        onResetData={actions.handleResetSettings} currentLang={state.lang} t={actions.t} 
-        uiLang={state.uiLang} setUiLang={setters.setUiLang} mainColor={state.mainColor}
-        onDone={actions.handleCloseSettings} onUpdate={setters.setSettings}
-        totalTokens={state.totalTokens} onResetTokens={setters.setTotalTokens}
-        systemLogs={state.systemLogs} onClearLogs={() => setters.setSystemLogs([])}
+      <SettingsModal
+        isOpen={state.showSettings}
+        onClose={actions.handleCloseSettings}
+        onApply={actions.handleCloseSettings}
+        initialSettings={state.settings}
+        voices={state.voices}
+        testSpeak={actions.speak}
+        onResetData={actions.handleResetSettings}
+        currentLang={state.lang}
+        t={actions.t}
+        uiLang={state.uiLang}
+        setUiLang={setters.setUiLang}
+        mainColor={state.mainColor}
+        onDone={actions.handleCloseSettings}
+        onUpdate={setters.setSettings}
+        totalTokens={state.totalTokens}
+        onResetTokens={setters.setTotalTokens}
+        systemLogs={state.systemLogs}
+        onClearLogs={() => setters.setSystemLogs([])}
       />
-      <ApiKeyModal 
-        isOpen={state.showApiKeyModal} onClose={() => setters.setShowApiKeyModal(false)} 
-        apiKey={state.apiKey} setApiKey={setters.setApiKey} t={actions.t}
-        aiModel={state.aiModel} setAiModel={setters.setAiModel}
+      <ApiKeyModal
+        isOpen={state.showApiKeyModal}
+        onClose={() => setters.setShowApiKeyModal(false)}
+        apiKey={state.apiKey}
+        setApiKey={setters.setApiKey}
+        t={actions.t}
+        aiModel={state.aiModel}
+        setAiModel={setters.setAiModel}
       />
-      <NotebookModal 
-        isOpen={state.showNotebook} onClose={() => setters.setShowNotebook(false)} 
-        data={state.notebook} onSave={actions.handleNotebookSave} onPlay={actions.speak} 
-        t={actions.t} mainColor={state.mainColor} apiKey={state.apiKey} lang={state.lang}
-        onCopy={actions.handleCopyForSheet} sourceData={state.cards} 
+      <NotebookModal
+        isOpen={state.showNotebook}
+        onClose={() => setters.setShowNotebook(false)}
+        data={state.notebook}
+        onSave={actions.handleNotebookSave}
+        onPlay={actions.speak}
+        t={actions.t}
+        mainColor={state.mainColor}
+        apiKey={state.apiKey}
+        lang={state.lang}
+        onCopy={actions.handleCopyForSheet}
+        sourceData={state.cards}
         onOpenHanzi={actions.handleOpenHanziStudy}
         onReviewGame={actions.handleReviewWithGame}
         dataMode={state.dataMode}
       />
-      <ManualInputModal 
-        isOpen={state.showManual} onClose={() => setters.setShowManual(false)} 
-        onImport={actions.handleManualImport} onAddCard={actions.handleAddCard} 
-        onAutoFill={actions.handleManualAiFill} t={actions.t} mainColor={state.mainColor}
+      <ManualInputModal
+        isOpen={state.showManual}
+        onClose={() => setters.setShowManual(false)}
+        onImport={actions.handleManualImport}
+        onAddCard={actions.handleAddCard}
+        onAutoFill={actions.handleManualAiFill}
+        t={actions.t}
+        mainColor={state.mainColor}
       />
-      <LinkManagerModal 
-        isOpen={state.showLinkManager} onClose={() => setters.setShowLinkManager(false)} 
-        t={actions.t} defaultUrl={state.defaultUrl} setDefaultUrl={setters.setDefaultUrl} 
-        exportUrl={state.exportUrl} setExportUrl={setters.setExportUrl} 
-        importUrl={state.importUrl} setImportUrl={setters.setImportUrl} 
-        apiKeySheetUrl={state.apiKeySheetUrl} setApiKeySheetUrl={setters.setApiKeySheetUrl} 
-        onImport={actions.handleImport} onExportLink={actions.handleExportLink} 
-        onExportExcel={actions.handleExportExcel} onFileImport={actions.handleFileImport} 
-        onSaveSettings={handleSaveLinkSettings} onFetchKey={actions.handleFetchApiKey} 
-        onDownloadTemplate={actions.handleDownloadTemplate} lang={state.lang}
+      <LinkManagerModal
+        isOpen={state.showLinkManager}
+        onClose={() => setters.setShowLinkManager(false)}
+        t={actions.t}
+        defaultUrl={state.defaultUrl}
+        setDefaultUrl={setters.setDefaultUrl}
+        exportUrl={state.exportUrl}
+        setExportUrl={setters.setExportUrl}
+        importUrl={state.importUrl}
+        setImportUrl={setters.setImportUrl}
+        apiKeySheetUrl={state.apiKeySheetUrl}
+        setApiKeySheetUrl={setters.setApiKeySheetUrl}
+        onImport={actions.handleImport}
+        onExportLink={actions.handleExportLink}
+        onExportExcel={actions.handleExportExcel}
+        onFileImport={actions.handleFileImport}
+        onSaveSettings={handleSaveLinkSettings}
+        onFetchKey={actions.handleFetchApiKey}
+        onDownloadTemplate={actions.handleDownloadTemplate}
+        lang={state.lang}
         onImportToNotebook={actions.handleImportToNotebook}
         aiHarvestPool={state.aiHarvestPool}
         onExportHarvestToExcel={actions.handleExportHarvestToExcel}
         onClearHarvestPool={actions.handleClearHarvestPool}
       />
-      <MasteredModal 
-        isOpen={state.showMastered} onClose={() => setters.setShowMastered(false)} 
-        data={state.mastered} onRestore={actions.handleRestoreMastered} 
-        onRestoreAll={actions.handleRestoreAllMastered} t={actions.t} mainColor={state.mainColor} 
+      <MasteredModal
+        isOpen={state.showMastered}
+        onClose={() => setters.setShowMastered(false)}
+        data={state.mastered}
+        onRestore={actions.handleRestoreMastered}
+        onRestoreAll={actions.handleRestoreAllMastered}
+        t={actions.t}
+        mainColor={state.mainColor}
       />
-      <IncorrectModal 
-        isOpen={state.showIncorrectModal} onClose={actions.handleCloseIncorrect} 
-        data={state.incorrectList} onRemove={actions.handleRemoveWrong} 
-        onRemoveAll={actions.handleRemoveAllIncorrect} 
-        onOpenHanzi={actions.handleOpenHanziStudy} t={actions.t} mainColor={state.mainColor}
+      <IncorrectModal
+        isOpen={state.showIncorrectModal}
+        onClose={actions.handleCloseIncorrect}
+        data={state.incorrectList}
+        onRemove={actions.handleRemoveWrong}
+        onRemoveAll={actions.handleRemoveAllIncorrect}
+        onOpenHanzi={actions.handleOpenHanziStudy}
+        t={actions.t}
+        mainColor={state.mainColor}
         onReviewGame={actions.handleReviewWithGame}
       />
-      <AiChatModal 
-        isOpen={state.showAiChat} onClose={() => setters.setShowAiChat(false)} 
-        apiKey={state.apiKey} lang={state.lang} t={actions.t} mainColor={state.mainColor} 
+      <AiChatModal
+        isOpen={state.showAiChat}
+        onClose={() => setters.setShowAiChat(false)}
+        apiKey={state.apiKey}
+        lang={state.lang}
+        t={actions.t}
+        mainColor={state.mainColor}
       />
-      <HelpModal 
-        isOpen={state.showHelp} onClose={actions.handleCloseHelp} 
-        t={actions.t} mainColor={state.mainColor} 
+      <HelpModal
+        isOpen={state.showHelp}
+        onClose={actions.handleCloseHelp}
+        t={actions.t}
+        mainColor={state.mainColor}
       />
-      <SaveLoadModal 
-        isOpen={state.showSaveLoadModal} onClose={actions.handleCloseSaveLoad} 
-        onExport={actions.handleExportSaveFile} onImport={actions.handleImportSaveFile} 
-        t={actions.t} mainColor={state.mainColor} 
+      <SaveLoadModal
+        isOpen={state.showSaveLoadModal}
+        onClose={actions.handleCloseSaveLoad}
+        onExport={actions.handleExportSaveFile}
+        onImport={actions.handleImportSaveFile}
+        t={actions.t}
+        mainColor={state.mainColor}
       />
-      <HanziWriterModal 
-        isOpen={state.showHanziWriter} onClose={actions.handleCloseHanziWriter} 
-        char={state.currentHanziChar} t={actions.t} mainColor="red" 
+      <HanziWriterModal
+        isOpen={state.showHanziWriter}
+        onClose={actions.handleCloseHanziWriter}
+        char={state.currentHanziChar}
+        t={actions.t}
+        mainColor="red"
       />
-      <WordSelectorModal 
-        isOpen={state.showWordSelect} onClose={() => setters.setShowWordSelect(false)} 
-        onSave={actions.handleSaveWords} text={state.wordSelectTarget} 
-        currentLang={state.lang} t={actions.t} mainColor={state.mainColor} 
+      <WordSelectorModal
+        isOpen={state.showWordSelect}
+        onClose={() => setters.setShowWordSelect(false)}
+        onSave={actions.handleSaveWords}
+        text={state.wordSelectTarget}
+        currentLang={state.lang}
+        t={actions.t}
+        mainColor={state.mainColor}
       />
-      <HanziSelectorModal 
-        isOpen={state.showHanziSelector} onClose={actions.handleCloseHanziSelector} 
-        text={state.wordSelectTarget} onSelect={actions.handleStartWriting} t={actions.t} 
+      <HanziSelectorModal
+        isOpen={state.showHanziSelector}
+        onClose={actions.handleCloseHanziSelector}
+        text={state.wordSelectTarget}
+        onSelect={actions.handleStartWriting}
+        t={actions.t}
       />
       <ExamPoolManagerModal
-        isOpen={state.showExamPoolManager} onClose={actions.handleCloseExamPoolManager}
-        mainColor={state.mainColor} examPoolData={examPoolData}
+        isOpen={state.showExamPoolManager}
+        onClose={actions.handleCloseExamPoolManager}
+        mainColor={state.mainColor}
+        examPoolData={examPoolData}
       />
       <AiConfigModal
-        isOpen={state.showAiConfigModal} onClose={() => setters.setShowAiConfigModal(false)}
-        aiConfig={state.aiConfig} setAiConfig={setters.setAiConfig} mainColor="purple"
+        isOpen={state.showAiConfigModal}
+        onClose={() => setters.setShowAiConfigModal(false)}
+        aiConfig={state.aiConfig}
+        setAiConfig={setters.setAiConfig}
+        mainColor="purple"
       />
 
       {/* 5. GLOBAL TOAST NOTIFICATIONS */}
       {state.toast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] animate-in slide-in-from-top-4 fade-in duration-300">
-          <div className={`px-6 py-3 rounded-full shadow-xl font-bold flex items-center gap-2 border ${state.toast.type === 'error' ? 'bg-red-500 text-white border-red-600' : state.toast.type === 'warning' ? 'bg-orange-500 text-white border-orange-600' : 'bg-gray-800 text-white border-gray-900'}`}>
-            {state.toast.type === 'error' ? <Icons.X size={18} /> : state.toast.type === 'warning' ? <Icons.AlertCircle size={18} /> : <Icons.Check size={18} />}
+          <div
+            className={`px-6 py-3 rounded-full shadow-xl font-bold flex items-center gap-2 border ${
+              state.toast.type === 'error'
+                ? 'bg-red-500 text-white border-red-600'
+                : state.toast.type === 'warning'
+                ? 'bg-orange-500 text-white border-orange-600'
+                : 'bg-gray-800 text-white border-gray-900'
+            }`}
+          >
+            {state.toast.type === 'error' ? (
+              <Icons.X size={18} />
+            ) : state.toast.type === 'warning' ? (
+              <Icons.AlertCircle size={18} />
+            ) : (
+              <Icons.Check size={18} />
+            )}
             {state.toast.text}
           </div>
         </div>
