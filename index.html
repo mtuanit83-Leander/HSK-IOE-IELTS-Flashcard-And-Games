@@ -2,38 +2,62 @@
 <html lang="vi">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <!-- Chống zoom màn hình trên thiết bị di động (đặc biệt là iOS) để có trải nghiệm giống Native App -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <!-- Chống zoom màn hình trên thiết bị di động & Kích hoạt vùng an toàn (Safe Area) cho iOS -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <!-- Bảo vệ luồng tải hình ảnh minh họa từ Bing Clipart không bị chặn bởi Hotlink Protection -->
+    <meta name="referrer" content="no-referrer" />
+    <meta name="theme-color" content="#0284c7" />
     <title>Flashcard 3D - Học Ngoại Ngữ</title>
-    
+    <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/10609/10609025.png" />
+
+
+    <!-- Nạp sẵn Google Fonts & Phông chữ Hán tự (Khải thể / Thư pháp) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Long+Cang&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@400;700&display=swap" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-lite-webfont@1.7.0/style.css" rel="stylesheet" />
+
+
     <!-- Inline CSS cho Màn hình chờ (Hiển thị ngay lập tức không cần chờ tải file CSS ngoài) -->
     <style>
-      body, html { 
-        margin: 0; padding: 0; width: 100%; height: 100%; 
-        font-family: system-ui, -apple-system, sans-serif; 
-        background-color: #f8fafc; 
-        overflow: hidden;
+      body, html {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        font-family: system-ui, -apple-system, sans-serif;
+        background-color: #f8fafc;
       }
-      #fc-preloader { 
-        display: flex; flex-direction: column; align-items: center; justify-content: center; 
-        height: 100vh; width: 100%; position: relative; 
+      #fc-preloader {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        width: 100%;
+        position: relative;
       }
-      .fc-spinner { 
-        width: 50px; height: 50px; 
-        border: 4px solid #bfdbfe; border-top-color: #2563eb; 
-        border-radius: 50%; 
-        animation: fc-spin 1s linear infinite; 
-        margin-bottom: 20px; 
+      .fc-spinner {
+        width: 50px;
+        height: 50px;
+        border: 4px solid #bfdbfe;
+        border-top-color: #0284c7;
+        border-radius: 50%;
+        animation: fc-spin 1s linear infinite;
+        margin-bottom: 20px;
       }
-      .fc-loading-text { 
-        color: #475569; font-weight: 700; font-size: 16px; 
+      .fc-loading-text {
+        color: #475569;
+        font-weight: 700;
+        font-size: 16px;
       }
-      @keyframes fc-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+      @keyframes fc-spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
     </style>
   </head>
-  <body>
-    
+  <body class="bg-gray-50 text-gray-800">
     <!-- LÃNH THỔ CỦA REACT -->
     <div id="root">
       <!-- Màn hình chờ siêu gọn nhẹ, chỉ có vòng xoay và Text -->
@@ -42,9 +66,9 @@
         <div class="fc-loading-text">Đang khởi tạo ứng dụng...</div>
       </div>
     </div>
-    
-    <!-- Điểm mồi gọi Bo mạch chủ (Bộ kích hoạt Vite) -->
+
+
+    <!-- Điểm mồi gọi Bo mạch chủ (Bộ kích hoạt Vite ES Module) -->
     <script type="module" src="/src/main.jsx"></script>
-    
   </body>
 </html>

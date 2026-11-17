@@ -1,16 +1,20 @@
-/**
- * @file src/features/games/GameMenu.jsx
- * @description Giao diện Menu chính (TRAINING MODE) điều hướng 10 Mini-games & Khảo thí (Mock Test).
- * Khôi phục nguyên bản 100% giao diện 2 cột, Strict Routing theo dataMode, A/B Testing Toggle, Resume Badge & Modal từ Block 5.7 (V1.09).
- * @origin Tầng 5 - Block 5.7a (Game Menu)
- */
+// ============================================================================
+// FILE 50/85: src/features/games/GameMenu.jsx
+// NGUỒN GỐC: tang_5.js (Block 5.7 - GameMenu V1.09) + transshipment-04.js
+// NHIỆM VỤ: Giao diện Menu chính (TRAINING MODE) điều hướng 10 Mini-games
+//           và hệ thống Đánh giá năng lực (Mock Test IOE / HSK / IELTS).
+//           Bảo toàn 100% giao diện 2 cột, Strict Routing theo dataMode,
+//           công tắc A/B Testing, Resume Badge & Modal xác nhận.
+// ============================================================================
 
 import React, { useState, useEffect } from 'react';
-import { Icons } from '@/components/common/Icons';
-import { STORAGE_KEYS } from '@/config/constants';
+import { Icons } from '../../components/common/Icons';
+import { STORAGE_KEYS } from '../../config/constants';
 
-// Fallback an toàn cho các Icon đặc thù nếu bộ Icons thiếu
-const SafeIcon = ({ icon: IconComp, fallback = '🎮', size = 20, className = '', fill = 'none' }) => {
+/**
+ * Helper hiển thị Icon an toàn kèm Fallback Emoji nếu thiếu SVG
+ */
+const MenuIcon = ({ icon: IconComp, fallback = '🎮', size = 20, className = '', fill = 'none' }) => {
   if (IconComp) {
     return <IconComp size={size} className={className} fill={fill} />;
   }
@@ -30,7 +34,9 @@ const SafeIcon = ({ icon: IconComp, fallback = '🎮', size = 20, className = ''
   );
 };
 
-// Hàm dịch chuỗi an toàn (Tránh lỗi hàm t(key) trả về nguyên tên key thô như 'modeQuiz')
+/**
+ * Helper dịch chuỗi an toàn (Tránh hiển thị key thô nếu từ điển thiếu)
+ */
 const safeTranslate = (t, key, fallbackText) => {
   if (!t || typeof t !== 'function') return fallbackText;
   const res = t(key);
@@ -40,12 +46,11 @@ const safeTranslate = (t, key, fallbackText) => {
 
 export const GameMenu = ({
   t,
-  mainColor = 'sky',
+  mainColor = 'indigo',
   lang = 'en',
-  cards = [],
   dataMode = 'vocab',
   gameSessions = {},
-  // Các callback chuẩn từ Block 5.7 (Original)
+  // Bộ callback chuẩn từ Block 5.7 (tang_5.js)
   onSelectQuiz,
   onStartMatch,
   onStartScramble,
@@ -59,7 +64,7 @@ export const GameMenu = ({
   onResume,
   onStartMockTest,
   onResumeMockTest,
-  // Các callback tương thích thêm với GameView mới
+  // Bộ callback mở rộng tương thích kiến trúc mới
   onSelectGame,
   onStartExam,
   onResumeExam,
@@ -69,7 +74,16 @@ export const GameMenu = ({
 }) => {
   const [matchAiMode, setMatchAiMode] = useState(false);
   const [pendingResumeGame, setPendingResumeGame] = useState(null);
-  const [activeExamSession, setActiveExamSession] = useState(null);
+
+  // [CHIẾN DỊCH SKELETON SAVE] Khởi tạo trực tiếp bài thi Khảo thí đang dang dở
+  const [activeExamSession, setActiveExamSession] = useState(() => {
+    try {
+      const examKey = STORAGE_KEYS?.ACTIVE_EXAM || 'fc_active_exam';
+      return localStorage.getItem(examKey) || null;
+    } catch {
+      return null;
+    }
+  });
 
   // [A/B TESTING] Cờ tính năng cho QA (Chuyển đổi luồng AI 2-Shot cũ và 1-Shot mới)
   const [useLegacyAi, setUseLegacyAi] = useState(() => {
@@ -82,20 +96,46 @@ export const GameMenu = ({
 
   // Bộ chọn thời gian chờ chuyển câu (0s, 3s, 5s, 8s, 15s)
   const [mockDelay, setMockDelay] = useState(() => {
-    const saved = localStorage.getItem('fc_mock_delay');
-    return saved !== null ? parseInt(saved, 10) : 3;
+    try {
+      const saved = localStorage.getItem('fc_mock_delay');
+      return saved !== null ? parseInt(saved, 10) : 3;
+    } catch {
+      return 3;
+    }
   });
+
+  // Đồng bộ lại activeExamSession nếu localStorage thay đổi từ tab/luồng khác
+  useEffect(() => {
+    const syncExamSession = () => {
+      try {
+        const examKey = STORAGE_KEYS?.ACTIVE_EXAM || 'fc_active_exam';
+        setActiveExamSession(localStorage.getItem(examKey) || null);
+      } catch {
+        setActiveExamSession(null);
+      }
+    };
+    window.addEventListener('storage', syncExamSession);
+    return () => window.removeEventListener('storage', syncExamSession);
+  }, []);
 
   const handleMockDelayChange = (val) => {
     setMockDelay(val);
-    localStorage.setItem('fc_mock_delay', val.toString());
+    try {
+      localStorage.setItem('fc_mock_delay', val.toString());
+    } catch (e) {
+      console.warn('Save mock delay error:', e);
+    }
   };
 
   const handleToggleLegacyAi = () => {
     const nextState = !useLegacyAi;
     setUseLegacyAi(nextState);
-    localStorage.setItem('fc_debug_legacy_ai', String(nextState));
-    if (window.globalShowToast) {
+    try {
+      localStorage.setItem('fc_debug_legacy_ai', String(nextState));
+    } catch (e) {
+      console.warn('Save legacy AI flag error:', e);
+    }
+    if (typeof window !== 'undefined' && window.globalShowToast) {
       window.globalShowToast(
         nextState
           ? 'Đã BẬT luồng AI 2-Shot cũ (Chậm hơn)'
@@ -104,17 +144,6 @@ export const GameMenu = ({
       );
     }
   };
-
-  // [CHIẾN DỊCH SKELETON SAVE] Quét xem có bài thi Khảo thí nào đang dang dở không
-  useEffect(() => {
-    const examKey = STORAGE_KEYS?.ACTIVE_EXAM || 'fc_active_exam';
-    const savedSession = localStorage.getItem(examKey);
-    if (savedSession) {
-      setActiveExamSession(savedSession);
-    } else {
-      setActiveExamSession(null);
-    }
-  }, []);
 
   // Điều phối mở Game mới (Hỗ trợ cả prop riêng lẻ lẫn onSelectGame)
   const triggerNewGame = (type, options = {}) => {
@@ -177,7 +206,7 @@ export const GameMenu = ({
         className="absolute -top-3 -right-2 bg-yellow-500 text-white px-3 py-1.5 rounded-full shadow-lg border-2 border-white font-bold text-[10px] flex items-center gap-1 hover:bg-yellow-600 hover:scale-110 transition-all animate-bounce z-20"
         title="Vào thẳng ván đang chơi"
       >
-        <SafeIcon icon={Icons.Play} fallback="▶️" size={10} fill="currentColor" /> Tiếp tục
+        <MenuIcon icon={Icons.Play} fallback="▶️" size={10} fill="currentColor" /> Tiếp tục
       </button>
     );
   };
@@ -239,7 +268,9 @@ export const GameMenu = ({
   const themeQuizIconBox = isRedTheme
     ? 'bg-red-100 text-red-600 group-hover:bg-red-600 group-hover:text-white'
     : 'bg-indigo-100 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white';
-  const themeModalIconBox = isRedTheme ? 'bg-red-100 text-red-600' : 'bg-indigo-100 text-indigo-600';
+  const themeModalIconBox = isRedTheme
+    ? 'bg-red-100 text-red-600'
+    : 'bg-indigo-100 text-indigo-600';
   const themeModalPrimaryBtn = isRedTheme
     ? 'bg-red-600 hover:bg-red-700'
     : 'bg-indigo-600 hover:bg-indigo-700';
@@ -255,7 +286,7 @@ export const GameMenu = ({
             className="text-[9px] sm:text-[10px] font-bold px-2.5 py-1 rounded border flex items-center gap-1.5 transition-all shadow-sm bg-purple-50 text-purple-600 border-purple-200 hover:bg-purple-100"
             title="Cài đặt thông số cho Động cơ AI (Loading, Delay, Băng đạn)"
           >
-            <SafeIcon icon={Icons.Sparkles} fallback="✨" size={12} />
+            <MenuIcon icon={Icons.Sparkles} fallback="✨" size={12} />
             Cài đặt Lõi AI
           </button>
         )}
@@ -269,14 +300,16 @@ export const GameMenu = ({
           }`}
           title="Chuyển đổi giữa kiến trúc Lắp ráp cũ và Đúc nguyên khối mới"
         >
-          <SafeIcon icon={Icons.Settings} fallback="⚙️" size={12} />
+          <MenuIcon icon={Icons.Settings} fallback="⚙️" size={12} />
           Dev: Legacy ({useLegacyAi ? 'ON' : 'OFF'})
         </button>
       </div>
 
       {/* 2. HEADER BIỂU TƯỢNG & TIÊU ĐỀ TRAINING MODE */}
-      <div className={`w-14 h-14 sm:w-16 sm:h-16 ${themeCircleBg} rounded-full flex items-center justify-center mb-3 sm:mb-4 shadow-inner`}>
-        <SafeIcon icon={Icons.Gamepad2} fallback="🎮" size={28} className={themeIconText} />
+      <div
+        className={`w-14 h-14 sm:w-16 sm:h-16 ${themeCircleBg} rounded-full flex items-center justify-center mb-3 sm:mb-4 shadow-inner`}
+      >
+        <MenuIcon icon={Icons.Gamepad2} fallback="🎮" size={28} className={themeIconText} />
       </div>
       <h2 className={`text-lg sm:text-xl font-black ${themeTitleText} mb-1 uppercase tracking-wide`}>
         {safeTranslate(t, 'gameTitle', 'TRAINING MODE')}
@@ -289,12 +322,12 @@ export const GameMenu = ({
       {activeExamSession && (
         <div className="w-full bg-gradient-to-r from-orange-500 to-red-500 p-4 sm:p-5 rounded-2xl shadow-lg mb-8 relative overflow-hidden group animate-in slide-in-from-top-4 border-2 border-orange-300">
           <div className="absolute -right-6 -top-6 opacity-20 group-hover:scale-110 transition-transform duration-500">
-            <SafeIcon icon={Icons.AlertCircle} fallback="⚠️" size={100} />
+            <MenuIcon icon={Icons.AlertCircle} fallback="⚠️" size={100} />
           </div>
           <div className="relative z-10 flex flex-col sm:flex-row items-center justify-between gap-4 text-left">
             <div>
               <h3 className="text-white font-black text-lg flex items-center gap-2">
-                <SafeIcon icon={Icons.Clock} fallback="⏱️" size={20} /> Bài thi đang dang dở!
+                <MenuIcon icon={Icons.Clock} fallback="⏱️" size={20} /> Bài thi đang dang dở!
               </h3>
               <p className="text-white/90 text-xs sm:text-sm mt-1 font-medium">
                 Hệ thống phát hiện bạn có một bài thi Khảo thí chưa hoàn thành (do tải lại trang hoặc mất mạng).
@@ -305,7 +338,7 @@ export const GameMenu = ({
               onClick={() => triggerResumeMockTest(activeExamSession)}
               className="w-full sm:w-auto px-6 py-3 bg-white text-red-600 font-bold rounded-xl shadow-md hover:bg-gray-50 active:scale-95 transition-all whitespace-nowrap flex items-center justify-center gap-2"
             >
-              <SafeIcon icon={Icons.Play} fallback="▶️" size={18} fill="currentColor" /> Tiếp tục thi
+              <MenuIcon icon={Icons.Play} fallback="▶️" size={18} fill="currentColor" /> Tiếp tục thi
             </button>
           </div>
         </div>
@@ -318,7 +351,7 @@ export const GameMenu = ({
             ==================================================================== */}
         <div className="flex-1 flex flex-col gap-3 w-full">
           <div className="flex items-center gap-2 mb-1 px-2">
-            <SafeIcon icon={Icons.Sparkles} fallback="✨" size={16} className={themeSparkleText} />
+            <MenuIcon icon={Icons.Sparkles} fallback="✨" size={16} className={themeSparkleText} />
             <h3 className="text-sm sm:text-base font-bold text-gray-700 uppercase tracking-wider">
               Luyện tập hàng ngày
             </h3>
@@ -332,7 +365,7 @@ export const GameMenu = ({
               className={`w-full p-3 sm:p-4 bg-white border-2 ${themeQuizBtn} rounded-2xl transition-all flex items-center gap-3 shadow-sm group active:scale-95`}
             >
               <div className={`p-2.5 sm:p-3 ${themeQuizIconBox} rounded-xl transition-colors`}>
-                <SafeIcon icon={Icons.Layers} fallback="📚" size={22} />
+                <MenuIcon icon={Icons.Layers} fallback="📚" size={22} />
               </div>
               <div className="text-left flex-1">
                 <div className="font-bold text-base sm:text-lg text-gray-800 leading-tight mb-0.5">
@@ -342,7 +375,12 @@ export const GameMenu = ({
                   4-5 đáp án, Hẹn giờ, Luyện nghe...
                 </div>
               </div>
-              <SafeIcon icon={Icons.ChevronRight} fallback="▶" size={18} className="text-gray-300 hidden sm:block" />
+              <MenuIcon
+                icon={Icons.ChevronRight}
+                fallback="▶"
+                size={18}
+                className="text-gray-300 hidden sm:block"
+              />
             </button>
             <ResumeBadge type="quiz" />
           </div>
@@ -357,11 +395,11 @@ export const GameMenu = ({
                 className="w-full h-full min-h-[90px] sm:min-h-[105px] p-3 sm:p-4 bg-white border-2 border-purple-100 rounded-xl sm:rounded-2xl hover:border-purple-400 hover:bg-purple-50 transition-all flex flex-col items-center justify-center gap-2 shadow-sm active:scale-95 z-10 relative group"
               >
                 <div className="p-2 bg-purple-100 text-purple-600 rounded-lg group-hover:bg-purple-600 group-hover:text-white transition-colors">
-                  <SafeIcon icon={Icons.Link} fallback="🔗" size={20} />
+                  <MenuIcon icon={Icons.Link} fallback="🔗" size={20} />
                 </div>
                 <div className="text-center mt-0.5">
                   <div className="font-bold text-gray-800 text-xs sm:text-sm">
-                    {safeTranslate(t, 'modeMatch', 'Match Game')}
+                    {safeTranslate(t, 'modeMatch', 'Nối Ô')}
                   </div>
                   <div className="text-[9px] sm:text-[10px] text-gray-400 font-medium mt-0.5 leading-tight">
                     Nối từ & nghĩa
@@ -380,7 +418,7 @@ export const GameMenu = ({
                 }}
                 title="Bật/Tắt AI tạo nhiễu khó"
               >
-                <SafeIcon
+                <MenuIcon
                   icon={Icons.Sparkles}
                   fallback="✨"
                   size={12}
@@ -398,11 +436,11 @@ export const GameMenu = ({
                 className="w-full h-full min-h-[90px] sm:min-h-[105px] p-3 sm:p-4 bg-white border-2 border-orange-100 rounded-xl sm:rounded-2xl hover:border-orange-400 hover:bg-orange-50 transition-all flex flex-col items-center justify-center gap-2 shadow-sm group active:scale-95"
               >
                 <div className="p-2 bg-orange-100 text-orange-600 rounded-lg group-hover:bg-orange-600 group-hover:text-white transition-colors">
-                  <SafeIcon icon={Icons.Shuffle} fallback="🔀" size={20} />
+                  <MenuIcon icon={Icons.Shuffle} fallback="🔀" size={20} />
                 </div>
                 <div className="text-center mt-0.5">
                   <div className="font-bold text-gray-800 text-xs sm:text-sm">
-                    {safeTranslate(t, 'modeScramble', 'Scramble')}
+                    {safeTranslate(t, 'modeScramble', 'Ghép Câu')}
                   </div>
                   <div className="text-[9px] sm:text-[10px] text-gray-400 font-medium mt-0.5 leading-tight">
                     Xếp từ / chữ cái
@@ -423,7 +461,7 @@ export const GameMenu = ({
                     className="w-full h-full min-h-[90px] sm:min-h-[105px] p-3 sm:p-4 bg-white border-2 border-pink-100 rounded-xl sm:rounded-2xl hover:border-pink-400 hover:bg-pink-50 transition-all flex flex-col items-center justify-center gap-2 shadow-sm group active:scale-95"
                   >
                     <div className="p-2 bg-pink-100 text-pink-600 rounded-lg group-hover:bg-pink-600 group-hover:text-white transition-colors">
-                      <SafeIcon icon={Icons.Eye} fallback="👁️" size={20} />
+                      <MenuIcon icon={Icons.Eye} fallback="👁️" size={20} />
                     </div>
                     <div className="text-center mt-0.5">
                       <div className="font-bold text-gray-800 text-xs sm:text-sm">Từ Khác Loại</div>
@@ -443,7 +481,7 @@ export const GameMenu = ({
                     className="w-full h-full min-h-[90px] sm:min-h-[105px] p-3 sm:p-4 bg-white border-2 border-emerald-100 rounded-xl sm:rounded-2xl hover:border-emerald-400 hover:bg-emerald-50 transition-all flex flex-col items-center justify-center gap-2 shadow-sm group active:scale-95"
                   >
                     <div className="p-2 bg-emerald-100 text-emerald-600 rounded-lg group-hover:bg-emerald-600 group-hover:text-white transition-colors">
-                      <SafeIcon icon={Icons.Image} fallback="🖼️" size={20} />
+                      <MenuIcon icon={Icons.Image} fallback="🖼️" size={20} />
                     </div>
                     <div className="text-center mt-0.5">
                       <div className="font-bold text-gray-800 text-xs sm:text-sm">Đoán Hình</div>
@@ -464,7 +502,7 @@ export const GameMenu = ({
                       className="w-full h-full min-h-[90px] sm:min-h-[105px] p-3 sm:p-4 bg-white border-2 border-indigo-100 rounded-xl sm:rounded-2xl hover:border-indigo-400 hover:bg-indigo-50 transition-all flex flex-col items-center justify-center gap-2 shadow-sm group active:scale-95"
                     >
                       <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                        <SafeIcon icon={Icons.Mic} fallback="🎤" size={20} />
+                        <MenuIcon icon={Icons.Mic} fallback="🎤" size={20} />
                       </div>
                       <div className="text-center mt-0.5">
                         <div className="font-bold text-gray-800 text-xs sm:text-sm">Vua Ngữ Âm</div>
@@ -490,7 +528,7 @@ export const GameMenu = ({
                     className="w-full h-full min-h-[90px] sm:min-h-[105px] p-3 sm:p-4 bg-white border-2 border-blue-100 rounded-xl sm:rounded-2xl hover:border-blue-400 hover:bg-blue-50 transition-all flex flex-col items-center justify-center gap-2 shadow-sm group active:scale-95"
                   >
                     <div className="p-2 bg-blue-100 text-blue-600 rounded-lg group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                      <SafeIcon icon={Icons.Keyboard} fallback="⌨️" size={20} />
+                      <MenuIcon icon={Icons.Keyboard} fallback="⌨️" size={20} />
                     </div>
                     <div className="text-center mt-0.5">
                       <div className="font-bold text-gray-800 text-xs sm:text-sm">Điền Từ</div>
@@ -510,7 +548,7 @@ export const GameMenu = ({
                     className="w-full h-full min-h-[90px] sm:min-h-[105px] p-3 sm:p-4 bg-white border-2 border-red-100 rounded-xl sm:rounded-2xl hover:border-red-400 hover:bg-red-50 transition-all flex flex-col items-center justify-center gap-2 shadow-sm group active:scale-95"
                   >
                     <div className="p-2 bg-red-100 text-red-600 rounded-lg group-hover:bg-red-600 group-hover:text-white transition-colors">
-                      <SafeIcon icon={Icons.Brain} fallback="🧠" size={20} />
+                      <MenuIcon icon={Icons.Brain} fallback="🧠" size={20} />
                     </div>
                     <div className="text-center mt-0.5">
                       <div className="font-bold text-gray-800 text-xs sm:text-sm">Tìm Lỗi Sai</div>
@@ -530,7 +568,7 @@ export const GameMenu = ({
                     className="w-full h-full min-h-[90px] sm:min-h-[105px] p-3 sm:p-4 bg-white border-2 border-cyan-100 rounded-xl sm:rounded-2xl hover:border-cyan-400 hover:bg-cyan-50 transition-all flex flex-col items-center justify-center gap-2 shadow-sm group active:scale-95"
                   >
                     <div className="p-2 bg-cyan-100 text-cyan-600 rounded-lg group-hover:bg-cyan-600 group-hover:text-white transition-colors">
-                      <SafeIcon icon={Icons.Headphones} fallback="🎧" size={20} />
+                      <MenuIcon icon={Icons.Headphones} fallback="🎧" size={20} />
                     </div>
                     <div className="text-center mt-0.5">
                       <div className="font-bold text-gray-800 text-xs sm:text-sm">Đôi Tai Vàng</div>
@@ -550,7 +588,7 @@ export const GameMenu = ({
                     className="w-full h-full min-h-[90px] sm:min-h-[105px] p-3 sm:p-4 bg-white border-2 border-slate-100 rounded-xl sm:rounded-2xl hover:border-slate-400 hover:bg-slate-50 transition-all flex flex-col items-center justify-center gap-2 shadow-sm group active:scale-95"
                   >
                     <div className="p-2 bg-slate-100 text-slate-600 rounded-lg group-hover:bg-slate-600 group-hover:text-white transition-colors">
-                      <SafeIcon icon={Icons.BookOpen} fallback="📖" size={20} />
+                      <MenuIcon icon={Icons.BookOpen} fallback="📖" size={20} />
                     </div>
                     <div className="text-center mt-0.5">
                       <div className="font-bold text-gray-800 text-xs sm:text-sm">Đọc Hiểu</div>
@@ -573,7 +611,7 @@ export const GameMenu = ({
           <div className="w-full md:w-[280px] lg:w-[320px] shrink-0 flex flex-col gap-3 mt-4 md:mt-0 animate-in slide-in-from-right-8">
             <div className="flex items-center justify-between w-full mb-1 px-2">
               <div className="flex items-center gap-2">
-                <SafeIcon icon={Icons.Award} fallback="🏆" size={16} className="text-red-500" />
+                <MenuIcon icon={Icons.Award} fallback="🏆" size={16} className="text-red-500" />
                 <h3 className="text-sm sm:text-base font-bold text-gray-700 uppercase tracking-wider">
                   Đánh giá năng lực
                 </h3>
@@ -585,21 +623,7 @@ export const GameMenu = ({
                   className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg border border-indigo-200 hover:bg-indigo-100 transition-colors shadow-sm flex items-center gap-1 active:scale-95"
                   title="Quản lý Ngân hàng đề thi"
                 >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
-                    <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
-                    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
-                  </svg>
+                  <MenuIcon icon={Icons.Database} fallback="🗄️" size={14} />
                   <span className="text-[10px] font-bold hidden sm:inline">Ngân hàng đề</span>
                 </button>
               )}
@@ -609,11 +633,11 @@ export const GameMenu = ({
               {/* Thẻ PRO 1: Khảo thí IOE (Tiếng Anh) / Thi Thử HSK (Tiếng Trung) */}
               <div className="p-4 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-xl shadow-md flex flex-col items-start gap-2.5 text-left border border-white/20 relative overflow-hidden group">
                 <div className="absolute -right-4 -top-4 opacity-10 group-hover:scale-150 transition-transform duration-500">
-                  <SafeIcon icon={Icons.Award} fallback="🏆" size={60} />
+                  <MenuIcon icon={Icons.Award} fallback="🏆" size={60} />
                 </div>
                 <div className="flex justify-between w-full items-center relative z-10">
                   <div className="p-1.5 bg-white/20 backdrop-blur-sm rounded-lg">
-                    <SafeIcon icon={Icons.Award} fallback="🏆" size={16} />
+                    <MenuIcon icon={Icons.Award} fallback="🏆" size={16} />
                   </div>
                   <div className="bg-white/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold backdrop-blur-sm tracking-widest border border-white/30">
                     PRO
@@ -652,11 +676,11 @@ export const GameMenu = ({
               {lang === 'en' && (
                 <div className="p-4 bg-gradient-to-br from-rose-500 to-red-600 text-white rounded-xl shadow-md flex flex-col items-start gap-2.5 text-left border border-white/20 relative overflow-hidden group">
                   <div className="absolute -right-4 -top-4 opacity-10 group-hover:scale-150 transition-transform duration-500">
-                    <SafeIcon icon={Icons.BookOpen} fallback="📖" size={60} />
+                    <MenuIcon icon={Icons.BookOpen} fallback="📖" size={60} />
                   </div>
                   <div className="flex justify-between w-full items-center relative z-10">
                     <div className="p-1.5 bg-white/20 backdrop-blur-sm rounded-lg">
-                      <SafeIcon icon={Icons.BookOpen} fallback="📖" size={16} />
+                      <MenuIcon icon={Icons.BookOpen} fallback="📖" size={16} />
                     </div>
                     <div className="bg-white/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold backdrop-blur-sm tracking-widest border border-white/30">
                       PRO
@@ -689,7 +713,12 @@ export const GameMenu = ({
               {/* Lưu ý kết nối mạng & API Key */}
               <div className="mt-1 p-2.5 bg-white/60 backdrop-blur-md rounded-lg border border-white text-center text-[9px] sm:text-[10px] text-gray-500 font-medium leading-relaxed">
                 <p className="flex items-center justify-center gap-1 mb-0.5">
-                  <SafeIcon icon={Icons.AlertCircle} fallback="⚠️" size={12} className="text-orange-400" />
+                  <MenuIcon
+                    icon={Icons.AlertCircle}
+                    fallback="⚠️"
+                    size={12}
+                    className="text-orange-400"
+                  />
                   Bài thi bám sát cấu trúc chuẩn.
                 </p>
                 <p>Yêu cầu kết nối mạng ổn định & API Key.</p>
@@ -699,7 +728,12 @@ export const GameMenu = ({
               <div className="mt-2 bg-white rounded-xl border border-gray-200 shadow-sm p-3 flex flex-col gap-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
-                    <SafeIcon icon={Icons.Clock} fallback="⏱️" size={16} className="text-orange-500" />
+                    <MenuIcon
+                      icon={Icons.Clock}
+                      fallback="⏱️"
+                      size={16}
+                      className="text-orange-500"
+                    />
                     <span className="text-xs font-bold text-gray-700">Chờ chuyển câu:</span>
                   </div>
                   <span className="text-[10px] font-mono bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-bold shadow-inner">
@@ -741,8 +775,10 @@ export const GameMenu = ({
             className="bg-white p-5 sm:p-6 rounded-2xl shadow-2xl max-w-sm w-full text-center border border-gray-100 flex flex-col items-center"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className={`w-14 h-14 ${themeModalIconBox} rounded-full flex items-center justify-center mb-4 shadow-inner`}>
-              <SafeIcon icon={Icons.Play} fallback="▶️" size={24} fill="currentColor" />
+            <div
+              className={`w-14 h-14 ${themeModalIconBox} rounded-full flex items-center justify-center mb-4 shadow-inner`}
+            >
+              <MenuIcon icon={Icons.Play} fallback="▶️" size={24} fill="currentColor" />
             </div>
             <h3 className="text-lg sm:text-xl font-black text-gray-800 mb-2">
               Tiếp tục trò chơi?
@@ -759,7 +795,7 @@ export const GameMenu = ({
                 }}
                 className={`w-full py-2.5 sm:py-3 ${themeModalPrimaryBtn} text-white font-bold rounded-xl transition-colors shadow-md flex items-center justify-center gap-2 text-sm sm:text-base`}
               >
-                <SafeIcon icon={Icons.Play} fallback="▶️" size={18} fill="currentColor" /> Tiếp tục chơi
+                <MenuIcon icon={Icons.Play} fallback="▶️" size={18} fill="currentColor" /> Tiếp tục chơi
               </button>
               <button
                 type="button"
@@ -769,7 +805,12 @@ export const GameMenu = ({
                 }}
                 className="w-full py-2.5 sm:py-3 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition-colors flex items-center justify-center gap-2 text-sm sm:text-base"
               >
-                <SafeIcon icon={Icons.RefreshCw || Icons.RefreshCcw} fallback="🔄" size={16} /> Bắt đầu ván mới
+                <MenuIcon
+                  icon={Icons.RefreshCw || Icons.RefreshCcw}
+                  fallback="🔄"
+                  size={16}
+                />{' '}
+                Bắt đầu ván mới
               </button>
               <button
                 type="button"
@@ -785,5 +826,10 @@ export const GameMenu = ({
     </div>
   );
 };
+
+if (typeof window !== 'undefined') {
+  window.GameMenu = GameMenu;
+  window.Block5_7_GameMenu = GameMenu;
+}
 
 export default GameMenu;

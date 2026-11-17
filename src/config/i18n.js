@@ -1,10 +1,3 @@
-/**
- * @file src/config/i18n.js
- * @description Chứa từ điển Đa ngôn ngữ (UI_TEXT) cho toàn bộ giao diện ứng dụng.
- * @origin Tầng 2 - Block 2.1a (Global Constants & i18n)
- */
-
-
 export const UI_TEXT = {
   en: {
     gameTitle: "Training Mode",
@@ -273,3 +266,5 @@ export const UI_TEXT = {
   }
 };
 
+
+export default UI_TEXT;

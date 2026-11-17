@@ -1,12 +1,3 @@
-/**
- * @file src/engines/microPrompts.js
- * @description Kho bẫy ngữ pháp vi phân (Micro-prompts) và Ma trận Trọng số (Weight Matrix).
- * @origin Tầng 2 - Block 2.9 (IoeDataEngine - MICRO_PROMPTS & Weight Filter)
- */
-
-// ==================================================================================
-// 1. KHO ĐẠN VI LỆNH (MICRO-PROMPTS REPOSITORY)
-// ==================================================================================
 export const MICRO_PROMPTS = {
   // ====================================================
   // GAME TRẮC NGHIỆM (QUIZ) - SINH ĐÁP ÁN NHIỄU
@@ -28,7 +19,6 @@ export const MICRO_PROMPTS = {
     zh_hsk1_serial_verb_order: { label: "Câu liên động", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Nhắm vào câu liên động. Hãy tạo nhiễu bằng cách đẩy cụm địa điểm ra phía sau động từ chính theo thói quen dịch word-by-word." },
     zh_hsk1_time_order: { label: "Trạng ngữ thời gian", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Nhắm vào trạng ngữ thời gian. Hãy tạo nhiễu bằng cách dời từ chỉ thời gian xuống cuối câu." },
     zh_hsk1_place_order: { label: "Trạng ngữ địa điểm (在)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Nhắm vào trạng ngữ địa điểm (在). Hãy tạo nhiễu bằng cách đặt cụm giới từ 在 + Địa điểm ra sau động từ." },
-    
     // Bẫy Tiếng Trung (HSK 2)
     zh_hsk2_pronoun_ta_mismatch: { label: "Đại từ chỉ người/vật", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Nhắm vào đại từ. Hãy tạo đáp án nhiễu bằng cách dùng sai đại từ chỉ người/vật (như dùng 它 cho người hoặc 他 cho con vật)." },
     zh_hsk2_pronoun_mei_measure: { label: "Đại từ 每", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Nhắm vào đại từ 每. Hãy tạo đáp án nhiễu bằng cách lược bỏ lượng từ đứng giữa chữ 每 và danh từ." },
@@ -47,7 +37,6 @@ export const MICRO_PROMPTS = {
     zh_hsk2_approx_duo_more10: { label: "Ước lượng số lớn (>=10)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Nhắm vào ước lượng số lớn (>=10). Hãy tạo đáp án nhiễu bằng cách đặt chữ 多 ra phía sau lượng từ." },
     zh_hsk2_prep_cong_li: { label: "Giới từ khoảng cách (从/离)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Nhắm vào giới từ khoảng cách. Hãy tạo đáp án nhiễu bằng cách hoán đổi cách dùng của 从 (điểm bắt đầu) và 离 (khoảng cách tĩnh)." },
     zh_hsk2_aspect_zhe_le: { label: "Trợ từ động thái (着/了)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Nhắm vào trợ từ động thái. Hãy tạo đáp án nhiễu bằng cách dùng 了 (đã xong) thay cho 着 (đang duy trì trạng thái)." },
-    
     // Bẫy Tiếng Trung (HSK Legacy - Dành cho HSK 3/4)
     zh_hsk_separable_obj: { label: "Động từ Ly hợp", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Mục tiêu là Động từ Ly hợp (như 帮忙, 结婚). Bạn hãy tạo đáp án nhiễu tự nhiên bằng cách gắn thêm tân ngữ trực tiếp vào ngay sau động từ ly hợp để mô phỏng lỗi sai người học hay mắc phải." },
     zh_hsk_adv_zhongyu: { label: "Phó từ 终于", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Trọng điểm là phó từ 终于. Bạn hãy khéo léo tạo đáp án nhiễu bằng cách đổi vị trí phó từ này ra sau động từ chính." },
@@ -72,7 +61,6 @@ export const MICRO_PROMPTS = {
     zh_hsk_comp_bi: { label: "Câu so sánh với 比", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Câu so sánh với 比. Bạn có thể tạo nhiễu bằng cách chèn thêm các phó từ chỉ mức độ (như 很, 非常) vào ngay trước tính từ." },
     zh_hsk_except_chule: { label: "Ngoại trừ 除了...以外", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Ngoại trừ 除了...以外. Hãy tạo nhiễu bằng cách ghép sai cặp hô ứng ở vế sau, ví dụ dùng 但是 thay cho 还/也." },
     general_trap: { label: "Bẫy từ vựng chung", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Hãy sáng tạo các đáp án nhiễu mang sắc thái ý nghĩa hoặc từ loại gần giống với câu gốc nhưng sai lệch một cách tinh tế." },
-    
     // Bẫy Tiếng Anh (Pre-A1)
     pre_a1_article_an: { label: "Mạo từ (A/An)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Nhắm vào Mạo từ (A/An). Bạn hãy tạo đáp án nhiễu bằng cách dùng sai mạo từ trước nguyên âm hoặc phụ âm để mô phỏng lỗi thường gặp." },
     pre_a1_plural_s: { label: "Danh từ số nhiều", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Mục tiêu là Danh từ số nhiều. Hãy sáng tạo đáp án nhiễu bằng cách không thêm 's' vào danh từ số nhiều, hoặc tự ý thêm 's' vào danh từ số ít." },
@@ -86,7 +74,6 @@ export const MICRO_PROMPTS = {
     pre_a1_prepositions: { label: "Giới từ vị trí", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Giới từ vị trí (in, on, under). Hãy sáng tạo đáp án nhiễu bằng cách thay đổi giới từ khiến cho logic vật lý trở nên vô lý." },
     pre_a1_yesno_order: { label: "Câu hỏi Yes/No", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Câu hỏi Yes/No. Hãy tạo nhiễu bằng cách giữ nguyên trật tự câu khẳng định và chỉ thêm dấu chấm hỏi ở cuối." },
     pre_a1_can_cant: { label: "Khả năng (Can/Can't)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Khả năng (Can/Can\\'t). Bạn hãy tạo đáp án nhiễu bằng cách đảo lộn sự thật hiển nhiên hoặc thêm chữ 'to' vào sau 'can'." },
-    
     // Bẫy Tiếng Anh (A1)
     eng_a1_pres_3rd_person: { label: "Động từ ngôi thứ 3 số ít", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Động từ ngôi thứ 3 số ít. Bạn hãy tạo đáp án nhiễu bằng cách bỏ quên đuôi 's/es' hoặc thêm sai quy tắc." },
     eng_a1_pres_tobe_verb_clash: { label: "Lỗi thừa To Be", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Lỗi thừa To Be. Hãy sáng tạo đáp án nhiễu bằng cách chèn thêm động từ To Be vào trước động từ thường một cách tự nhiên." },
@@ -108,7 +95,6 @@ export const MICRO_PROMPTS = {
     eng_a1_prep_place_vn: { label: "Giới từ nơi chốn", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Giới từ nơi chốn. Hãy sáng tạo đáp án nhiễu bằng cách dịch word-by-word từ tiếng Việt (vd: dùng 'on the tree' thay vì 'in the tree')." },
     eng_a1_conjunction_logic: { label: "Liên từ", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Liên từ. Bạn hãy tạo nhiễu bằng cách hoán đổi các liên từ chỉ nguyên nhân (because) và tương phản (but)." },
     eng_a1_wh_question_match: { label: "Từ để hỏi", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Từ để hỏi. Hãy tạo đáp án nhiễu bằng cách dùng từ Wh- không khớp với logic của câu trả lời." },
-    
     // Bẫy Tiếng Anh (A1+)
     eng_a1p_tense_clash: { label: "Xung đột thì", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Xung đột thì. Bạn hãy tạo đáp án nhiễu bằng cách dùng thì hiện tại đơn với dấu hiệu tiếp diễn, hoặc ngược lại." },
     eng_a1p_past_ed: { label: "Động từ quá khứ bất quy tắc", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Động từ quá khứ bất quy tắc. Hãy tạo đáp án nhiễu bằng cách tự ý thêm đuôi '-ed' vào động từ bất quy tắc." },
@@ -130,7 +116,6 @@ export const MICRO_PROMPTS = {
     eng_a1p_tag_question: { label: "Câu hỏi đuôi", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Câu hỏi đuôi. Hãy tạo đáp án nhiễu bằng cách dùng sai thể khẳng định/phủ định (ngược cực) ở phần đuôi." },
     eng_a1p_phrasal_prep: { label: "Cụm động từ", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Cụm động từ. Bạn hãy tạo nhiễu bằng cách bỏ quên giới từ đi kèm với động từ (vd: turn the TV thay vì turn on)." },
     eng_a1p_time_quarter: { label: "Thời gian (Past/To)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Thời gian. Hãy tạo đáp án nhiễu bằng cách đảo lộn vị trí của 'past' và 'to' khi nói giờ kém/giờ hơn." },
-    
     // Bẫy Tiếng Anh (A2)
     eng_a2_past_interrupt: { label: "Hành động cắt ngang", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Hành động cắt ngang. Bạn hãy tạo đáp án nhiễu bằng cách đảo ngược thì giữa hành động đang xảy ra (quá khứ tiếp diễn) và hành động cắt ngang (quá khứ đơn)." },
     eng_a2_pres_perf_form: { label: "Hiện tại hoàn thành", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Hiện tại hoàn thành. Hãy tạo đáp án nhiễu bằng cách lược bỏ trợ động từ have/has hoặc dùng dạng quá khứ V2 thay vì V3/ed." },
@@ -152,7 +137,6 @@ export const MICRO_PROMPTS = {
     eng_a2_few_little: { label: "A few/A little", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: A few/A little. Hãy tạo đáp án nhiễu bằng cách dùng sai 'a few' cho danh từ không đếm được hoặc ngược lại." },
     eng_a2_make_do_swap: { label: "Collocation Make/Do", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Collocation Make/Do. Bạn hãy sinh ra đáp án nhiễu bằng cách tráo đổi cách dùng giữa động từ 'make' và 'do' trong các cụm cố định." },
     eng_a2_phrasal_prep: { label: "Cụm động từ (Phrasal Verbs)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Cụm động từ (Phrasal Verbs). Hãy tạo đáp án nhiễu bằng cách thay thế sai giới từ đi kèm trong các cụm động từ quen thuộc." },
-    
     // Bẫy Tiếng Anh (General Legacy)
     eng_article_an: { label: "Mạo từ A/An", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Mạo từ A/An. Hãy tạo các đáp án nhiễu tự nhiên bằng cách dùng sai mạo từ trước nguyên âm/phụ âm." },
     eng_plural_s: { label: "Danh từ số nhiều", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Danh từ số nhiều. Bạn hãy sinh ra các đáp án nhiễu bằng cách áp dụng sai quy tắc thêm 's'/'es' hoặc chia sai danh từ bất quy tắc." },
@@ -186,7 +170,6 @@ export const MICRO_PROMPTS = {
     zh_hsk1_serial_verb_order: { label: "Câu liên động", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Hãy bóp méo câu bằng cách dời cụm từ chỉ địa điểm ra phía sau động từ chính." },
     zh_hsk1_time_order: { label: "Trạng ngữ thời gian", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Bạn hãy tạo lỗi sai bằng cách dời trạng ngữ chỉ thời gian xuống cuối câu." },
     zh_hsk1_place_order: { label: "Trạng ngữ địa điểm (在)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Hãy bóp méo câu bằng cách dời cụm giới từ 在 + Địa điểm ra phía sau động từ chính." },
-    
     // Bẫy Tiếng Trung (HSK 2)
     zh_hsk2_pronoun_ta_mismatch: { label: "Đại từ chỉ người/vật", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Hãy bóp méo câu bằng cách dùng sai đại từ chỉ người (他/她) cho đồ vật/động vật, hoặc ngược lại." },
     zh_hsk2_pronoun_mei_measure: { label: "Đại từ 每", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Hãy tạo lỗi sai bằng cách xóa bỏ lượng từ đứng giữa đại từ 每 và danh từ." },
@@ -205,7 +188,6 @@ export const MICRO_PROMPTS = {
     zh_hsk2_approx_duo_more10: { label: "Ước lượng số lớn (>=10)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Hãy bóp méo câu bằng cách dời chữ 多 ra sau lượng từ đối với số chẵn từ 10 trở lên." },
     zh_hsk2_prep_cong_li: { label: "Giới từ khoảng cách (从/离)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Hãy tạo lỗi sai bằng cách dùng Từ chỉ điểm xuất phát (从) thay cho Từ chỉ khoảng cách (离)." },
     zh_hsk2_aspect_zhe_le: { label: "Trợ từ động thái (着/了)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Hãy bóp méo câu bằng cách dùng trợ từ 了 thay cho trợ từ 着 trong ngữ cảnh đang duy trì trạng thái." },
-    
     // Bẫy Tiếng Trung (HSK Legacy - Dành cho HSK 3/4)
     zh_hsk_separable_obj: { label: "Động từ Ly hợp", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Mục tiêu là Động từ ly hợp. Bạn hãy khéo léo bóp méo câu gốc bằng cách gắn tân ngữ trực tiếp vào ngay sau động từ ly hợp để tạo một lỗi sai tự nhiên." },
     zh_hsk_adv_zhongyu: { label: "Phó từ 终于", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Nhắm vào phó từ 终于. Bạn hãy tạo một lỗi sai tinh tế bằng cách dịch chuyển vị trí của 终于 ra sau động từ chính." },
@@ -230,7 +212,6 @@ export const MICRO_PROMPTS = {
     zh_hsk_comp_bi: { label: "Câu so sánh với 比", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Câu so sánh 比. Hãy tạo lỗi sai bằng cách tự nhiên thêm phó từ mức độ (như 很 hoặc 非常) vào trước tính từ." },
     zh_hsk_except_chule: { label: "Ngoại trừ 除了...以外", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Cấu trúc 除了...以外. Bạn hãy tạo lỗi sai bằng cách thay thế chữ 还 hoặc 也 ở vế sau bằng chữ 但是." },
     general_mistake: { label: "Lỗi tổng hợp", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Lỗi tổng hợp. Hãy sáng tạo một lỗi sai duy nhất bằng cách thay đổi một từ vựng bất kỳ sao cho không phù hợp với văn cảnh." },
-    
     // Bẫy Tiếng Anh (Pre-A1)
     pre_a1_article_an: { label: "Mạo từ (A/An)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Mạo từ. Bạn hãy khéo léo tạo một lỗi sai bằng cách dùng sai mạo từ a/an trước từ bắt đầu bằng nguyên âm/phụ âm." },
     pre_a1_plural_s: { label: "Danh từ số nhiều", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Danh từ số nhiều. Hãy bóp méo câu bằng cách loại bỏ chữ 's' ở danh từ số nhiều, hoặc thêm 's' vào danh từ số ít." },
@@ -244,7 +225,6 @@ export const MICRO_PROMPTS = {
     pre_a1_prepositions: { label: "Giới từ vị trí", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Giới từ vị trí. Hãy thay thế in/on/under bằng một giới từ khác để tạo ra một ngữ cảnh vô lý." },
     pre_a1_yesno_order: { label: "Câu hỏi Yes/No", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Câu hỏi Yes/No. Bạn hãy bóp méo bằng cách xếp trật tự từ như câu khẳng định bình thường nhưng để dấu chấm hỏi ở cuối." },
     pre_a1_can_cant: { label: "Khả năng (Can/Can't)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Khả năng. Hãy tạo một lỗi sai bằng cách thêm giới từ 'to' vào ngay sau động từ khuyết thiếu can." },
-    
     // Bẫy Tiếng Anh (A1)
     eng_a1_pres_3rd_person: { label: "Động từ ngôi thứ 3 số ít", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Động từ ngôi thứ 3 số ít. Hãy bóp méo câu bằng cách lược bỏ 's/es' ở động từ chính, hoặc thêm 's' sai quy tắc." },
     eng_a1_pres_tobe_verb_clash: { label: "Lỗi thừa To Be", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Lỗi thừa To Be. Hãy bóp méo câu bằng cách chèn thừa động từ To Be vào trước động từ thường (ví dụ: I am like)." },
@@ -266,7 +246,6 @@ export const MICRO_PROMPTS = {
     eng_a1_prep_place_vn: { label: "Giới từ nơi chốn", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Giới từ nơi chốn. Hãy bóp méo câu bằng cách dịch word-by-word giới từ từ tiếng Việt (ví dụ: dùng on thay vì in)." },
     eng_a1_conjunction_logic: { label: "Liên từ", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Liên từ. Bạn hãy tạo lỗi sai bằng cách dùng sai liên từ chỉ nguyên nhân (because) thành tương phản (but) hoặc ngược lại." },
     eng_a1_wh_question_match: { label: "Từ để hỏi", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Từ để hỏi. Hãy bóp méo câu hỏi bằng cách dùng từ Wh- không phù hợp với câu trả lời tương ứng." },
-    
     // Bẫy Tiếng Anh (A1+)
     eng_a1p_tense_clash: { label: "Xung đột thì", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Xung đột thì. Bạn hãy tạo lỗi sai bằng cách dùng thì hiện tại đơn với dấu hiệu tiếp diễn, hoặc ngược lại." },
     eng_a1p_past_ed: { label: "Động từ quá khứ bất quy tắc", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Quá khứ bất quy tắc. Hãy bóp méo câu bằng cách gắn đuôi '-ed' vào một động từ bất quy tắc." },
@@ -288,7 +267,6 @@ export const MICRO_PROMPTS = {
     eng_a1p_tag_question: { label: "Câu hỏi đuôi", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Câu hỏi đuôi. Hãy bóp méo phần đuôi câu hỏi bằng cách giữ nguyên thể khẳng định/phủ định thay vì đảo cực." },
     eng_a1p_phrasal_prep: { label: "Cụm động từ", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Cụm động từ. Bạn hãy tạo lỗi sai bằng cách lược bỏ giới từ trong phrasal verb." },
     eng_a1p_time_quarter: { label: "Thời gian (Past/To)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Thời gian. Hãy làm sai lệch thời gian bằng cách đổi 'past' thành 'to' hoặc ngược lại." },
-    
     // Bẫy Tiếng Anh (A2)
     eng_a2_past_interrupt: { label: "Hành động cắt ngang", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Hành động cắt ngang. Bạn hãy tạo lỗi sai bằng cách đảo ngược thì giữa hành động đang xảy ra (quá khứ tiếp diễn) và hành động cắt ngang (quá khứ đơn)." },
     eng_a2_pres_perf_form: { label: "Hiện tại hoàn thành", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Hiện tại hoàn thành. Hãy bóp méo câu bằng cách lược bỏ trợ động từ have/has hoặc dùng quá khứ V2 thay vì V3/ed." },
@@ -310,7 +288,6 @@ export const MICRO_PROMPTS = {
     eng_a2_few_little: { label: "A few/A little", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: A few/A little. Hãy tạo lỗi sai bằng cách hoán đổi cách dùng 'a few' và 'a little' cho các loại danh từ." },
     eng_a2_make_do_swap: { label: "Collocation Make/Do", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Collocation Make/Do. Bạn hãy bóp méo câu bằng cách hoán đổi động từ 'make' và 'do' trong các cụm cố định." },
     eng_a2_phrasal_prep: { label: "Cụm động từ (Phrasal Verbs)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Cụm động từ. Hãy tạo lỗi sai bằng cách dùng sai giới từ đi kèm trong các Phrasal Verbs phổ biến." },
-    
     // Bẫy Tiếng Anh (General Legacy)
     eng_article_an: { label: "Mạo từ A/An", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Mạo từ A/An. Bạn hãy bóp méo câu bằng cách đảo ngược cách dùng mạo từ trước nguyên âm/phụ âm." },
     eng_plural_s: { label: "Danh từ số nhiều", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Danh từ số nhiều. Hãy tạo một lỗi sai bằng cách chia sai dạng số nhiều của danh từ bất quy tắc." },
@@ -344,7 +321,6 @@ export const MICRO_PROMPTS = {
     zh_hsk1_serial_verb_order: { label: "Câu liên động", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại Động từ đi lại (去/来). Hãy đưa ra các động từ nhiễu làm hỏng logic chuỗi hành động." },
     zh_hsk1_time_order: { label: "Trạng ngữ thời gian", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại Trạng ngữ thời gian. Hãy đưa ra các trạng từ nhiễu có mốc thời gian mâu thuẫn với câu." },
     zh_hsk1_place_order: { label: "Trạng ngữ địa điểm (在)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại Giới từ 在. Hãy đưa ra các giới từ nhiễu sai chức năng địa điểm." },
-    
     // Bẫy Tiếng Trung (HSK 2)
     zh_hsk2_pronoun_ta_mismatch: { label: "Đại từ chỉ người/vật", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại Đại từ. Hãy đưa ra các đại từ nhiễu sai bản chất người/vật (như 它 thay vì 他)." },
     zh_hsk2_pronoun_mei_measure: { label: "Đại từ 每", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại Lượng từ sau chữ 每. Hãy đưa ra các danh từ hoặc phó từ nhiễu để đánh lừa." },
@@ -363,7 +339,6 @@ export const MICRO_PROMPTS = {
     zh_hsk2_approx_duo_more10: { label: "Ước lượng số lớn (>=10)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại chữ 多. Hãy đưa ra các đáp án nhiễu đảo lộn vị trí của 多 và lượng từ." },
     zh_hsk2_prep_cong_li: { label: "Giới từ khoảng cách (从/离)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại Giới từ 离 hoặc 从. Hãy đưa ra giới từ còn lại làm đáp án nhiễu chính." },
     zh_hsk2_aspect_zhe_le: { label: "Trợ từ động thái (着/了)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại Trợ từ 着. Hãy đưa ra trợ từ 了 hoặc 过 làm đáp án nhiễu." },
-    
     // Bẫy Tiếng Trung (HSK Legacy - Dành cho HSK 3/4)
     zh_hsk_separable_obj: { label: "Động từ Ly hợp", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Vị trí đục lỗ là Động từ ly hợp. Hãy sáng tạo 3 đáp án nhiễu là các động từ ly hợp bị ghép dính tân ngữ sai quy tắc hoặc mang ý nghĩa không phù hợp ngữ cảnh." },
     zh_hsk_adv_zhongyu: { label: "Phó từ 终于", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Vị trí đục lỗ là Phó từ 终于. Bạn hãy sinh ra các phó từ nhiễu chỉ thời gian/mức độ mâu thuẫn với kết quả ở vế sau (như 已经, 正在)." },
@@ -388,7 +363,6 @@ export const MICRO_PROMPTS = {
     zh_hsk_comp_bi: { label: "Câu so sánh với 比", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại chữ 比. Hãy tạo các từ nối nhiễu sai hoàn toàn về ngữ cảnh so sánh (như 和, 跟)." },
     zh_hsk_except_chule: { label: "Ngoại trừ 除了...以外", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại cụm 除了 hoặc 以外. Hãy sinh ra các liên từ nhiễu có logic sai lệch hẳn (như 只有, 如果)." },
     general_blank: { label: "Đục lỗ Động từ/Tính từ", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Điểm đục lỗ là một Động từ/Tính từ then chốt. Hãy sáng tạo các đáp án nhiễu cùng từ loại nhưng mang ý nghĩa sai lệch với văn cảnh." },
-    
     // Bẫy Tiếng Anh (Pre-A1)
     pre_a1_article_an: { label: "Mạo từ (A/An)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Vị trí đục lỗ là Mạo từ. Hãy sinh ra các mạo từ hoặc đại từ nhiễu sai quy tắc để đánh lừa người học." },
     pre_a1_plural_s: { label: "Danh từ số nhiều", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại Danh từ. Bạn hãy sinh ra các danh từ nhiễu bị sai quy tắc số nhiều (thêm/bớt 's')." },
@@ -402,7 +376,6 @@ export const MICRO_PROMPTS = {
     pre_a1_prepositions: { label: "Giới từ vị trí", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại Giới từ. Bạn hãy sinh ra các giới từ vị trí nhiễu làm sai lệch tính chất vật lý của câu." },
     pre_a1_yesno_order: { label: "Câu hỏi Yes/No", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại Động từ To be ở đầu câu hỏi. Hãy đưa ra các to be chia sai hoặc từ để hỏi Wh- làm nhiễu." },
     pre_a1_can_cant: { label: "Khả năng (Can/Can't)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Vị trí đục lỗ là Can/Can\\'t. Bạn hãy đưa ra các đáp án nhiễu sai logic khả năng hoặc kèm theo chữ 'to'." },
-    
     // Bẫy Tiếng Anh (A1)
     eng_a1_pres_3rd_person: { label: "Động từ ngôi thứ 3 số ít", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại Động từ ngôi thứ 3 số ít. Hãy sinh ra các động từ nhiễu bị thiếu 's/es' hoặc chia sai quy tắc." },
     eng_a1_pres_tobe_verb_clash: { label: "Lỗi thừa To Be", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại Động từ thường. Bạn hãy sinh ra các đáp án nhiễu bị ghép thừa To Be vào trước động từ (vd: am like, is play)." },
@@ -424,7 +397,6 @@ export const MICRO_PROMPTS = {
     eng_a1_prep_place_vn: { label: "Giới từ nơi chốn", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại Giới từ nơi chốn. Bạn hãy sinh ra các giới từ nhiễu mang tính word-by-word từ tiếng Việt." },
     eng_a1_conjunction_logic: { label: "Liên từ", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại Liên từ. Hãy đưa ra các liên từ nhiễu mang nghĩa trái ngược với logic của hai vế câu." },
     eng_a1_wh_question_match: { label: "Từ để hỏi", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại Từ để hỏi. Bạn hãy sinh ra các từ Wh- nhiễu không phù hợp với thông tin ở câu trả lời." },
-    
     // Bẫy Tiếng Anh (A1+)
     eng_a1p_tense_clash: { label: "Xung đột thì", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại Động từ chính hoặc Trạng từ thời gian. Hãy sinh ra các đáp án nhiễu có thì mâu thuẫn với ngữ cảnh." },
     eng_a1p_past_ed: { label: "Động từ quá khứ bất quy tắc", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại Động từ quá khứ bất quy tắc. Hãy đưa ra các đáp án nhiễu bị gắn sai đuôi '-ed'." },
@@ -446,7 +418,6 @@ export const MICRO_PROMPTS = {
     eng_a1p_tag_question: { label: "Câu hỏi đuôi", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại phần Đuôi câu hỏi. Bạn hãy sinh ra các phần đuôi nhiễu không đảo cực với mệnh đề chính." },
     eng_a1p_phrasal_prep: { label: "Cụm động từ", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại Giới từ trong cụm động từ. Hãy đưa ra các giới từ sai hoặc đại từ làm nhiễu." },
     eng_a1p_time_quarter: { label: "Thời gian (Past/To)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại chữ 'past' hoặc 'to' chỉ thời gian. Bạn hãy hoán đổi chúng thành đáp án nhiễu." },
-    
     // Bẫy Tiếng Anh (A2)
     eng_a2_past_interrupt: { label: "Hành động cắt ngang", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại động từ chính. Bạn hãy sinh ra các đáp án nhiễu đảo ngược thì giữa quá khứ tiếp diễn và quá khứ đơn." },
     eng_a2_pres_perf_form: { label: "Hiện tại hoàn thành", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại Động từ V3/ed hoặc trợ động từ have/has. Hãy đưa ra các đáp án nhiễu chia sai dạng V2 hoặc thiếu trợ động từ." },
@@ -468,7 +439,6 @@ export const MICRO_PROMPTS = {
     eng_a2_few_little: { label: "A few/A little", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại A few/A little. Hãy đưa ra các lượng từ nhiễu hoán đổi cách dùng của danh từ đếm được và không đếm được." },
     eng_a2_make_do_swap: { label: "Collocation Make/Do", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại động từ 'make' hoặc 'do'. Bạn hãy sinh ra các đáp án nhiễu tráo đổi hai động từ này." },
     eng_a2_phrasal_prep: { label: "Cụm động từ (Phrasal Verbs)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại giới từ của Phrasal verb. Hãy đưa ra các giới từ nhiễu làm thay đổi sai lệch ý nghĩa của cụm động từ." },
-    
     // Bẫy Tiếng Anh (General Legacy)
     eng_article_an: { label: "Mạo từ A/An", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại Mạo từ A/An. Bạn hãy sinh ra các mạo từ hoặc từ chỉ lượng sai quy tắc để đánh lừa." },
     eng_plural_s: { label: "Danh từ số nhiều", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Đục lỗ tại Danh từ. Hãy tạo các đáp án nhiễu là dạng số nhiều bị chia sai của danh từ bất quy tắc." },
@@ -502,7 +472,6 @@ export const MICRO_PROMPTS = {
     zh_hsk1_serial_verb_order: { label: "Câu liên động", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Hãy sinh ra từ rác là giới từ 在 để dụ học viên ghép sai cụm địa điểm." },
     zh_hsk1_time_order: { label: "Trạng ngữ thời gian", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Hãy sinh ra từ rác là trạng từ thời gian sai mốc để làm rối loạn trật tự câu." },
     zh_hsk1_place_order: { label: "Trạng ngữ địa điểm (在)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Hãy sinh ra từ rác là chữ 从 hoặc 到 để bẫy học viên dùng sai giới từ 在." },
-    
     // Bẫy Tiếng Trung (HSK 2)
     zh_hsk2_pronoun_ta_mismatch: { label: "Đại từ chỉ người/vật", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Hãy sinh ra từ rác là đại từ 它/他/她 sai bản chất với đối tượng trong câu để bẫy người học." },
     zh_hsk2_pronoun_mei_measure: { label: "Đại từ 每", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Hãy sinh ra từ rác là chữ 每 hoặc một danh từ để dụ học viên ghép trực tiếp mà bỏ quên lượng từ." },
@@ -521,7 +490,6 @@ export const MICRO_PROMPTS = {
     zh_hsk2_approx_duo_more10: { label: "Ước lượng số lớn (>=10)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Hãy sinh ra từ rác là chữ 几 để làm nhiễu vị trí của chữ 多." },
     zh_hsk2_prep_cong_li: { label: "Giới từ khoảng cách (从/离)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Hãy sinh ra từ rác là chữ 从 để bẫy học viên dùng sai thay cho 离." },
     zh_hsk2_aspect_zhe_le: { label: "Trợ từ động thái (着/了)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Hãy sinh ra từ rác là chữ 了 để dụ học viên gắn sai vào câu đang duy trì trạng thái." },
-    
     // Bẫy Tiếng Trung (HSK Legacy - Dành cho HSK 3/4)
     zh_hsk_separable_obj: { label: "Động từ Ly hợp", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Trọng điểm là Động từ ly hợp. Bạn hãy sinh ra những từ rác là Đại từ nhân xưng hoặc Danh từ để dụ dỗ người học ghép nó trực tiếp vào ngay sau động từ ly hợp." },
     zh_hsk_adv_zhongyu: { label: "Phó từ 终于", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Mục tiêu là Phó từ 终于. Bạn hãy tạo từ rác là các trạng từ chỉ thời gian để đánh lừa người học dời 终于 ra sau động từ chính." },
@@ -546,7 +514,6 @@ export const MICRO_PROMPTS = {
     zh_hsk_comp_bi: { label: "Câu so sánh với 比", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Câu so sánh 比. Bạn hãy sinh ra từ rác là phó từ mức độ 很 hoặc 非常 để dụ học viên đặt vào trước tính từ so sánh." },
     zh_hsk_except_chule: { label: "Ngoại trừ 除了...以外", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Cấu trúc 除了...以外. Hãy tạo từ rác là liên từ 虽然 hoặc 但是 để thử thách sự nhạy bén về ngữ pháp của người học." },
     general_noise: { label: "Tạo nhiễu chung", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Tạo nhiễu chung. Bạn hãy sinh ra các từ rác là Hư từ (的, 了, 是) hoặc Giới từ (在, 比) không phù hợp với văn cảnh để tăng độ khó logic." },
-    
     // Bẫy Tiếng Anh (Pre-A1)
     pre_a1_article_an: { label: "Mạo từ (A/An)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Mạo từ. Bạn hãy sinh ra từ rác là mạo từ sai (ví dụ 'a' thay vì 'an') để dụ người học ghép sai." },
     pre_a1_plural_s: { label: "Danh từ số nhiều", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Số nhiều. Hãy tạo từ rác là dạng không có 's' hoặc có 's' dư thừa của danh từ trong câu." },
@@ -560,7 +527,6 @@ export const MICRO_PROMPTS = {
     pre_a1_prepositions: { label: "Giới từ vị trí", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Giới từ. Hãy tạo từ rác là các giới từ khác (như in/on/under/at) sai ngữ cảnh vật lý." },
     pre_a1_yesno_order: { label: "Câu hỏi Yes/No", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Câu hỏi. Bạn hãy sinh ra từ rác là trợ động từ Do/Does để làm nhiễu câu hỏi To be." },
     pre_a1_can_cant: { label: "Khả năng (Can/Can't)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Khả năng. Hãy tạo từ rác là chữ 'to' để dụ người học chèn vào sau chữ 'can'." },
-    
     // Bẫy Tiếng Anh (A1)
     eng_a1_pres_3rd_person: { label: "Động từ ngôi thứ 3 số ít", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Động từ ngôi thứ 3 số ít. Hãy sinh ra từ rác là dạng nguyên thể (không có s/es) của động từ chính trong câu." },
     eng_a1_pres_tobe_verb_clash: { label: "Lỗi thừa To Be", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Thừa To Be. Bạn hãy sinh ra từ rác là một động từ To Be (am/is/are) để dụ người học ghép thừa vào trước động từ thường." },
@@ -568,7 +534,7 @@ export const MICRO_PROMPTS = {
     eng_a1_adv_frequency_pos: { label: "Vị trí trạng từ tần suất", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Trạng từ tần suất. Bạn hãy sinh ra các đại từ rác để làm rối loạn trật tự ghép câu có trạng từ tần suất." },
     eng_a1_pres_cont_missing_be: { label: "Hiện tại tiếp diễn (Thiếu To Be)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Hiện tại tiếp diễn. Hãy tạo từ rác là các trợ động từ Do/Does để lừa người học thay thế cho To Be." },
     eng_a1_pres_cont_base_verb: { label: "Hiện tại tiếp diễn (Thiếu -ing)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Hiện tại tiếp diễn. Bạn hãy sinh ra từ rác là động từ nguyên thể (không có -ing) của động từ chính." },
-    eng_a1_tense_clash: { label: "Xung đột thì", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Xung đột thì. Hãy tạo từ rác là một trạng từ thời gian không khớp với thì của câu (vd: yesterday cho câu hiện tại)." },
+    eng_a1_tense_clash: { label: "Xung đột thì", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Xung đột thì. Hãy tạo từ rác là một trạng từ thời gian không ăn khớp với thì của câu (vd: yesterday cho câu hiện tại)." },
     eng_a1_past_tobe_agreement: { label: "Quá khứ To Be", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Quá khứ To Be. Bạn hãy sinh ra từ rác là was/were nhưng chia sai số ít/số nhiều so với chủ ngữ." },
     eng_a1_past_tobe_verb_clash: { label: "Quá khứ đơn (Thừa To Be)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Quá khứ đơn. Hãy tạo từ rác là was/were để lừa người học nhét thừa vào trước động từ V-ed." },
     eng_a1_past_missing_ed: { label: "Quá khứ đơn (Thiếu -ed)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Quá khứ đơn. Bạn hãy sinh ra từ rác là dạng nguyên thể hiện tại (không có -ed) của động từ quá khứ." },
@@ -582,7 +548,6 @@ export const MICRO_PROMPTS = {
     eng_a1_prep_place_vn: { label: "Giới từ nơi chốn", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Giới từ nơi chốn. Bạn hãy sinh ra từ rác là một giới từ mang tính dịch word-by-word từ tiếng Việt (ví dụ on)." },
     eng_a1_conjunction_logic: { label: "Liên từ", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Liên từ. Hãy tạo từ rác là một liên từ có ý nghĩa trái ngược với logic nối câu (như but thay vì because)." },
     eng_a1_wh_question_match: { label: "Từ để hỏi", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Từ để hỏi. Bạn hãy sinh ra từ rác là một từ Wh- không liên quan đến thông tin ở câu trả lời." },
-    
     // Bẫy Tiếng Anh (A1+)
     eng_a1p_tense_clash: { label: "Xung đột thì", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Xung đột thì. Bạn hãy sinh ra từ rác là một trạng từ thời gian không khớp với thì của câu (vd 'now' cho câu hiện tại đơn)." },
     eng_a1p_past_ed: { label: "Động từ quá khứ bất quy tắc", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Quá khứ bất quy tắc. Hãy tạo từ rác là một động từ bị gắn sai đuôi '-ed' thay vì V2." },
@@ -604,7 +569,6 @@ export const MICRO_PROMPTS = {
     eng_a1p_tag_question: { label: "Câu hỏi đuôi", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Câu hỏi đuôi. Hãy tạo từ rác là trợ động từ hoặc đại từ sai cực (phủ định/khẳng định) so với vế trước." },
     eng_a1p_phrasal_prep: { label: "Cụm động từ", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Cụm động từ. Bạn hãy sinh ra từ rác là các giới từ sai để làm hỏng cụm phrasal verb." },
     eng_a1p_time_quarter: { label: "Thời gian (Past/To)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Thời gian. Hãy tạo từ rác là 'past' (nếu câu dùng to) hoặc ngược lại để gây nhầm lẫn." },
-    
     // Bẫy Tiếng Anh (A2)
     eng_a2_past_interrupt: { label: "Hành động cắt ngang", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Hành động cắt ngang. Bạn hãy sinh ra từ rác là các trợ động từ (was/were, did) sai thì để lừa người học." },
     eng_a2_pres_perf_form: { label: "Hiện tại hoàn thành", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Hiện tại hoàn thành. Hãy tạo từ rác là trợ động từ 'did' hoặc dạng V2 của động từ chính." },
@@ -626,7 +590,6 @@ export const MICRO_PROMPTS = {
     eng_a2_few_little: { label: "A few/A little", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: A few/A little. Hãy tạo từ rác là 'few' hoặc 'little' đảo ngược cách dùng với danh từ." },
     eng_a2_make_do_swap: { label: "Collocation Make/Do", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Collocation Make/Do. Bạn hãy sinh ra từ rác là 'make' (nếu câu dùng do) hoặc ngược lại." },
     eng_a2_phrasal_prep: { label: "Cụm động từ (Phrasal Verbs)", prompt: "ĐỊNH HƯỚNG SÁNG TẠO: Cụm động từ (Phrasal Verbs). Hãy tạo từ rác là một giới từ sai (như on, at, in) để làm hỏng cụm phrasal verb." },
-    
     // Bẫy Tiếng Anh (General Legacy)
     eng_article_an: { label: "Mạo từ A/An", prompt: "MỤC TIÊU: Mạo từ A/An. YÊU CẦU: Sinh ra TỪ RÁC là mạo từ sai (vd: 'a' nếu danh từ bắt đầu bằng nguyên âm) để lừa học viên ghép sai." },
     eng_plural_s: { label: "Danh từ số nhiều", prompt: "MỤC TIÊU: Danh từ số nhiều. YÊU CẦU: Sinh ra TỪ RÁC là dạng có '-s' hoặc '-es' bị chia sai của danh từ trong câu." },
@@ -641,14 +604,12 @@ export const MICRO_PROMPTS = {
   }
 };
 
-// ==================================================================================
-// 2. MA TRẬN TRỌNG SỐ (WEIGHT MATRIX LOGIC)
-// ==================================================================================
-
-export const getLevelWeight = (levelStr) => {
-  if (!levelStr) return 99; // Nếu không có level, mặc định mở khóa tất cả
+// ====================================================
+// 2. API GIAO TIẾP VỚI TẦNG GIAO DIỆN (UI GETTER & WEIGHT MATRIX)
+// ====================================================
+const _parseSingleLevelWeight = (levelStr) => {
+  if (!levelStr) return 99;
   const l = String(levelStr).toLowerCase();
-  
   if (l.includes('level_1') || l.includes('kiddie') || l.includes('pre_a1')) return 1;
   if (l.includes('level_2') || l.includes('junior_basic') || l.includes('a1')) return 2;
   if (l.includes('level_3') || l.includes('junior_advanced') || l.includes('a1p')) return 3;
@@ -658,11 +619,19 @@ export const getLevelWeight = (levelStr) => {
   if (l.includes('level_7') || l.includes('breakthrough') || l.includes('c1')) return 7;
   if (l.includes('level_8') || l.includes('academic')) return 8;
   if (l.includes('level_9') || l.includes('expert') || l.includes('c2')) return 9;
-  
   return 99;
 };
 
-export const getGrammarTopicWeight = (key) => {
+export const _getLevelWeight = function (levelStr) {
+  if (!levelStr) return 99; // Nếu không có level, mặc định mở khóa tất cả
+  if (Array.isArray(levelStr)) {
+    if (levelStr.length === 0) return 99;
+    return Math.max(...levelStr.map((lvl) => _parseSingleLevelWeight(lvl)));
+  }
+  return _parseSingleLevelWeight(levelStr);
+};
+
+export const _getGrammarTopicWeight = function (key) {
   if (key.startsWith('general_')) return 0;
   if (key.startsWith('pre_a1') || key.startsWith('zh_hsk1')) return 1;
   if (key.startsWith('eng_a1_') || key.startsWith('zh_hsk2')) return 2;
@@ -672,7 +641,7 @@ export const getGrammarTopicWeight = (key) => {
   return 99;
 };
 
-export const getGrammarGroup = (key) => {
+export const _getGrammarGroup = function (key) {
   if (key.startsWith('zh_hsk1')) return 'HSK 1';
   if (key.startsWith('zh_hsk2')) return 'HSK 2';
   if (key.startsWith('zh_hsk')) return 'HSK 3/4';
@@ -684,27 +653,28 @@ export const getGrammarGroup = (key) => {
   return 'Chuyên đề Khác';
 };
 
-export const getGrammarTopics = (gameType, lang, currentLevel) => {
+export const getGrammarTopics = function (gameType, lang, currentLevel) {
   const pool = MICRO_PROMPTS[gameType];
   if (!pool) return [];
-  
   const isChinese = lang === 'zh';
   const isEnglish = lang === 'en';
-  const userWeight = getLevelWeight(currentLevel);
+  const userWeight = _getLevelWeight(currentLevel);
   const topics = [];
-  
+
   for (const key in pool) {
-    const topicWeight = getGrammarTopicWeight(key);
-    // Lưới lọc tuyệt đối: Loại bỏ các bẫy có trọng số lớn hơn trình độ người dùng
+    const topicWeight = _getGrammarTopicWeight(key);
+    // [BẢN VÁ V2.12] Lưới lọc tuyệt đối: Loại bỏ các bẫy có trọng số lớn hơn trình độ người dùng
     if (topicWeight > userWeight) continue;
-    
+
     if (isChinese && key.startsWith('zh_')) {
-      topics.push({ id: key, label: pool[key].label, group: getGrammarGroup(key) });
+      topics.push({ id: key, label: pool[key].label, group: _getGrammarGroup(key) });
     } else if (isEnglish && (key.startsWith('eng_') || key.startsWith('pre_'))) {
-      topics.push({ id: key, label: pool[key].label, group: getGrammarGroup(key) });
+      topics.push({ id: key, label: pool[key].label, group: _getGrammarGroup(key) });
     } else if (key.startsWith('general_')) {
-      topics.push({ id: key, label: pool[key].label, group: "Lỗi Phổ Biến (General)" });
+      topics.push({ id: key, label: pool[key].label, group: 'Lỗi Phổ Biến (General)' });
     }
   }
   return topics;
 };
+
+export default MICRO_PROMPTS;

@@ -1,245 +1,276 @@
-/**
- * @file src/features/games/ScrambleUI.jsx
- * @description Giao diện Setup & Bàn chơi của Mini-game Ghép Câu / Sắp Xếp Từ (Scramble Game).
- * @origin Tầng 5 - Block 5.3 (Scramble UI)
- */
+// ============================================================================
+// FILE 54/85: src/features/games/ScrambleUI.jsx
+// NGUỒN GỐC: tang_5.js (Block 5.3 - Scramble UI V1.10)
+// NHIỆM VỤ: Giao diện Cài đặt (ScrambleSetup) và Màn hình chơi chính
+//           (ScramblePlayScreen) cho trò chơi Ghép Câu (Scramble Game).
+// ============================================================================
 
-import React, { useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Icons } from '@/components/common/Icons';
 import { MenuToggle } from '@/components/common/Controls';
-import {
-  ResumeSessionBanner,
-  SourceModeSelector,
-  GrammarTrapSelector,
-  GameTopHUD
-} from './common/GameSharedUI';
+import { GlobalLoadingScreen } from '@/components/common/GlobalLoadingScreen';
+import { Utils } from '@/utils/helpers';
+import { getSafeLevelString } from './common/gameHelpers';
+
+// Đọc cấu hình đã lưu từ LocalStorage một cách an toàn
+const getSavedScrambleConfig = () => {
+  try {
+    const saved = localStorage.getItem('fc_scramble_config');
+    return saved ? JSON.parse(saved) : {};
+  } catch (e) {
+    console.warn('Load scramble config failed:', e);
+    return {};
+  }
+};
 
 // ============================================================================
-// 1. MÀN HÌNH CÀI ĐẶT GAME GHÉP CÂU (SCRAMBLE SETUP)
+// 1. MÀN HÌNH CÀI ĐẶT (SCRAMBLE SETUP)
 // ============================================================================
-export const ScrambleSetup = ({
-  config,
-  setConfig,
-  cardsCount = 0,
-  lang = 'en',
-  currentLevel,
-  setCurrentLevel,
-  currentTopic,
-  setCurrentTopic,
-  dataMode,
-  setDataMode,
-  savedSession,
-  onResumeSession,
-  onClearSession,
-  onStartGame,
-  onBack,
-  onMissingKey,
-  mainColor = 'blue',
-  t
-}) => {
-  const minRequiredCards = 1;
-  const canStart = config.sourceMode === 'ai' || cardsCount >= minRequiredCards;
+export const ScrambleSetup = ({ t, mainColor = 'orange', onStart, onBack }) => {
+  const initialConfig = getSavedScrambleConfig();
+
+  const [sourceMode, setSourceMode] = useState(() => initialConfig.sourceMode ?? 'card');
+  const [timerMode, setTimerMode] = useState(() => initialConfig.timerMode ?? false);
+  const [hardMode, setHardMode] = useState(() => initialConfig.hardMode ?? false);
+  const [aiMode, setAiMode] = useState(() => initialConfig.aiMode ?? false);
+  const [timeLimit, setTimeLimit] = useState(() => initialConfig.timeLimit ?? 60);
+  const [inputMethod, setInputMethod] = useState(() => initialConfig.inputMethod ?? 'tap');
+  const [autoReadAnswer, setAutoReadAnswer] = useState(() => initialConfig.autoReadAnswer ?? false);
+  const [suddenDeath, setSuddenDeath] = useState(() => initialConfig.suddenDeath ?? false);
+
+  const handleStart = () => {
+    const config = {
+      timerMode,
+      hardMode,
+      aiMode,
+      timeLimit,
+      inputMethod,
+      autoReadAnswer,
+      sourceMode,
+      suddenDeath
+    };
+    localStorage.setItem('fc_scramble_config', JSON.stringify(config));
+    if (onStart) onStart('scramble', config);
+  };
+
+  const handleHardModeChange = (val) => {
+    setHardMode(val);
+    if (!val) setAiMode(false);
+  };
 
   return (
-    <div className="w-full h-full bg-white rounded-2xl shadow-xl p-5 sm:p-6 flex flex-col justify-between overflow-y-auto custom-scrollbar border-2 border-gray-100 animate-in fade-in">
-      <div className="space-y-4">
-        {/* Header Setup */}
-        <div className="flex items-center justify-between border-b pb-3">
-          <div className="flex items-center gap-2.5">
-            <div className={`p-2.5 rounded-xl bg-${mainColor}-100 text-${mainColor}-600 shadow-sm`}>
-              <Icons.Shuffle size={22} />
-            </div>
-            <div className="text-left">
-              <h2 className="text-lg sm:text-xl font-black text-gray-800 leading-tight">
-                {t ? t('modeScramble') : 'Ghép Câu & Từ'}
-              </h2>
-              <p className="text-xs text-gray-500 font-medium">
-                {t ? t('descScramble') : 'Sắp xếp các mảnh từ thành câu/từ hoàn chỉnh'}
-              </p>
-            </div>
-          </div>
-
-          <button
-            onClick={onBack}
-            className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors"
-            title="Quay lại Menu Game"
-          >
-            <Icons.X size={22} />
-          </button>
-        </div>
-
-        {/* Banner Khôi phục phiên chơi cũ */}
-        <ResumeSessionBanner
-          savedSession={savedSession}
-          onResume={onResumeSession}
-          onClear={onClearSession}
-          mainColor={mainColor}
-        />
-
-        {/* Bộ chọn Nguồn Dữ Liệu (Thẻ của tôi vs AI Tự Sinh) */}
-        <SourceModeSelector
-          sourceMode={config.sourceMode}
-          setSourceMode={(val) => setConfig((prev) => ({ ...prev, sourceMode: val }))}
-          cardsCount={cardsCount}
-          minCards={minRequiredCards}
-          lang={lang}
-          currentLevel={currentLevel}
-          setCurrentLevel={setCurrentLevel}
-          currentTopic={currentTopic}
-          setCurrentTopic={setCurrentTopic}
-          dataMode={dataMode}
-          setDataMode={setDataMode}
-          mainColor={mainColor}
-          onMissingKey={onMissingKey}
-        />
-
-        {/* Bộ chọn Chuyên đề Bẫy Ngữ pháp (Khi dùng AI hoặc chế độ Khó) */}
-        {(config.sourceMode === 'ai' || config.difficulty === 'hard') && (
-          <GrammarTrapSelector
-            gameType="scramble"
-            lang={lang}
-            currentLevel={currentLevel}
-            selectedTrap={config.grammarId}
-            onSelectTrap={(val) => setConfig((prev) => ({ ...prev, grammarId: val }))}
-            mainColor={mainColor}
-          />
-        )}
-
-        {/* Các Tùy chọn Chế độ chơi */}
-        <div className="space-y-2.5 pt-1">
-          {/* Phương thức thao tác: Chạm chọn từ (Tap) vs Gõ phím (Type) */}
-          <div className="bg-gray-50 p-3 rounded-xl border border-gray-200 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-full bg-indigo-100 text-indigo-600">
-                <Icons.Keyboard size={18} />
-              </div>
-              <div className="text-left">
-                <div className="text-sm font-bold text-gray-700">Phương thức trả lời</div>
-                <div className="text-[11px] text-gray-500">
-                  {config.inputMethod === 'type'
-                    ? 'Tự gõ lại toàn bộ từ/câu bằng bàn phím'
-                    : 'Chạm chọn các mảnh từ bị xáo trộn'}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex bg-white p-1 rounded-lg border border-gray-200 shadow-sm shrink-0">
-              <button
-                type="button"
-                onClick={() => setConfig((prev) => ({ ...prev, inputMethod: 'tap' }))}
-                className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${
-                  config.inputMethod !== 'type'
-                    ? `bg-${mainColor}-600 text-white shadow-sm`
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                Chạm từ
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfig((prev) => ({ ...prev, inputMethod: 'type' }))}
-                className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${
-                  config.inputMethod === 'type'
-                    ? `bg-${mainColor}-600 text-white shadow-sm`
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                Gõ phím
-              </button>
-            </div>
-          </div>
-
-          {/* Độ khó: Dễ (Không có từ rác) vs Khó (Trộn thêm từ nhiễu) */}
-          {config.inputMethod !== 'type' && (
-            <div className="bg-gray-50 p-3 rounded-xl border border-gray-200 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-full bg-orange-100 text-orange-600">
-                  <Icons.Zap size={18} />
-                </div>
-                <div className="text-left">
-                  <div className="text-sm font-bold text-gray-700">Độ khó mảnh ghép</div>
-                  <div className="text-[11px] text-gray-500">
-                    {config.difficulty === 'hard'
-                      ? 'Khó: Cài thêm các mảnh từ rác gây nhiễu'
-                      : 'Dễ: Chỉ chứa đúng các mảnh của câu gốc'}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex bg-white p-1 rounded-lg border border-gray-200 shadow-sm shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setConfig((prev) => ({ ...prev, difficulty: 'easy' }))}
-                  className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${
-                    config.difficulty === 'easy'
-                      ? 'bg-green-500 text-white shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  Dễ
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfig((prev) => ({ ...prev, difficulty: 'hard' }))}
-                  className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${
-                    config.difficulty === 'hard'
-                      ? 'bg-red-500 text-white shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  Khó (+Bẫy)
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Chế độ Vô tận (Endless Mode) */}
-          <MenuToggle
-            active={config.isEndless}
-            setActive={(val) => setConfig((prev) => ({ ...prev, isEndless: val }))}
-            icon={Icons.InfinityIcon}
-            color={mainColor}
-            title="Chế độ Vô tận (Endless)"
-            subtitle={
-              config.isEndless
-                ? 'Chơi liên tục không giới hạn số câu'
-                : `Chơi theo phiên (${config.totalQuestions || 20} câu)`
-            }
-          />
-
-          {/* Giới hạn thời gian */}
-          <MenuToggle
-            active={config.timerEnabled}
-            setActive={(val) => setConfig((prev) => ({ ...prev, timerEnabled: val }))}
-            icon={Icons.Clock}
-            color="orange"
-            title="Đếm ngược thời gian"
-            subtitle={
-              config.timerEnabled
-                ? `Giới hạn ${config.timeLimit || 45} giây mỗi câu`
-                : 'Tắt đồng hồ đếm ngược'
-            }
-          />
-        </div>
+    <div className="relative z-10 flex flex-col items-center w-full max-w-sm h-full animate-in slide-in-from-right-8">
+      <div className="w-full flex items-center justify-between mb-6 shrink-0 mt-2">
+        <button
+          type="button"
+          onClick={onBack}
+          className="p-2 rounded-full hover:bg-gray-100 text-gray-500"
+          title={t ? t('backMenu') : 'Quay lại'}
+        >
+          <Icons.ChevronLeft size={24} />
+        </button>
+        <h2 className="text-xl font-bold text-gray-800">Cấu hình Ghép Câu</h2>
+        <div className="w-10"></div>
       </div>
 
-      {/* Footer Nút Bắt đầu */}
-      <div className="pt-4 mt-4 border-t border-gray-100">
-        {!canStart && (
-          <p className="text-xs font-bold text-red-500 text-center mb-2">
-            ⚠️ Danh sách học đang trống! Hãy thêm thẻ hoặc chuyển sang chế độ AI Tự Sinh.
-          </p>
-        )}
+      <div className="w-full space-y-3 flex-1 overflow-y-auto custom-scrollbar p-1 pb-4">
+        {/* Bảng chọn Nguồn dữ liệu */}
+        <div className="mb-2">
+          <label className="block text-sm font-semibold text-gray-700 mb-2">
+            Nguồn câu hỏi
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setSourceMode('card')}
+              className={`p-2 rounded-2xl border-2 flex flex-col items-center gap-1 transition-all ${
+                sourceMode === 'card'
+                  ? `border-${mainColor}-500 bg-${mainColor}-50 shadow-sm`
+                  : 'border-gray-100 bg-white opacity-60 hover:opacity-100'
+              } hover:scale-105`}
+            >
+              <Icons.Layers
+                size={24}
+                className={sourceMode === 'card' ? `text-${mainColor}-600` : 'text-gray-400'}
+              />
+              <div className="text-center">
+                <div className="font-bold text-gray-800 text-sm">Thẻ của tôi</div>
+                <div className="text-[10px] text-gray-500">Ghép câu/từ có sẵn</div>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSourceMode('ai_pure');
+                setInputMethod('tap');
+                setAiMode(false);
+              }}
+              className={`p-2 rounded-2xl border-2 flex flex-col items-center gap-1 transition-all ${
+                sourceMode === 'ai_pure'
+                  ? 'border-blue-500 bg-blue-50 shadow-sm'
+                  : 'border-gray-100 bg-white opacity-60 hover:opacity-100'
+              } hover:scale-105`}
+            >
+              <Icons.Sparkles
+                size={24}
+                className={sourceMode === 'ai_pure' ? 'text-blue-600' : 'text-gray-400'}
+              />
+              <div className="text-center">
+                <div className="font-bold text-gray-800 text-sm">AI Tự Sinh</div>
+                <div className="text-[10px] text-gray-500">Tạo câu đố mới vô tận</div>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        {/* Phương thức trả lời */}
+        <div>
+          <label className="block text-sm font-semibold text-gray-700 mb-2 mt-2">
+            Cách trả lời (Chốt khi bắt đầu)
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-2">
+            <button
+              type="button"
+              onClick={() => setInputMethod('tap')}
+              className={`p-3 rounded-xl border-2 flex flex-col items-center justify-center text-center transition-all ${
+                inputMethod === 'tap'
+                  ? 'border-blue-500 bg-blue-50 text-blue-700 ring-2 ring-blue-200'
+                  : 'border-gray-200 hover:border-blue-300 bg-white text-gray-500'
+              }`}
+            >
+              <span className="text-2xl mb-1">🖱️</span>
+              <span className="font-bold text-xs">Chạm thẻ</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setInputMethod('type');
+                setAiMode(false);
+              }}
+              className={`p-3 rounded-xl border-2 flex flex-col items-center justify-center text-center transition-all ${
+                inputMethod === 'type'
+                  ? 'border-green-500 bg-green-50 text-green-700 ring-2 ring-green-200'
+                  : 'border-gray-200 hover:border-green-300 bg-white text-gray-500'
+              }`}
+            >
+              <span className="text-2xl mb-1">⌨️</span>
+              <span className="font-bold text-xs">Gõ phím</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setInputMethod('voice');
+                setAiMode(false);
+              }}
+              className={`p-3 rounded-xl border-2 flex flex-col items-center justify-center text-center transition-all ${
+                inputMethod === 'voice'
+                  ? 'border-purple-500 bg-purple-50 text-purple-700 ring-2 ring-purple-200'
+                  : 'border-gray-200 hover:border-purple-300 bg-white text-gray-500'
+              }`}
+            >
+              <span className="text-2xl mb-1">🎙️</span>
+              <span className="font-bold text-xs">Giọng nói</span>
+            </button>
+          </div>
+        </div>
+
+        <MenuToggle
+          active={autoReadAnswer}
+          setActive={setAutoReadAnswer}
+          icon={Icons.Volume2}
+          color="pink"
+          title="Đọc lại đáp án"
+          subtitle="Tự động đọc to khi ghép đúng"
+        />
+
+        <MenuToggle
+          active={hardMode}
+          setActive={handleHardModeChange}
+          icon={Icons.Layers}
+          color="red"
+          title="Chế độ Khó (Hard Mode)"
+          subtitle={
+            hardMode
+              ? inputMethod === 'tap'
+                ? 'Có từ nhiễu & Khóa trợ giúp'
+                : 'Khóa trợ giúp (Không tự đọc)'
+              : inputMethod === 'tap'
+              ? 'Chỉ gồm từ trong câu'
+              : 'Cơ bản (Có hỗ trợ âm thanh)'
+          }
+        />
+
+        <MenuToggle
+          active={aiMode}
+          setActive={setAiMode}
+          icon={Icons.Sparkles}
+          color="purple"
+          title="Thử thách AI"
+          subtitle={
+            !hardMode
+              ? '(Yêu cầu bật Chế độ Khó)'
+              : inputMethod !== 'tap'
+              ? '(Chỉ hỗ trợ Chạm thẻ)'
+              : 'AI tạo bẫy ngữ pháp (cho câu văn)'
+          }
+          disabled={!hardMode || inputMethod !== 'tap'}
+        />
+
+        <MenuToggle
+          active={suddenDeath}
+          setActive={setSuddenDeath}
+          icon={Icons.AlertCircle}
+          color="slate"
+          title="Chế độ Địa ngục"
+          subtitle="Sai 1 lần là mất điểm ngay lập tức"
+        />
+
+        <MenuToggle
+          active={timerMode}
+          setActive={setTimerMode}
+          icon={Icons.Clock}
+          color="orange"
+          title="Giới hạn thời gian"
+          subtitle={timerMode ? `${timeLimit} giây / câu` : 'Thoải mái thời gian'}
+          extra={
+            <div className="mt-3 pt-2 border-t border-orange-100 flex justify-between items-center animate-in fade-in">
+              <span className="text-[10px] font-bold text-orange-400 uppercase">
+                Chọn thời gian:
+              </span>
+              <div className="flex gap-1">
+                {[20, 30, 60, 90, 120].map((sec) => (
+                  <button
+                    key={sec}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setTimeLimit(sec);
+                    }}
+                    className={`px-3 py-1 text-xs font-bold rounded-lg border transition-all ${
+                      timeLimit === sec
+                        ? 'bg-orange-500 text-white border-orange-500 shadow-md'
+                        : 'bg-white text-gray-500 border-gray-200 hover:bg-orange-50'
+                    }`}
+                  >
+                    {sec}s
+                  </button>
+                ))}
+              </div>
+            </div>
+          }
+        />
+      </div>
+
+      <div className="w-full mt-2 pt-4 border-t border-gray-100 space-y-3 bg-white pb-safe shrink-0">
         <button
-          onClick={onStartGame}
-          disabled={!canStart}
-          className={`w-full py-3.5 rounded-xl font-black text-white shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 text-base ${
-            canStart
-              ? `bg-${mainColor}-600 hover:bg-${mainColor}-700 shadow-${mainColor}-200`
-              : 'bg-gray-300 cursor-not-allowed'
-          }`}
+          type="button"
+          onClick={handleStart}
+          className={`w-full py-4 bg-${mainColor}-600 text-white rounded-xl font-bold shadow-lg hover:bg-${mainColor}-700 flex items-center justify-center gap-2 active:scale-95 transition-transform`}
         >
-          <Icons.Play size={20} fill="currentColor" /> BẮT ĐẦU GHÉP CÂU
+          <Icons.Play size={24} /> BẮT ĐẦU NGAY
         </button>
       </div>
     </div>
@@ -247,298 +278,798 @@ export const ScrambleSetup = ({
 };
 
 // ============================================================================
-// 2. BÀN CHƠI GHÉP CÂU (SCRAMBLE BOARD)
+// 2. MÀN HÌNH CHƠI CHÍNH (SCRAMBLE PLAY SCREEN)
 // ============================================================================
-export const ScrambleBoard = ({
-  currentIndex = 0,
-  totalQuestions = 20,
-  isEndless = false,
-  score = 0,
-  streak = 0,
-  timeLeft = null,
-  ammoCount = 0,
-  isAiSource = false,
-  currentCard = null,
-  inputMethod = 'tap',
-  poolTokens = [],
-  selectedTokens = [],
-  typedAnswer = '',
-  setTypedAnswer,
-  answerStatus = null, // null | 'correct' | 'wrong'
-  grammarExplanation = '',
-  isExplaining = false,
-  cooldownLeft = 0,
-  onSelectPoolToken,
-  onRemoveSelectedToken,
-  onClearSelected,
-  onCheckAnswer,
-  onNextQuestion,
-  onExplainGrammar,
-  onSpeak,
-  onSaveWord,
-  onOpenHanzi,
-  onExit,
-  fontFamily = 'inherit',
+export const ScramblePlayScreen = ({
+  t,
+  mainColor = 'orange',
   lang = 'en',
-  mainColor = 'blue',
-  t
+  settings,
+  config,
+  isPaused,
+  timerMode,
+  timeLimit,
+  timeLeft,
+  inputMethod,
+  isGenerating,
+  aiCountdown,
+  gameState,
+  setGameState,
+  stats,
+  difficulty,
+  inputBuffer,
+  setInputBuffer,
+  typeInputRef,
+  isListening,
+  showExplainModal,
+  setShowExplainModal,
+  aiExplanation,
+  isAiExplaining,
+  onBack,
+  onEndGame,
+  onPause,
+  onPlay,
+  onBookmark,
+  triggerAutoSave,
+  checkAnswer,
+  toggleMic,
+  handleSkip,
+  onDragStart,
+  onDragEnter,
+  onDragEnd,
+  onTouchStart,
+  onTouchMove,
+  onTouchEnd,
+  handleExplain,
+  nextRound,
+  isBookmarked,
+  handleAddPunctuation,
+  resultTimer,
+  isResultPaused,
+  toggleResultPause,
+  queueLength,
+  aiWaitTime
 }) => {
-  const inputRef = useRef(null);
+  const [showConfirmEnd, setShowConfirmEnd] = useState(false);
 
-  useEffect(() => {
-    if (inputMethod === 'type' && answerStatus === null) {
-      setTimeout(() => inputRef.current?.focus(), 80);
+  const totalPlayed = (stats?.correct || 0) + (stats?.wrong || 0);
+  const accuracy =
+    totalPlayed > 0 ? Math.round(((stats?.correct || 0) / totalPlayed) * 100) : 0;
+
+  const getTimerColor = (time, total) => {
+    const ratio = time / (total || 60);
+    if (ratio > 0.6) return 'text-green-600';
+    if (ratio > 0.3) return 'text-orange-500';
+    return 'text-red-600 animate-pulse';
+  };
+
+  const containerWidthClass = 'max-w-5xl';
+  const safeLevelStr = getSafeLevelString(config?.level, '');
+
+  const renderChunk = (chunk, isFromPool) => {
+    const isSpace = chunk.text === ' ';
+    const isPunct = chunk.isPunct;
+    return (
+      <div
+        style={{
+          touchAction: 'none',
+          fontFamily: Utils.getFontFamily(settings),
+          fontWeight: settings?.fontWeight || 'bold',
+          fontSize: settings?.fontSize ? `${settings.fontSize}rem` : '1.5rem'
+        }}
+        className={`px-3 py-1.5 rounded-lg shadow transition-all select-none ${
+          isSpace
+            ? 'bg-gray-200 border-2 border-dashed border-gray-400 text-transparent min-w-[30px] flex justify-center items-center'
+            : isFromPool
+            ? 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 cursor-pointer'
+            : isPunct
+            ? 'bg-gray-700 text-white cursor-grab active:cursor-grabbing'
+            : `bg-${mainColor}-500 text-white cursor-grab active:cursor-grabbing`
+        }`}
+      >
+        {isSpace ? '␣' : chunk.text}
+      </div>
+    );
+  };
+
+  if (isGenerating && (!gameState?.origin || aiCountdown > 0)) {
+    if (config?.sourceMode === 'card' && !config?.aiMode) {
+      return (
+        <div className="w-full h-full bg-gray-50 flex items-center justify-center pointer-events-none"></div>
+      );
     }
-  }, [currentIndex, inputMethod, answerStatus]);
+    return (
+      <GlobalLoadingScreen
+        onCancel={() => onEndGame && onEndGame(stats)}
+        queueLength={queueLength}
+        text={
+          config?.sourceMode === 'ai_pure'
+            ? 'AI đang sáng tác câu đố...'
+            : 'Đang thiết lập trò chơi...'
+        }
+        mainColor={mainColor}
+        levelStr={
+          config?.sourceMode === 'ai_pure' && safeLevelStr
+            ? safeLevelStr.replace('level_', '').replace(/_/g, ' ').toUpperCase()
+            : ''
+        }
+      />
+    );
+  }
 
-  const originCard = currentCard?.origin || currentCard || {};
-  const promptMeaning = originCard.definition || 'Sắp xếp thành từ/câu hoàn chỉnh';
-  const targetTerm = originCard.term || '';
+  if (!isGenerating && !gameState?.origin) {
+    return (
+      <div className="w-full h-full bg-gray-50 rounded-2xl shadow-xl flex flex-col border-2 border-gray-200 items-center justify-center animate-in fade-in p-6 text-center">
+        <Icons.AlertCircle size={48} className="text-red-500 mb-4" />
+        <h3 className="text-xl font-bold text-gray-800 mb-2">Lỗi nạp dữ liệu</h3>
+        <p className="text-gray-600 mb-6 text-sm max-w-sm">
+          Hệ thống không thể tải được câu hỏi. Vui lòng kiểm tra lại kết nối mạng hoặc thử lại.
+        </p>
+        <button
+          type="button"
+          onClick={() => onEndGame && onEndGame(stats)}
+          className="px-6 py-3 bg-red-600 text-white font-bold rounded-xl shadow-lg hover:bg-red-700 transition-colors"
+        >
+          Thoát về Menu
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <div className="w-full h-full bg-white rounded-2xl shadow-xl p-4 sm:p-6 flex flex-col justify-between border-2 border-gray-100 overflow-hidden animate-in fade-in">
-      {/* Thanh Top HUD Dùng chung */}
-      <GameTopHUD
-        onExit={onExit}
-        currentRound={currentIndex + 1}
-        maxRounds={totalQuestions}
-        isEndless={isEndless}
-        score={score}
-        streak={streak}
-        timeLeft={timeLeft}
-        ammoCount={ammoCount}
-        isAiSource={isAiSource}
-        onSaveWord={onSaveWord}
-        onOpenHanzi={onOpenHanzi}
-        lang={lang}
-        mainColor={mainColor}
-      />
-
-      {/* Khu vực trung tâm bàn chơi */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4 pr-1 my-1 flex flex-col justify-center">
-        {/* Đề bài: Nghĩa Tiếng Việt + Nút nghe gợi ý */}
-        <div className={`p-4 rounded-2xl bg-${mainColor}-50/70 border border-${mainColor}-100 text-center relative`}>
-          <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">
-            {t ? t('meaning') : 'Nghĩa câu / từ mục tiêu'}
+    <div
+      className={`w-full h-full flex flex-col items-center bg-${mainColor}-50 rounded-2xl shadow-xl border-2 border-gray-200 overflow-hidden relative animate-in`}
+    >
+      {/* POPUP Xác nhận thoát Game */}
+      {showConfirmEnd && (
+        <div className="absolute inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center animate-in fade-in p-4">
+          <div className="bg-white p-6 rounded-2xl shadow-2xl max-w-sm w-full text-center border-2 border-red-100 flex flex-col items-center">
+            <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mb-4">
+              <Icons.AlertCircle size={32} />
+            </div>
+            <h3 className="text-xl font-black text-gray-800 mb-2">Kết thúc sớm?</h3>
+            <p className="text-gray-600 text-sm mb-6">
+              Tiến trình của câu hỏi hiện tại sẽ không được lưu lại. Bạn có chắc chắn muốn thoát?
+            </p>
+            <div className="flex w-full gap-3">
+              <button
+                type="button"
+                onClick={() => setShowConfirmEnd(false)}
+                className="flex-1 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition-colors"
+              >
+                Chơi tiếp
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowConfirmEnd(false);
+                  if (onEndGame) onEndGame(stats);
+                }}
+                className="flex-1 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-colors shadow-lg shadow-red-200"
+              >
+                Thoát ngay
+              </button>
+            </div>
           </div>
-          <div className="text-base sm:text-xl font-black text-gray-800 leading-snug break-words">
-            {promptMeaning}
-          </div>
+        </div>
+      )}
 
-          {onSpeak && targetTerm && (
+      {/* Cơ chế JIT/Lazy Load mượt mà */}
+      {isGenerating && gameState.origin && (
+        <div className="absolute inset-0 z-[150] bg-white/30 backdrop-blur-[2px] flex items-center justify-center animate-in fade-in duration-300">
+          <div
+            className={`px-5 py-3 bg-white rounded-2xl shadow-xl border-2 border-${mainColor}-100 flex items-center gap-3`}
+          >
+            <div
+              className={`w-5 h-5 border-4 border-${mainColor}-200 border-t-${mainColor}-600 rounded-full animate-spin`}
+            ></div>
+            <span className={`font-bold text-${mainColor}-700 text-sm`}>
+              AI đang dịch câu mới...
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Màn hình Tạm dừng */}
+      {isPaused && (
+        <div className="absolute inset-0 z-40 bg-white/60 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in">
+          <div className="bg-white p-6 rounded-2xl shadow-2xl border-2 border-gray-100 flex flex-col items-center gap-4">
+            <h3 className="text-2xl font-black text-gray-700 tracking-widest uppercase">
+              TẠM DỪNG
+            </h3>
             <button
               type="button"
-              onClick={() => onSpeak(targetTerm)}
-              className={`mt-2.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white text-${mainColor}-600 border border-${mainColor}-200 text-xs font-bold shadow-sm hover:bg-${mainColor}-50 transition-all active:scale-95`}
+              onClick={onPause}
+              className={`w-16 h-16 rounded-full bg-${mainColor}-600 text-white flex items-center justify-center shadow-lg hover:scale-110 transition-transform`}
             >
-              <Icons.Volume2 size={14} />
-              <span>{t ? t('listenAgain') : 'Nghe phát âm'}</span>
+              <Icons.Play size={32} fill="currentColor" />
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* HEADER */}
+      <div className="w-full bg-white border-b p-3 flex justify-between items-center z-10 shadow-sm">
+        <div className="flex items-center gap-2 w-1/4">
+          <button
+            type="button"
+            onClick={onBack}
+            className="text-gray-500 hover:text-gray-700 flex items-center gap-1 font-bold text-sm bg-gray-50 px-2 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors"
+          >
+            <Icons.ChevronLeft size={18} />
+            <span className="hidden sm:inline">{t ? t('backMenu') : 'Menu'}</span>
+          </button>
+        </div>
+
+        <div className="flex-1 text-center flex flex-col items-center">
+          <h2 className={`font-black text-${mainColor}-700 text-lg tracking-tight uppercase`}>
+            {t ? t('modeScramble') : 'Ghép Câu'}
+          </h2>
+          {timerMode && (
+            <span
+              className={`text-[11px] font-mono font-bold ${getTimerColor(
+                timeLeft,
+                timeLimit
+              )} flex items-center gap-1 bg-gray-50 px-2 py-0.5 rounded-full mt-0.5 border border-gray-200`}
+            >
+              <Icons.Clock size={12} /> {timeLeft}s
+            </span>
           )}
         </div>
 
-        {/* Khu vực lắp ráp câu (Tap Mode) hoặc Ô gõ chữ (Type Mode) */}
-        {inputMethod === 'type' ? (
-          <div className="space-y-2">
-            <textarea
-              ref={inputRef}
-              rows={3}
-              disabled={answerStatus !== null}
-              value={typedAnswer}
-              onChange={(e) => setTypedAnswer(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  if (answerStatus === null) onCheckAnswer();
-                  else if (cooldownLeft === 0) onNextQuestion();
-                }
-              }}
-              style={{ fontFamily }}
-              placeholder="Gõ câu hoặc từ trả lời của bạn vào đây..."
-              className={`w-full p-4 rounded-2xl border-2 text-base sm:text-lg font-bold outline-none resize-none transition-all ${
-                answerStatus === 'correct'
-                  ? 'bg-green-50 border-green-500 text-green-800'
-                  : answerStatus === 'wrong'
-                  ? 'bg-red-50 border-red-500 text-red-800'
-                  : `bg-gray-50 border-gray-200 focus:bg-white focus:border-${mainColor}-400`
-              }`}
-            />
+        <div className="w-1/4 flex justify-end"></div>
+      </div>
+
+      {/* KHU VỰC THÔNG TIN & THỐNG KÊ */}
+      <div className="flex-1 w-full overflow-y-auto custom-scrollbar p-4 flex flex-col items-center gap-4">
+        <div
+          className={`w-full flex justify-between items-center transition-all duration-300 ${containerWidthClass}`}
+        >
+          <div className="flex gap-2 text-xs font-bold items-center">
+            <span className="text-green-600 bg-green-100 px-2 py-1 rounded border border-green-200 flex items-center gap-1">
+              <Icons.CheckCircle size={14} /> {stats.correct}
+            </span>
+            <span className="text-red-500 bg-red-100 px-2 py-1 rounded border border-red-200 flex items-center gap-1">
+              <Icons.X size={14} /> {stats.wrong}
+            </span>
+            <span className="text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-100 flex items-center gap-1">
+              🎯 {accuracy}%
+            </span>
           </div>
-        ) : (
-          <>
-            {/* Khay chứa các từ đã chọn */}
-            <div
-              className={`min-h-[84px] p-3.5 rounded-2xl border-2 border-dashed flex flex-wrap items-center justify-center gap-2 transition-all ${
-                answerStatus === 'correct'
-                  ? 'bg-green-50 border-green-400'
-                  : answerStatus === 'wrong'
-                  ? 'bg-red-50 border-red-400'
-                  : 'bg-gray-50/80 border-gray-300'
+
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {/* Nhãn nguồn gốc */}
+            {gameState.origin?._isRescued ? (
+              <span
+                className="text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1 shadow-sm bg-orange-100 text-orange-700 border border-orange-200"
+                title="Sử dụng dữ liệu dự phòng do mất kết nối"
+              >
+                <Icons.AlertCircle size={12} className="text-orange-500" /> Nguồn: Dự phòng
+              </span>
+            ) : gameState.isAiGenerated ? (
+              <span
+                className="text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1 shadow-sm bg-indigo-100 text-indigo-700 border border-indigo-200"
+                title="Câu hỏi được tạo bởi AI"
+              >
+                <Icons.Sparkles size={12} className="text-indigo-500" /> Nguồn: AI
+              </span>
+            ) : (
+              <span
+                className="text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1 shadow-sm bg-slate-100 text-slate-600 border border-slate-200"
+                title="Trích xuất từ Bộ thẻ"
+              >
+                <Icons.Layers size={12} className="text-slate-400" /> Nguồn: Thẻ gốc
+              </span>
+            )}
+
+            {/* Băng đạn AI */}
+            {(config?.aiMode || config?.sourceMode === 'ai_pure') && queueLength > 0 && (
+              <span
+                className="text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1 shadow-sm bg-blue-50 text-blue-600 border border-blue-200"
+                title={`Đã nạp sẵn ${queueLength} vòng`}
+              >
+                <Icons.Database size={12} className="text-blue-500" /> Đã nạp: {queueLength}
+              </span>
+            )}
+
+            {/* Phanh AI */}
+            {aiWaitTime > 0 && (
+              <span
+                className="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1 shadow-sm bg-indigo-50 text-indigo-600 border border-indigo-200 animate-pulse"
+                title="Thời gian chờ an toàn"
+              >
+                <Icons.Clock size={12} className="text-indigo-500" /> {aiWaitTime}s
+              </span>
+            )}
+
+            {/* Huy hiệu Sudden Death */}
+            {config?.suddenDeath && (
+              <span
+                className="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1 shadow-sm bg-slate-100 text-slate-700 border border-slate-300"
+                title="Chế độ Địa ngục: Sai 1 lần mất điểm"
+              >
+                <Icons.AlertCircle size={12} className="text-slate-600" /> Địa ngục
+              </span>
+            )}
+
+            <span
+              className={`text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-wider shadow-sm cursor-default ${
+                inputMethod === 'tap'
+                  ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                  : inputMethod === 'type'
+                  ? 'bg-green-100 text-green-700 border border-green-200'
+                  : 'bg-purple-100 text-purple-700 border border-purple-200'
               }`}
             >
-              {selectedTokens.length === 0 ? (
-                <span className="text-xs font-bold text-gray-400 italic select-none">
-                  Chạm vào các mảnh từ bên dưới để ghép thành câu...
-                </span>
-              ) : (
-                selectedTokens.map((tok, idx) => (
-                  <button
-                    key={tok.id}
-                    type="button"
-                    disabled={answerStatus !== null}
-                    onClick={() => onRemoveSelectedToken(tok, idx)}
-                    style={{ fontFamily }}
-                    className={`px-3.5 py-2 rounded-xl font-bold text-sm sm:text-base shadow-sm border transition-all active:scale-95 ${
-                      answerStatus === 'correct'
-                        ? 'bg-green-600 text-white border-green-700'
-                        : answerStatus === 'wrong'
-                        ? 'bg-red-600 text-white border-red-700'
-                        : `bg-white text-${mainColor}-700 border-${mainColor}-300 hover:bg-red-50 hover:border-red-300`
-                    }`}
-                  >
-                    {tok.text}
-                  </button>
-                ))
-              )}
-            </div>
+              {inputMethod === 'tap'
+                ? '🖱️ Chạm & Ghép'
+                : inputMethod === 'type'
+                ? '⌨️ Gõ phím'
+                : '🎙️ Giọng nói'}
+            </span>
+          </div>
+        </div>
 
-            {/* Kho các mảnh từ xáo trộn bên dưới */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between px-1">
-                <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
-                  Các mảnh ghép khả dụng
-                </span>
-                {selectedTokens.length > 0 && answerStatus === null && (
-                  <button
-                    type="button"
-                    onClick={onClearSelected}
-                    className="text-xs font-bold text-gray-400 hover:text-red-500 flex items-center gap-1"
+        {/* KHUNG CHÍNH */}
+        <div
+          className={`w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-5 md:p-6 transition-all duration-300 ${containerWidthClass}`}
+        >
+          <div
+            className={`p-4 bg-${mainColor}-50 border-l-4 border-${mainColor}-400 mb-6 rounded-xl italic text-gray-700 text-center shadow-inner`}
+            style={{
+              fontSize: settings?.backFontSize ? `${settings.backFontSize}rem` : '0.875rem',
+              fontWeight: settings?.fontWeight || 'normal',
+              fontFamily: 'inherit'
+            }}
+          >
+            "{gameState.origin?.definition}"
+          </div>
+
+          {gameState.isCorrect === false && gameState.attempts >= 3 && (
+            <div className="w-full mb-6 p-5 border-2 border-green-400 bg-green-50 rounded-2xl flex flex-col items-center justify-center animate-in zoom-in shadow-sm">
+              <span className="text-xs font-bold text-green-600 uppercase tracking-wider mb-2 flex items-center gap-1">
+                <Icons.CheckCircle size={14} /> Đáp án chính xác
+              </span>
+              <span
+                className="text-xl md:text-2xl font-bold text-green-900 text-center leading-relaxed"
+                style={{ fontFamily: Utils.getFontFamily(settings) }}
+              >
+                {gameState.origin?.term}
+              </span>
+            </div>
+          )}
+
+          {/* Phương thức 1: Chạm & Kéo thả thẻ từ */}
+          {inputMethod === 'tap' && (
+            <div className="w-full flex flex-col gap-5">
+              {/* Khu vực Nhận Đáp Án */}
+              <div
+                className={`min-h-[120px] border-2 border-dashed rounded-2xl p-4 flex flex-wrap items-center gap-2 transition-colors ${
+                  gameState.isCorrect === true
+                    ? 'bg-green-50 border-green-400 shadow-inner'
+                    : gameState.isCorrect === false
+                    ? 'bg-red-50 border-red-400 shadow-inner'
+                    : 'bg-gray-50 border-gray-300'
+                }`}
+              >
+                {gameState.userAnswer.map((chunk, idx) => (
+                  <div
+                    key={chunk.id}
+                    data-drag-index={idx}
+                    draggable
+                    onDragStart={(e) => onDragStart(e, idx)}
+                    onDragEnter={(e) => onDragEnter(e, idx)}
+                    onDragEnd={onDragEnd}
+                    onTouchStart={(e) => onTouchStart(e, idx)}
+                    onTouchMove={onTouchMove}
+                    onTouchEnd={onTouchEnd}
+                    onClick={() =>
+                      !isPaused &&
+                      setGameState((p) => {
+                        const st = {
+                          ...p,
+                          userAnswer: p.userAnswer.filter((c) => c.id !== chunk.id),
+                          chunks: chunk.isPunct ? p.chunks : [...p.chunks, chunk]
+                        };
+                        setTimeout(() => triggerAutoSave && triggerAutoSave(), 150);
+                        return st;
+                      })
+                    }
                   >
-                    <Icons.RotateCcw size={12} /> Làm lại
-                  </button>
+                    {renderChunk(chunk, false)}
+                  </div>
+                ))}
+                {gameState.userAnswer.length === 0 && (
+                  <span className="w-full text-center text-gray-300 font-bold uppercase tracking-widest text-sm pointer-events-none">
+                    Khu vực ghép câu
+                  </span>
                 )}
               </div>
 
-              <div className="flex flex-wrap items-center justify-center gap-2 p-2">
-                {poolTokens.map((tok) => {
-                  const isUsed = selectedTokens.some((s) => s.id === tok.id);
-                  return (
-                    <button
-                      key={tok.id}
-                      type="button"
-                      disabled={isUsed || answerStatus !== null}
-                      onClick={() => onSelectPoolToken(tok)}
-                      style={{ fontFamily }}
-                      className={`px-3.5 py-2 rounded-xl font-bold text-sm sm:text-base border-2 transition-all ${
-                        isUsed
-                          ? 'bg-gray-100 text-transparent border-gray-200 pointer-events-none scale-95'
-                          : 'bg-white text-gray-800 border-gray-200 shadow-sm hover:border-blue-400 hover:bg-blue-50/40 active:scale-95'
-                      }`}
-                    >
-                      {tok.text}
-                    </button>
-                  );
-                })}
+              {/* Thanh Dấu Câu */}
+              <div className="flex justify-center items-center gap-2 bg-white border border-gray-100 p-2 rounded-xl shadow-sm">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mr-1">
+                  Dấu câu:
+                </span>
+                {['.', ',', ':', '?', '!'].map((punct) => (
+                  <button
+                    key={punct}
+                    type="button"
+                    onClick={() => handleAddPunctuation && handleAddPunctuation(punct)}
+                    disabled={isPaused || gameState.isCorrect !== null}
+                    className="w-10 h-10 flex items-center justify-center rounded-lg bg-gray-50 text-gray-700 font-bold border border-gray-200 hover:bg-gray-100 hover:border-gray-300 shadow-sm disabled:opacity-50 transition-colors"
+                    style={{
+                      fontFamily: Utils.getFontFamily(settings),
+                      fontSize: '1.25rem'
+                    }}
+                  >
+                    {punct}
+                  </button>
+                ))}
+              </div>
+
+              {/* Khu vực Chọn Từ */}
+              <div className="flex flex-wrap justify-center gap-2.5 min-h-[80px] p-4 bg-gray-50 rounded-2xl border border-gray-100 shadow-inner">
+                {gameState.chunks.map((chunk) => (
+                  <div
+                    key={chunk.id}
+                    onClick={() =>
+                      !isPaused &&
+                      setGameState((p) => {
+                        const st = {
+                          ...p,
+                          userAnswer: [...p.userAnswer, chunk],
+                          chunks: p.chunks.filter((c) => c.id !== chunk.id)
+                        };
+                        setTimeout(() => triggerAutoSave && triggerAutoSave(), 150);
+                        return st;
+                      })
+                    }
+                  >
+                    {renderChunk(chunk, true)}
+                  </div>
+                ))}
+                {gameState.chunks.length === 0 && (
+                  <span className="w-full text-center text-gray-300 font-medium italic text-sm pt-2">
+                    Đã dùng hết từ
+                  </span>
+                )}
               </div>
             </div>
-          </>
-        )}
+          )}
 
-        {/* Khối hiển thị Đáp án chuẩn & Phân tích Ngữ pháp sau khi kiểm tra */}
-        {answerStatus !== null && (
+          {/* Phương thức 2: Gõ bàn phím */}
+          {inputMethod === 'type' && (
+            <div className="w-full flex flex-col items-center gap-4 animate-in slide-in-from-bottom-4">
+              <input
+                ref={typeInputRef}
+                type="text"
+                autoFocus
+                value={inputBuffer}
+                onChange={(e) => setInputBuffer(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && !isPaused && checkAnswer()}
+                className={`w-full p-6 text-center border-4 rounded-2xl outline-none transition-colors shadow-inner ${
+                  gameState.isCorrect === true
+                    ? 'bg-green-50 border-green-400 text-green-700'
+                    : gameState.isCorrect === false
+                    ? 'bg-red-50 border-red-400 text-red-700'
+                    : 'bg-gray-50 border-blue-200 focus:border-blue-500 text-gray-800'
+                }`}
+                placeholder="Gõ lại câu bằng bàn phím..."
+                style={{
+                  fontFamily: Utils.getFontFamily(settings),
+                  fontWeight: settings?.fontWeight || 'bold',
+                  fontSize: settings?.fontSize ? `${settings.fontSize}rem` : '1.875rem'
+                }}
+                disabled={gameState.isCorrect !== null || isPaused}
+              />
+              <p className="text-xs text-gray-400">
+                Ấn phím <kbd className="bg-gray-100 px-2 py-1 rounded border shadow-sm">Enter</kbd>{' '}
+                để kiểm tra
+              </p>
+            </div>
+          )}
+
+          {/* Phương thức 3: Nhận diện giọng nói */}
+          {inputMethod === 'voice' && (
+            <div className="w-full flex flex-col items-center gap-4 animate-in zoom-in">
+              <div
+                className={`w-full min-h-[120px] border-4 rounded-2xl outline-none transition-colors shadow-inner flex flex-col items-center justify-center p-6 text-center ${
+                  gameState.isCorrect === true
+                    ? 'bg-green-50 border-green-400 text-green-700'
+                    : gameState.isCorrect === false
+                    ? 'bg-red-50 border-red-400 text-red-700'
+                    : 'bg-gray-50 border-purple-200 text-gray-800'
+                }`}
+              >
+                <span
+                  style={{
+                    fontFamily: Utils.getFontFamily(settings),
+                    fontWeight: settings?.fontWeight || 'bold',
+                    fontSize: settings?.fontSize ? `${settings.fontSize}rem` : '1.5rem'
+                  }}
+                >
+                  {inputBuffer || (
+                    <span className="text-gray-400 italic text-base">
+                      Nhấn Micro và bắt đầu đọc...
+                    </span>
+                  )}
+                </span>
+              </div>
+              <div className="flex flex-col items-center w-full mt-2">
+                <button
+                  type="button"
+                  onClick={toggleMic}
+                  disabled={isPaused || gameState.isCorrect !== null}
+                  className={`w-20 h-20 rounded-full border-4 flex items-center justify-center shadow-lg outline-none transition-all duration-300 ${
+                    isListening
+                      ? 'bg-red-50 border-red-200 text-red-500 animate-pulse scale-110 shadow-red-200'
+                      : 'bg-purple-50 border-purple-200 text-purple-600 hover:bg-purple-100 hover:scale-105 hover:shadow-purple-200'
+                  }`}
+                >
+                  {isListening ? (
+                    <Icons.Square size={32} fill="currentColor" />
+                  ) : (
+                    <Icons.Mic size={32} />
+                  )}
+                </button>
+                <p
+                  className={`font-bold mt-3 text-center text-sm ${
+                    isListening ? 'text-red-500 animate-pulse' : 'text-gray-500'
+                  }`}
+                >
+                  {isListening ? 'Đang lắng nghe (Chạm để Dừng)...' : 'Chạm Micro để đọc'}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Nút nghe gợi ý sau 2 lần sai (Ở chế độ thường) */}
+        {gameState.attempts >= 2 && difficulty !== 'hard' && (
           <div
-            className={`p-3.5 rounded-2xl border text-left space-y-2 animate-in slide-in-from-bottom-2 ${
-              answerStatus === 'correct'
-                ? 'bg-green-50/90 border-green-200 text-green-900'
-                : 'bg-red-50/90 border-red-200 text-red-900'
-            }`}
+            className={`flex w-full justify-center mt-2 animate-in slide-in-from-top-2 transition-all duration-300 ${containerWidthClass}`}
           >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 font-black text-sm">
-                {answerStatus === 'correct' ? (
+            <button
+              type="button"
+              onClick={() => onPlay && onPlay(gameState.origin.term)}
+              className="px-6 py-2.5 flex items-center gap-2 bg-yellow-50 text-yellow-700 border border-yellow-200 rounded-full shadow-sm hover:bg-yellow-100 font-bold transition-transform hover:scale-105"
+              disabled={isPaused}
+            >
+              <Icons.Volume2 size={20} /> Nghe lại đáp án
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* FOOTER ĐIỀU KHIỂN */}
+      <div className="w-full p-3 sm:p-4 bg-white border-t border-gray-200 shrink-0 flex items-center justify-between z-30 pb-safe shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] relative">
+        {/* Nút Kết thúc */}
+        <button
+          type="button"
+          onClick={() => setShowConfirmEnd(true)}
+          className="absolute left-2 sm:left-4 text-red-500 hover:text-red-700 font-bold text-xs flex items-center gap-1 transition-colors px-2 py-2 hover:bg-red-50 rounded-lg"
+          title="Kết thúc"
+        >
+          <Icons.X size={16} /> <span className="hidden sm:inline">Kết thúc</span>
+        </button>
+
+        {/* Khu vực điều khiển chính */}
+        <div className="flex-1 flex justify-center sm:justify-end max-w-lg ml-auto">
+          {gameState.isCorrect === true ||
+          (gameState.isCorrect === false && gameState.attempts >= 3) ? (
+            <div className="w-full flex gap-2 sm:gap-3">
+              <button
+                type="button"
+                onClick={handleExplain}
+                disabled={isPaused || isGenerating}
+                className="flex-1 py-3 bg-blue-50 text-blue-700 border border-blue-200 rounded-xl font-bold text-xs sm:text-sm hover:bg-blue-100 transition-colors flex items-center justify-center gap-1 shadow-sm"
+              >
+                <Icons.BookOpen size={16} className="sm:w-[18px] sm:h-[18px]" /> Giải thích
+              </button>
+
+              <button
+                type="button"
+                onClick={() => toggleResultPause && toggleResultPause()}
+                className={`flex-1 py-3 font-bold text-xs sm:text-sm rounded-xl border-2 transition-all flex items-center justify-center gap-1 sm:gap-1.5 ${
+                  isResultPaused
+                    ? 'bg-yellow-50 text-yellow-700 border-yellow-300 shadow-inner'
+                    : 'bg-white text-gray-500 hover:bg-gray-50'
+                }`}
+              >
+                {isResultPaused ? (
                   <>
-                    <Icons.CheckCircle size={18} className="text-green-600" />
-                    <span>{t ? t('scrambleCorrect') : 'Chính xác tuyệt đối!'}</span>
+                    <Icons.Play size={16} fill="currentColor" /> Đã dừng
                   </>
                 ) : (
                   <>
-                    <Icons.AlertCircle size={18} className="text-red-600" />
-                    <span>{t ? t('scrambleWrong') : 'Chưa chính xác!'}</span>
+                    <Icons.Pause size={16} fill="currentColor" /> Đợi ({resultTimer}s)
                   </>
                 )}
+              </button>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onBookmark && gameState.origin) {
+                    let scrambledDisplay = '';
+                    if (gameState.chunks && gameState.chunks.length > 0) {
+                      scrambledDisplay = gameState.chunks
+                        .map((c) => c.text)
+                        .join(lang === 'zh' ? '' : ' ');
+                    } else {
+                      scrambledDisplay = gameState.origin.term
+                        .split(lang === 'zh' ? '' : ' ')
+                        .sort(() => Math.random() - 0.5)
+                        .join(lang === 'zh' ? '' : ' ');
+                    }
+                    onBookmark({
+                      isSmartTarget: true,
+                      display: scrambledDisplay,
+                      save: gameState.origin.term,
+                      analysis: gameState.origin.definition
+                    });
+                  }
+                }}
+                disabled={isPaused || isGenerating}
+                className={`flex-1 py-3 font-bold text-xs sm:text-sm rounded-xl border-2 transition-all flex items-center justify-center gap-1 sm:gap-1.5 ${
+                  isBookmarked
+                    ? 'bg-yellow-50 text-yellow-600 border-yellow-200'
+                    : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
+                }`}
+                title={t ? t('addToNotebook') : 'Lưu Sổ tay'}
+              >
+                <Icons.Bookmark size={16} fill={isBookmarked ? 'currentColor' : 'none'} /> Lưu Sổ
+                tay
+              </button>
+
+              <button
+                type="button"
+                onClick={() => nextRound()}
+                disabled={isGenerating || aiWaitTime > 0}
+                className={`flex-[1.5] sm:flex-[2] py-3 bg-${mainColor}-600 text-white font-bold text-sm sm:text-lg rounded-xl shadow-lg flex justify-center items-center gap-1 sm:gap-1.5 transition-transform ${
+                  isGenerating || aiWaitTime > 0
+                    ? 'opacity-70 cursor-not-allowed'
+                    : `active:scale-95 hover:bg-${mainColor}-700`
+                }`}
+              >
+                {isGenerating ? (
+                  <div className="w-4 h-4 sm:w-5 sm:h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                ) : (
+                  <>
+                    Tiếp theo <Icons.ChevronRight size={20} />
+                  </>
+                )}
+              </button>
+            </div>
+          ) : (
+            <div className="w-full flex gap-2 sm:gap-3">
+              <button
+                type="button"
+                onClick={() => handleSkip(false)}
+                disabled={isPaused || isGenerating || aiWaitTime > 0}
+                className={`flex-1 py-3 bg-gray-100 text-gray-600 font-bold text-xs sm:text-sm rounded-xl hover:bg-gray-200 transition-all border border-gray-200 ${
+                  isPaused || isGenerating || aiWaitTime > 0
+                    ? 'opacity-50 cursor-not-allowed'
+                    : 'active:scale-95'
+                }`}
+              >
+                Bỏ qua
+              </button>
+              <button
+                type="button"
+                onClick={checkAnswer}
+                disabled={
+                  isPaused ||
+                  isGenerating ||
+                  aiWaitTime > 0 ||
+                  (!gameState.userAnswer?.length && !inputBuffer.trim())
+                }
+                className={`flex-[1.5] sm:flex-[2] py-3 bg-${mainColor}-600 text-white font-bold text-sm sm:text-base rounded-xl shadow-lg hover:bg-${mainColor}-700 transition-all ${
+                  isPaused ||
+                  isGenerating ||
+                  aiWaitTime > 0 ||
+                  (!gameState.userAnswer?.length && !inputBuffer.trim())
+                    ? 'opacity-50 cursor-not-allowed'
+                    : 'active:scale-95'
+                }`}
+              >
+                Kiểm tra
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Modal Giải thích Ngữ pháp */}
+      {showExplainModal && gameState.origin && (
+        <div className="absolute inset-0 z-[60] bg-white flex flex-col animate-in slide-in-from-bottom-10 duration-300">
+          <div className="bg-blue-600 p-4 flex justify-between items-center text-white shadow-md shrink-0">
+            <h3 className="font-bold flex items-center gap-2 text-lg">
+              <Icons.BookOpen size={24} /> {t ? t('explainTitle') : 'Phân tích Ngữ pháp'}
+            </h3>
+            <button
+              type="button"
+              onClick={() => setShowExplainModal(false)}
+              className="hover:bg-blue-700 p-2 rounded-full transition-colors"
+            >
+              <Icons.X size={24} />
+            </button>
+          </div>
+
+          <div className="p-6 overflow-y-auto custom-scrollbar flex-1 bg-gray-50">
+            <div className="bg-white p-5 rounded-xl shadow-sm border border-blue-100 mb-6 relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+              <label className="text-xs font-bold text-blue-500 uppercase tracking-wider block mb-2">
+                {t ? t('sentence') : 'Câu văn'}
+              </label>
+              <p className="text-xl sm:text-2xl font-medium text-gray-800 leading-relaxed">
+                {gameState.origin.term}
+              </p>
+            </div>
+
+            <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 mb-6 relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-1 h-full bg-gray-400"></div>
+              <label className="text-xs font-bold text-gray-400 uppercase tracking-wider block mb-2">
+                {t ? t('meaning') : 'Ý nghĩa'}
+              </label>
+              <p className="text-lg text-gray-600 italic">{gameState.origin.definition}</p>
+            </div>
+
+            {isAiExplaining ? (
+              <div className="flex flex-col items-center justify-center py-10 bg-white rounded-xl border border-gray-100 shadow-sm">
+                <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+                <span className="text-sm text-blue-600 font-bold animate-pulse">
+                  AI đang phân tích ngữ pháp...
+                </span>
               </div>
-
-              {onExplainGrammar && (
-                <button
-                  type="button"
-                  disabled={isExplaining}
-                  onClick={onExplainGrammar}
-                  className="px-2.5 py-1 bg-purple-100 text-purple-700 border border-purple-200 rounded-lg text-xs font-bold hover:bg-purple-200 flex items-center gap-1 transition-colors disabled:opacity-50"
-                >
-                  <Icons.Sparkles size={13} className={isExplaining ? 'animate-spin' : ''} />
-                  <span>{isExplaining ? 'Đang phân tích...' : t ? t('explainBtn') : 'Giải thích'}</span>
-                </button>
-              )}
-            </div>
-
-            <div className="text-xs sm:text-sm">
-              <span className="font-bold opacity-75">Đáp án chuẩn: </span>
-              <b style={{ fontFamily }} className="text-sm sm:text-base underline decoration-dotted">
-                {targetTerm}
-              </b>
-            </div>
-
-            {(grammarExplanation || originCard.analysis) && (
-              <div className="p-2.5 bg-white/90 rounded-xl border border-purple-100 text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">
-                <div className="font-black text-purple-700 mb-0.5 flex items-center gap-1">
-                  <Icons.Sparkles size={12} /> Phân tích cấu trúc:
+            ) : (
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 prose prose-sm max-w-none">
+                <h4 className="font-bold text-gray-700 mb-4 flex items-center gap-2 text-lg border-b pb-2">
+                  <Icons.Sparkles size={20} className="text-purple-500" /> Phân tích chi tiết:
+                </h4>
+                <div className="text-gray-700 whitespace-pre-wrap leading-relaxed text-sm sm:text-base">
+                  {aiExplanation ? (
+                    aiExplanation
+                      .split('\n')
+                      .map((line, i) => <p key={i} className="mb-2">{line}</p>)
+                  ) : (
+                    <span className="text-gray-400 italic">Chưa có dữ liệu phân tích.</span>
+                  )}
                 </div>
-                {grammarExplanation || originCard.analysis}
               </div>
             )}
           </div>
-        )}
-      </div>
 
-      {/* Footer Nút Kiểm tra / Câu tiếp theo */}
-      <div className="pt-3 mt-2 border-t border-gray-100 shrink-0">
-        {answerStatus === null ? (
-          <button
-            type="button"
-            onClick={onCheckAnswer}
-            disabled={
-              inputMethod === 'type' ? !typedAnswer.trim() : selectedTokens.length === 0
-            }
-            className={`w-full py-3.5 rounded-xl font-black text-white shadow-md transition-all active:scale-95 flex items-center justify-center gap-2 text-sm sm:text-base disabled:opacity-50 disabled:cursor-not-allowed bg-${mainColor}-600 hover:bg-${mainColor}-700`}
-          >
-            <Icons.Check size={20} />
-            <span>{t ? t('matchCheckBtn') : 'Kiểm tra đáp án'}</span>
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={onNextQuestion}
-            disabled={cooldownLeft > 0}
-            className={`w-full py-3.5 rounded-xl font-black text-white shadow-md transition-all active:scale-95 flex items-center justify-center gap-2 text-sm sm:text-base ${
-              cooldownLeft > 0
-                ? 'bg-gray-400 cursor-wait'
-                : `bg-${mainColor}-600 hover:bg-${mainColor}-700`
-            }`}
-          >
-            <span>
-              {cooldownLeft > 0
-                ? `Đợi nạp đạn (${cooldownLeft}s)...`
-                : 'Câu tiếp theo'}
-            </span>
-            <Icons.ChevronRight size={20} />
-          </button>
-        )}
-      </div>
+          <div className="p-4 bg-white border-t flex gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] shrink-0">
+            <button
+              type="button"
+              onClick={() => onPlay && onPlay(gameState.origin.term)}
+              className="flex-1 py-3 bg-blue-50 text-blue-700 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-100 transition-colors shadow-sm active:scale-95"
+            >
+              <Icons.Volume2 size={20} /> {t ? t('listenAgain') : 'Nghe lại'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowExplainModal(false)}
+              className="flex-1 py-3 bg-gray-800 text-white rounded-xl font-bold hover:bg-gray-900 transition-colors shadow-md active:scale-95"
+            >
+              Đóng
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
-export const ScrambleUI = {
-  ScrambleSetup,
-  ScrambleBoard
-};
+// Gắn vào window để tương thích ngược trong quá trình chuyển đổi
+if (typeof window !== 'undefined') {
+  window.ScrambleSetup = ScrambleSetup;
+  window.ScramblePlayScreen = ScramblePlayScreen;
+  window.Block5_3_ScrambleSetup = ScrambleSetup;
+  window.Block5_3_ScramblePlayScreen = ScramblePlayScreen;
+}
+
+export default ScramblePlayScreen;

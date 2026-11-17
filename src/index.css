@@ -1,70 +1,175 @@
-/*
- * @file src/index.css
- * @description File CSS toàn cục. Nạp Tailwind và các CSS tĩnh không gian 3D kế thừa từ Tầng 1.
- * @origin Giai đoạn 1 - Tái chế CSS từ tang_1.txt
- */
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  body {
-    /* Chống bôi đen rác và tối ưu cảm ứng trên mobile */
-    -webkit-user-select: none;
-    user-select: none;
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-    
-    /* Tránh bị tai thỏ/bottom bar của iOS che khuất */
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
-  }
 
-  /* Nhả quyền bôi đen lại cho các ô nhập liệu */
-  input, textarea {
-    -webkit-user-select: text;
-    user-select: text;
+/* ==========================================================================
+   1. CẤU HÌNH CƠ BẢN & CHỐNG BÔI ĐEN TRÊN DI ĐỘNG
+   ========================================================================== */
+body {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+
+input,
+textarea,
+.select-text {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+
+/* ==========================================================================
+   2. THANH CUỘN TÙY CHỈNH & CHỐNG GIẬT KHUNG HÌNH (LAYOUT SHIFT FIX)
+   ========================================================================== */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 20px;
+}
+
+
+/* Giữ chỗ thanh cuộn cố định cho khung App chính, chống giật khi lật thẻ 3D */
+div.max-w-7xl.custom-scrollbar {
+  scrollbar-gutter: stable;
+}
+
+
+/* ==========================================================================
+   3. HIỆU ỨNG KHÔNG GIAN 3D & KHUNG THẺ FLASHCARD (.fc-card)
+   ========================================================================== */
+.perspective-1000 {
+  perspective: 1000px;
+}
+
+
+.preserve-3d {
+  transform-style: preserve-3d;
+}
+
+
+.backface-hidden {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+
+.fc-card {
+  display: grid;
+  width: calc(100% * var(--fc-scale, 1));
+  max-width: 100%;
+  margin: 0 auto;
+  height: calc(360px * var(--fc-scale, 1));
+  will-change: transform;
+  transform-style: preserve-3d;
+  transition: transform 0.7s;
+}
+
+
+.fc-face {
+  grid-area: 1 / 1;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border-radius: 1rem;
+  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  background-color: white;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+
+.fc-back {
+  transform: rotateY(180deg);
+}
+
+
+.fc-input-group {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  width: calc(100% * var(--fc-scale, 1));
+  max-width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
+}
+
+
+.fc-card-image {
+  position: relative;
+  height: calc(120px * var(--fc-scale, 1));
+  width: auto;
+  aspect-ratio: 1 / 1;
+  flex-shrink: 0;
+  margin-bottom: 0.5rem;
+  transition: transform 0.3s ease;
+}
+
+
+@media (min-width: 768px) {
+  .fc-card {
+    width: calc(600px * var(--fc-scale, 1));
+  }
+  .fc-input-group {
+    width: calc(600px * var(--fc-scale, 1));
+  }
+  .fc-card-image {
+    position: absolute;
+    right: 1rem;
+    top: 50%;
+    transform: translateY(-50%) rotate(6deg);
+    height: 8rem;
+    width: 8rem;
+    margin-bottom: 0;
+  }
+  .fc-card-image:hover {
+    transform: translateY(-50%) rotate(0deg) scale(1.1);
+    z-index: 50;
   }
 }
 
-@layer utilities {
-  /* Thanh cuộn siêu mỏng tùy chỉnh */
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 4px;
-  }
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background-color: #cbd5e1;
-    border-radius: 20px;
-  }
 
-  /* Core 3D Flip (Dành cho lật thẻ Flashcard) */
-  .perspective-1000 {
-    perspective: 1000px;
-  }
-  .preserve-3d {
-    transform-style: preserve-3d;
-  }
-  .backface-hidden {
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
-  }
-
-  /* Safe Area Padding cho Bottom Nav */
-  .pb-safe {
-    padding-bottom: env(safe-area-inset-bottom);
-  }
-
-  /* Hoạt ảnh mượt mà khi hiện phần tử */
-  .animate-in {
-    animation: fadeIn 0.3s ease-out;
-  }
+/* ==========================================================================
+   4. LƯỚI TẬP VIẾT CHỮ HÁN (HANZI WRITER GRID)
+   ========================================================================== */
+.hanzi-grid-bg {
+  background-image:
+    linear-gradient(to right, #fca5a5 1px, transparent 1px),
+    linear-gradient(to bottom, #fca5a5 1px, transparent 1px);
+  background-size: 100% 100%;
+  background-position: center;
 }
 
-/* Hoạt ảnh Fade In dùng chung */
+
+/* ==========================================================================
+   5. HOẠT ẢNH (ANIMATIONS & KEYFRAMES)
+   ========================================================================== */
+.animate-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -76,11 +181,25 @@
   }
 }
 
-/* Hình nền Lưới tập viết chữ Hán của tính năng Hanzi Writer (Tầng 4) */
-.hanzi-grid-bg {
-  background-image:
-    linear-gradient(to right, #fca5a5 1px, transparent 1px),
-    linear-gradient(to bottom, #fca5a5 1px, transparent 1px);
-  background-size: 100% 100%;
-  background-position: center;
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+
+@keyframes shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  20%, 60% {
+    transform: translateX(-5px);
+  }
+  40%, 80% {
+    transform: translateX(5px);
+  }
 }

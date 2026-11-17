@@ -1,307 +1,298 @@
 /**
- * @file src/features/exam/ExamUIShell.jsx
- * @description Khung phòng thi tổng hợp (Exam UI Shell). Render động các loại câu hỏi dựa trên metadata.type (Atomic Renderers).
- * @origin Tầng 5 - Block 5.14 (Exam UI Shell)
+ * ============================================================================
+ * FILE 72/85: src/features/exam/ExamUIShell.jsx
+ * @description Khung giao diện bài thi tổng hợp. Bao gồm Header, Timer,
+ *              SplitView và các Renderers nguyên tử.
+ * @origin Tầng 5 - Block 5.14 (Exam UI Shell & Renderers - Version 1.07)
+ * ============================================================================
  */
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Icons } from '@/components/common/Icons';
 import { Utils } from '@/utils/helpers';
+import { ExamReportUI } from './ExamReportUI';
 
 // ============================================================================
-// ATOMIC RENDERER 1: MULTIPLE CHOICE QUESTION (Trắc nghiệm, Đoán hình, Ngữ âm, Nghe, Đọc hiểu)
+// 1. CÁC ATOMIC RENDERERS (GIAO DIỆN TỐI GIẢN CHO TỪNG DẠNG BÀI)
 // ============================================================================
-const RenderMCQ = ({ content, metadata, answer, onAnswer, onSpeak, isReview = false, fontFamily }) => {
-  const isImageQuiz = metadata.type.includes('image_quiz');
-  const isListening = metadata.type.includes('listening');
-  const isReading = metadata.type.includes('reading');
-  const isPronunciation = metadata.type.includes('pronunciation');
 
-  // Xử lý text câu hỏi
-  let questionText = content.term || content.questionText || "Câu hỏi bị lỗi";
-  if (isReading && content.passage && !content.term) questionText = "Đọc kỹ đoạn văn bên dưới (Không có câu hỏi con)";
+const MultipleChoiceRenderer = ({ content, onAnswer }) => {
+  const [isSubmitted, setIsSubmitted] = useState(false);
+
+  const handleSelect = (opt) => {
+    if (isSubmitted) return;
+    setIsSubmitted(true);
+    onAnswer(opt, opt.isCorrect);
+  };
 
   return (
-    <div className="flex flex-col h-full animate-in fade-in">
-      {/* KHU VỰC CÂU HỎI */}
-      <div className={`p-4 md:p-6 bg-blue-50/50 border border-blue-100 rounded-2xl mb-4 ${isReading ? 'flex-1 overflow-y-auto custom-scrollbar' : ''}`}>
-        
-        {/* Nhãn đặc thù cho từng loại */}
-        {isListening && (
-          <div className="flex flex-col items-center mb-4">
-            <button
-              type="button"
-              onClick={() => onSpeak && onSpeak(content.audioScript)}
-              className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 text-white flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all"
-              title="Nghe đoạn băng"
-            >
-              <Icons.Volume2 size={32} />
-            </button>
-            <span className="text-[10px] font-bold text-gray-400 mt-2 uppercase">Nghe đoạn băng</span>
-          </div>
-        )}
-        
-        {isPronunciation && (
-           <div className="text-[10px] font-bold uppercase tracking-widest text-blue-500 mb-2 flex items-center gap-1 justify-center">
-             <Icons.Mic size={14} /> Chọn từ có phát âm khác
-           </div>
-        )}
-
-        {/* Nội dung câu hỏi chính */}
-        {isReading && content.passage && (
-          <div className="text-sm md:text-base text-gray-700 leading-relaxed mb-4 whitespace-pre-wrap font-medium p-4 bg-white rounded-xl shadow-inner border border-gray-100">
-            {content.passage}
-          </div>
-        )}
-
-        <div style={{ fontFamily }} className={`text-lg md:text-2xl font-black text-gray-800 text-center leading-snug break-words ${isImageQuiz ? 'mb-2' : ''}`}>
-          {questionText}
-        </div>
-        
-        {onSpeak && !isListening && (
-          <div className="flex justify-center mt-3">
-            <button onClick={() => onSpeak(questionText)} className="p-2 rounded-full bg-white text-blue-500 shadow-sm border border-gray-200 hover:bg-blue-50 transition-colors">
-              <Icons.Volume2 size={16} />
-            </button>
-          </div>
-        )}
+    <div className="flex flex-col items-center gap-8 w-full max-w-2xl mx-auto animate-in zoom-in duration-300">
+      <div className="text-2xl md:text-3xl font-bold text-gray-800 text-center leading-relaxed">
+        {content?.term || 'Dữ liệu câu hỏi bị khuyết...'}
       </div>
-
-      {/* KHU VỰC ĐÁP ÁN */}
-      <div className={`grid gap-3 shrink-0 ${isImageQuiz ? 'grid-cols-2' : 'grid-cols-1 sm:grid-cols-2'}`}>
-        {(content.options || []).map((opt, idx) => {
-          const isSelected = answer?.text === opt.text;
-          const isCorrect = isReview && (opt.isCorrect === true || String(opt.isCorrect).toLowerCase() === 'true');
-          
-          let btnClass = "bg-white border-gray-200 text-gray-700 hover:bg-blue-50 hover:border-blue-300";
-          if (isReview) {
-             if (isCorrect) btnClass = "bg-green-500 border-green-600 text-white shadow-md z-10";
-             else if (isSelected && !isCorrect) btnClass = "bg-red-500 border-red-600 text-white shadow-md";
-             else btnClass = "bg-gray-50 border-gray-200 text-gray-400 opacity-60";
-          } else if (isSelected) {
-             btnClass = "bg-blue-100 border-blue-500 text-blue-800 ring-2 ring-blue-200";
-          }
-
-          if (isImageQuiz) {
-            return (
-              <button
-                key={idx}
-                disabled={isReview}
-                onClick={() => onAnswer(opt)}
-                className={`relative aspect-square p-2 sm:p-3 rounded-2xl border-2 flex flex-col items-center justify-center transition-all active:scale-95 group overflow-hidden ${btnClass}`}
-              >
-                <div className="w-full h-full relative rounded-xl overflow-hidden bg-white flex items-center justify-center">
-                   {opt.image ? (
-                     <img src={opt.image} alt={opt.text} className={`w-full h-full object-contain p-2 transition-transform duration-300 group-hover:scale-105 ${isReview && !isCorrect && !isSelected ? 'grayscale opacity-50' : ''}`} onError={(e) => { e.target.style.display = 'none'; }} />
-                   ) : <Icons.Image size={32} className="opacity-20" />}
-                </div>
-                <div className={`absolute bottom-0 inset-x-0 bg-white/90 backdrop-blur-sm p-1.5 sm:p-2 border-t border-gray-100 text-center transition-transform duration-300 ${isReview || isSelected ? 'translate-y-0' : 'translate-y-full group-hover:translate-y-0'}`}>
-                    <span style={{ fontFamily: (isReview && isCorrect) || !opt.text.match(/[\u4e00-\u9fa5]/) ? 'inherit' : fontFamily }} className={`text-xs sm:text-sm font-bold truncate block px-1 ${isReview && isCorrect ? 'text-green-700' : 'text-gray-700'}`}>
-                        {opt.text}
-                    </span>
-                </div>
-                {isReview && isCorrect && <div className="absolute top-2 right-2 bg-white rounded-full shadow-sm z-10 p-0.5"><Icons.CheckCircle size={20} className="text-green-600"/></div>}
-                {isReview && isSelected && !isCorrect && <div className="absolute top-2 right-2 bg-white rounded-full shadow-sm z-10 p-0.5"><Icons.X size={20} className="text-red-600"/></div>}
-              </button>
-            );
-          }
-
-          return (
-            <button
-              key={idx}
-              disabled={isReview}
-              onClick={() => onAnswer(opt)}
-              style={{ fontFamily: (isReview && isCorrect) || !opt.text.match(/[\u4e00-\u9fa5]/) ? 'inherit' : fontFamily }}
-              className={`relative min-h-[64px] p-3 pl-12 rounded-xl border-2 font-bold text-sm sm:text-base text-left flex items-center transition-all active:scale-95 break-words ${btnClass}`}
-            >
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center text-[10px] font-black rounded border border-current opacity-60">
-                {String.fromCharCode(65 + idx)}
-              </span>
-              <span className="pr-6 w-full">{opt.text}</span>
-              {isReview && isCorrect && <span className="absolute right-3 top-1/2 -translate-y-1/2"><Icons.CheckCircle size={20} className="text-white"/></span>}
-              {isReview && isSelected && !isCorrect && <span className="absolute right-3 top-1/2 -translate-y-1/2"><Icons.X size={20} className="text-white"/></span>}
-            </button>
-          );
-        })}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
+        {content?.options?.map((opt, i) => (
+          <button
+            key={i}
+            type="button"
+            onClick={() => handleSelect(opt)}
+            disabled={isSubmitted}
+            className={`p-5 border-2 border-gray-200 rounded-2xl text-lg font-medium transition-all bg-white text-gray-700 shadow-sm ${
+              isSubmitted
+                ? 'opacity-60 cursor-not-allowed'
+                : 'hover:bg-blue-50 hover:border-blue-400 active:scale-95'
+            }`}
+          >
+            {opt.text}
+          </button>
+        ))}
       </div>
     </div>
   );
 };
 
-// ============================================================================
-// ATOMIC RENDERER 2: FILL IN THE BLANK (Điền từ khuyết)
-// ============================================================================
-const RenderFillBlank = ({ content, answer, onAnswer, onSpeak, isReview = false, fontFamily }) => {
-  const displaySentence = content.displaySentence || "";
-  const options = content.options || [];
+// LISTENING RENDERER (Chỉ giao tiếp qua Tầng 6, loại bỏ các hàm gọi trực tiếp WebSpeech API)
+const ListeningRenderer = ({ content, onAnswer, onPlay }) => {
+  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playCount, setPlayCount] = useState(0);
+  const maxPlays = 3;
+  const timeoutRef = useRef(null);
 
-  return (
-    <div className="flex flex-col h-full animate-in fade-in">
-      <div className="flex-1 p-5 rounded-2xl bg-teal-50/50 border border-teal-100 flex flex-col items-center justify-center relative text-center mb-4">
-        <div className="text-[10px] font-black uppercase tracking-widest text-teal-500 mb-4 absolute top-3">
-          Chọn từ điền vào chỗ trống
-        </div>
-        
-        <div style={{ fontFamily }} className="text-xl sm:text-3xl font-black text-gray-800 leading-snug break-words mt-4">
-          {isReview
-            ? <span dangerouslySetInnerHTML={{ __html: displaySentence.replace(/\[__________\]/g, `<span class="text-${answer?.isCorrect || answer === content.targetWord ? 'green' : 'red'}-600 underline decoration-4 px-1">${answer?.text || answer || '___'}</span>`) }} />
-            : <span dangerouslySetInnerHTML={{ __html: displaySentence.replace(/\[__________\]/g, answer ? `<span class="text-teal-600 underline decoration-2 px-1">${answer.text || answer}</span>` : '<span class="inline-block w-20 border-b-4 border-gray-300 align-bottom mx-1"></span>') }} />
-          }
-        </div>
-        
-        {content.hint && (
-          <div className="mt-6 text-sm font-bold text-gray-500 bg-white/70 px-4 py-2 rounded-xl border border-gray-200 shadow-sm">
-            💡 {content.hint}
-          </div>
-        )}
-      </div>
+  const audioScript = content?.audioScript || '';
+  const term = content?.term || 'Lỗi tải dữ liệu câu hỏi';
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 shrink-0">
-        {options.map((opt, idx) => {
-          const isSelected = answer?.text === opt.text || answer === opt.text;
-          const isCorrect = isReview && (opt.isCorrect === true || String(opt.isCorrect).toLowerCase() === 'true' || opt.text === content.targetWord);
-          
-          let btnClass = "bg-white border-gray-200 text-gray-700 hover:bg-teal-50 hover:border-teal-300";
-          if (isReview) {
-             if (isCorrect) btnClass = "bg-green-500 border-green-600 text-white shadow-md z-10";
-             else if (isSelected && !isCorrect) btnClass = "bg-red-500 border-red-600 text-white shadow-md";
-             else btnClass = "bg-gray-50 border-gray-200 text-gray-400 opacity-60";
-          } else if (isSelected) {
-             btnClass = "bg-teal-100 border-teal-500 text-teal-800 ring-2 ring-teal-200";
-          }
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
 
-          return (
-            <button
-              key={idx}
-              disabled={isReview}
-              onClick={() => onAnswer(opt)}
-              style={{ fontFamily: (isReview && isCorrect) || !opt.text.match(/[\u4e00-\u9fa5]/) ? 'inherit' : fontFamily }}
-              className={`relative min-h-[64px] p-3 rounded-xl border-2 font-bold text-sm sm:text-base text-center flex items-center justify-center transition-all active:scale-95 break-words ${btnClass}`}
-            >
-              <span className="px-6">{opt.text}</span>
-              {isReview && isCorrect && <span className="absolute right-3 top-1/2 -translate-y-1/2"><Icons.CheckCircle size={20} className="text-white"/></span>}
-              {isReview && isSelected && !isCorrect && <span className="absolute right-3 top-1/2 -translate-y-1/2"><Icons.X size={20} className="text-white"/></span>}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-};
+  const handlePlay = () => {
+    if (isPlaying || playCount >= maxPlays || !audioScript) return;
+    setIsPlaying(true);
+    setPlayCount((p) => p + 1);
 
-// ============================================================================
-// ATOMIC RENDERER 3: SPOT MISTAKE (Tìm lỗi sai)
-// ============================================================================
-const RenderSpotMistake = ({ content, answer, onAnswer, onSpeak, isReview = false, fontFamily, lang }) => {
-  const sentence = content.wrongSentence || "";
-  
-  // Băm câu thành các nút bấm
-  const words = React.useMemo(() => {
-    if (!sentence) return [];
-    if (lang === 'zh') {
-      return Array.from(sentence).map((char, idx) => ({ id: idx, display: char, original: char })).filter(i => i.original.trim() !== '');
+    let isDone = false;
+    const finishPlay = () => {
+      if (!isDone) {
+        isDone = true;
+        setIsPlaying(false);
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      }
+    };
+
+    const durationMs = Math.max(10000, audioScript.length * 150);
+    timeoutRef.current = setTimeout(() => {
+      finishPlay();
+    }, durationMs);
+
+    if (onPlay) {
+      onPlay(audioScript, 0.9, null, finishPlay);
     } else {
-      return sentence.split(' ').map((word, idx) => ({ id: idx, display: word, original: word })).filter(i => i.original.trim() !== '');
+      finishPlay(); // Fallback an toàn nếu không có Tầng 6
     }
-  }, [sentence, lang]);
+  };
 
-  const targetWrongWord = content.wrongWord || '';
+  const handleSelect = (opt) => {
+    if (isSubmitted) return;
+    setIsSubmitted(true);
+    onAnswer(opt, opt.isCorrect);
+  };
 
   return (
-    <div className="flex flex-col h-full animate-in fade-in">
-      <div className="flex-1 p-5 rounded-2xl bg-orange-50/50 border border-orange-100 flex flex-col items-center justify-center relative text-center mb-4">
-        <div className="text-[10px] font-black uppercase tracking-widest text-orange-500 mb-6 absolute top-3">
-          Chọn một từ bị sai trong câu
-        </div>
-        
-        <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 mt-4 max-w-2xl mx-auto">
-          {words.map((word) => {
-            const isSelected = answer?.id === word.id || answer?.original === word.original;
-            const isActuallyWrong = targetWrongWord && word.original.toLowerCase().includes(targetWrongWord.toLowerCase());
-            
-            let wordStyle = "bg-white text-gray-800 border-gray-200 hover:bg-gray-100 shadow-sm";
-            if (isReview) {
-              if (isActuallyWrong) {
-                wordStyle = 'bg-green-500 text-white border-green-600 shadow-md scale-110 z-10';
-              } else if (isSelected) {
-                wordStyle = 'bg-red-500 text-white border-red-600 shadow-md animate-shake z-10';
-              } else {
-                wordStyle = 'bg-gray-50 text-gray-400 border-gray-200 opacity-50';
-              }
-            } else if (isSelected) {
-              wordStyle = "bg-orange-100 border-orange-500 text-orange-800 ring-2 ring-orange-200 scale-105";
-            }
-
-            return (
-              <button
-                key={word.id}
-                disabled={isReview}
-                onClick={() => onAnswer(word)}
-                style={{ fontFamily }}
-                className={`px-3 py-2 sm:px-4 sm:py-3 rounded-lg border-2 text-xl sm:text-2xl font-bold transition-all active:scale-95 ${wordStyle}`}
-              >
-                {word.display}
-              </button>
-            );
-          })}
+    <div className="flex flex-col items-center gap-6 w-full max-w-2xl mx-auto animate-in zoom-in duration-300">
+      <div className="text-sm font-bold text-blue-500 uppercase tracking-widest bg-blue-50 px-4 py-1.5 rounded-full border border-blue-200 flex items-center gap-2">
+        <Icons.Headphones size={16} /> Kỹ năng Nghe
+      </div>
+      <div className="w-full bg-blue-50/50 border-2 border-blue-100 rounded-3xl p-8 flex flex-col items-center justify-center relative overflow-hidden">
+        {isPlaying && (
+          <div className="absolute inset-0 flex items-center justify-center opacity-20 pointer-events-none">
+            <div className="w-24 h-24 bg-blue-500 rounded-full animate-ping absolute"></div>
+            <div
+              className="w-32 h-32 bg-blue-400 rounded-full animate-ping absolute"
+              style={{ animationDelay: '0.2s' }}
+            ></div>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={handlePlay}
+          disabled={isPlaying || playCount >= maxPlays || !audioScript}
+          className={`relative z-10 w-24 h-24 rounded-full flex items-center justify-center shadow-xl transition-transform ${
+            isPlaying
+              ? 'bg-blue-400 text-white scale-110'
+              : playCount >= maxPlays || !audioScript
+              ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+              : 'bg-blue-600 text-white hover:bg-blue-700 hover:scale-105 active:scale-95'
+          }`}
+        >
+          <Icons.Volume2 size={40} className={isPlaying ? 'animate-pulse' : ''} />
+        </button>
+        <div className="mt-4 text-sm font-bold text-blue-800">
+          {!audioScript
+            ? 'Lỗi: Không có kịch bản âm thanh'
+            : isPlaying
+            ? 'Đang phát âm thanh...'
+            : playCount >= maxPlays
+            ? 'Đã hết lượt nghe'
+            : `Bấm để nghe (Lượt: ${playCount}/${maxPlays})`}
         </div>
       </div>
-      
-      {/* Trong Exam Mode, không hiển thị options thay thế mà chỉ click chọn từ */}
-      {!isReview && !answer && (
-        <div className="h-[60px] flex items-center justify-center text-xs font-bold text-gray-400 uppercase tracking-widest bg-gray-50 rounded-xl border border-dashed border-gray-200 select-none shrink-0">
-          Chạm vào từ sai để chọn
-        </div>
-      )}
-      {!isReview && answer && (
-        <div className="h-[60px] flex items-center justify-between px-6 bg-orange-100 rounded-xl border border-orange-200 shrink-0">
-          <span className="font-bold text-orange-800 text-sm">Đã chọn: {answer.display}</span>
-          <button onClick={() => onAnswer(null)} className="text-xs font-bold text-orange-600 hover:text-red-500">Đổi ý</button>
-        </div>
-      )}
+      <div className="text-xl md:text-2xl font-bold text-gray-800 text-center leading-relaxed mt-2">
+        {term}
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
+        {content?.options?.map((opt, i) => (
+          <button
+            key={i}
+            type="button"
+            onClick={() => handleSelect(opt)}
+            disabled={isSubmitted}
+            className={`p-5 border-2 border-gray-200 rounded-2xl text-lg font-medium transition-all bg-white text-gray-700 shadow-sm ${
+              isSubmitted
+                ? 'opacity-60 cursor-not-allowed'
+                : 'hover:bg-blue-50 hover:border-blue-400 active:scale-95'
+            }`}
+          >
+            {opt.text}
+          </button>
+        ))}
+      </div>
     </div>
   );
 };
 
-// ============================================================================
-// ATOMIC RENDERER 4: ODD ONE OUT (Từ khác loại)
-// ============================================================================
-const RenderOddOneOut = ({ content, answer, onAnswer, onSpeak, isReview = false, fontFamily }) => {
-  const wordsList = Array.isArray(content.words) ? content.words : [];
-  
+// Pronunciation Renderer
+const PronunciationRenderer = ({ content, onAnswer }) => {
+  const [isSubmitted, setIsSubmitted] = useState(false);
+
+  const handleSelect = (opt) => {
+    if (isSubmitted) return;
+    setIsSubmitted(true);
+    onAnswer(opt, opt.isCorrect);
+  };
+
+  const renderHighlighted = (text) => {
+    if (!text) return '';
+    const astCount = (text.match(/\*/g) || []).length;
+    if (astCount === 2) {
+      const parts = text.split('*');
+      return (
+        <>
+          {parts[0]}
+          <span className="text-red-500 font-black underline decoration-2 underline-offset-4">
+            {parts[1]}
+          </span>
+          {parts[2]}
+        </>
+      );
+    } else if (astCount === 1) {
+      const idx = text.indexOf('*');
+      if (idx > 0) {
+        const before = text.substring(0, idx - 1);
+        const target = text.substring(idx - 1, idx);
+        const after = text.substring(idx + 1);
+        return (
+          <>
+            {before}
+            <span className="text-red-500 font-black underline decoration-2 underline-offset-4">
+              {target}
+            </span>
+            {after}
+          </>
+        );
+      }
+    }
+    return text.replace(/\*/g, '');
+  };
+
   return (
-    <div className="flex flex-col h-full animate-in fade-in">
-      <div className="shrink-0 p-4 rounded-2xl bg-indigo-50/50 border border-indigo-100 flex flex-col items-center justify-center text-center mb-4">
-        <div className="text-[11px] font-black uppercase tracking-widest text-indigo-500 flex items-center gap-1.5">
-          <Icons.Eye size={16} /> Chọn từ không cùng nhóm
-        </div>
+    <div className="flex flex-col items-center gap-8 w-full max-w-2xl mx-auto animate-in zoom-in duration-300">
+      <div className="text-sm font-bold text-indigo-500 uppercase tracking-widest bg-indigo-50 px-4 py-1.5 rounded-full border border-indigo-200 flex items-center gap-2">
+        <Icons.Volume2 size={16} /> Chọn từ có phần phát âm khác
       </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full mt-2">
+        {content?.options?.map((opt, i) => (
+          <button
+            key={i}
+            type="button"
+            onClick={() => handleSelect(opt)}
+            disabled={isSubmitted}
+            className={`p-6 border-2 border-gray-200 rounded-2xl text-2xl font-bold transition-all bg-white text-gray-700 shadow-sm tracking-wide ${
+              isSubmitted
+                ? 'opacity-60 cursor-not-allowed'
+                : 'hover:bg-indigo-50 hover:border-indigo-400 active:scale-95'
+            }`}
+          >
+            {renderHighlighted(opt.text)}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 shrink-0 flex-1 content-center">
-        {wordsList.map((wordStr, idx) => {
-          const isCorrect = wordStr === content.oddWord;
-          const isSelected = answer === wordStr || answer?.text === wordStr;
-          
-          let btnStyle = "bg-white border-gray-200 text-gray-700 hover:border-indigo-400 hover:bg-indigo-50";
-          if (isReview) {
-             if (isCorrect) btnStyle = "bg-green-500 border-green-600 text-white shadow-md z-10 scale-[1.02]";
-             else if (isSelected && !isCorrect) btnStyle = "bg-red-500 border-red-600 text-white shadow-md animate-shake";
-             else btnStyle = "bg-gray-50 border-gray-200 text-gray-400 opacity-60 scale-95";
-          } else if (isSelected) {
-             btnStyle = "bg-indigo-100 border-indigo-500 text-indigo-800 ring-2 ring-indigo-200";
-          }
+// Image Choice Renderer
+const ImageChoiceRenderer = ({ content, onAnswer }) => {
+  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [imageErrors, setImageErrors] = useState({});
+  const [imageLoaded, setImageLoaded] = useState({});
 
+  const handleSelect = (opt) => {
+    if (isSubmitted) return;
+    setIsSubmitted(true);
+    onAnswer(opt, opt.isCorrect);
+  };
+
+  return (
+    <div className="flex flex-col items-center gap-6 w-full max-w-3xl mx-auto animate-in zoom-in duration-300">
+      <div className="text-sm font-bold text-emerald-600 uppercase tracking-widest bg-emerald-50 px-4 py-1.5 rounded-full border border-emerald-200 flex items-center gap-2">
+        <Icons.Eye size={16} /> Chọn hình ảnh tương ứng
+      </div>
+      <div className="text-3xl md:text-4xl font-black text-gray-800 text-center leading-relaxed py-4 border-b-2 border-gray-100 w-full capitalize">
+        {content?.term || 'Dữ liệu bị khuyết'}
+      </div>
+      <div className="grid grid-cols-2 gap-3 md:gap-6 w-full mt-2 max-w-2xl">
+        {content?.options?.map((opt, i) => {
+          const isError = imageErrors[i];
+          const isLoaded = imageLoaded[i];
+          const hasImage = opt.image && opt.image.trim() !== '';
           return (
             <button
-              key={idx}
-              disabled={isReview}
-              onClick={() => onAnswer(wordStr)}
-              style={{ fontFamily: (isReview && isCorrect) || !wordStr.match(/[\u4e00-\u9fa5]/) ? 'inherit' : fontFamily }}
-              className={`relative min-h-[80px] p-4 rounded-xl border-2 font-bold text-lg sm:text-xl text-center flex items-center justify-center transition-all active:scale-95 break-words ${btnStyle}`}
+              key={i}
+              type="button"
+              onClick={() => handleSelect(opt)}
+              disabled={isSubmitted}
+              className={`relative flex flex-col items-center justify-center p-2 border-4 border-gray-100 rounded-3xl overflow-hidden transition-all bg-white group ${
+                isSubmitted
+                  ? 'opacity-70 cursor-not-allowed'
+                  : 'hover:border-emerald-400 hover:shadow-xl active:scale-95'
+              }`}
+              style={{ aspectRatio: '1/1', maxHeight: '28vh' }}
             >
-              <span className="px-6">{wordStr}</span>
-              {isReview && isCorrect && <span className="absolute right-4 top-1/2 -translate-y-1/2"><Icons.CheckCircle size={24} className="text-white"/></span>}
-              {isReview && isSelected && !isCorrect && <span className="absolute right-4 top-1/2 -translate-y-1/2"><Icons.X size={24} className="text-white"/></span>}
+              {hasImage && !isError ? (
+                <>
+                  {!isLoaded && (
+                    <div className="absolute inset-0 bg-gray-50 flex items-center justify-center z-0">
+                      <div className="w-8 h-8 border-4 border-emerald-200 border-t-emerald-500 rounded-full animate-spin"></div>
+                    </div>
+                  )}
+                  <img
+                    src={opt.image}
+                    alt="Option"
+                    className={`w-full h-full object-contain p-2 group-hover:scale-105 transition-transform duration-500 z-10 ${
+                      isLoaded ? 'opacity-100' : 'opacity-0'
+                    }`}
+                    onLoad={() => setImageLoaded((prev) => ({ ...prev, [i]: true }))}
+                    onError={() => setImageErrors((prev) => ({ ...prev, [i]: true }))}
+                  />
+                </>
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center text-gray-400 font-bold text-lg md:text-xl uppercase bg-gray-50 p-4 text-center break-words z-20">
+                  {opt.text}
+                </div>
+              )}
             </button>
           );
         })}
@@ -310,305 +301,890 @@ const RenderOddOneOut = ({ content, answer, onAnswer, onSpeak, isReview = false,
   );
 };
 
-// ============================================================================
-// ATOMIC RENDERER 5: SCRAMBLE (Ghép câu / Từ)
-// ============================================================================
-const RenderScramble = ({ content, answer, onAnswer, onSpeak, isReview = false, fontFamily }) => {
-  // Lấy danh sách mảnh ghép (Đảm bảo có id duy nhất)
-  const poolTokens = React.useMemo(() => {
-    return (content.parts || []).map((t, idx) => ({ id: `pt_${idx}`, text: t }));
-  }, [content.parts]);
-  
-  // Trạng thái cục bộ cho mảnh ghép đang chọn
-  const [selectedTokens, setSelectedTokens] = useState([]);
-  
-  useEffect(() => {
-    if (answer && Array.isArray(answer)) {
-      setSelectedTokens(answer);
-    } else if (answer && typeof answer === 'string') {
-      // Trường hợp gõ text (Nếu có hỗ trợ type mode trong Exam)
+// MiniMatch Renderer
+const MiniMatchRenderer = ({ content, onAnswer }) => {
+  const [isSubmitted, setIsSubmitted] = useState(false);
+
+  const safeTerm =
+    content?.term ||
+    (content?.pairs && content.pairs.length > 0 ? content.pairs[0].term : 'Dữ liệu bị khuyết...');
+
+  const [safeOptions] = useState(() => {
+    if (content?.options) return content.options;
+    if (content?.pairs) {
+      return Utils.shuffleArray(
+        content.pairs.map((p) => ({
+          text: p.definition,
+          isCorrect: p.term === safeTerm
+        }))
+      );
     }
-  }, [answer]);
+    return [];
+  });
 
-  const handleSelectPoolToken = (token) => {
-    if (isReview) return;
-    const newTokens = [...selectedTokens, token];
-    setSelectedTokens(newTokens);
-    onAnswer(newTokens); // Đẩy lên Shell
+  const handleSelect = (opt) => {
+    if (isSubmitted) return;
+    setIsSubmitted(true);
+    onAnswer(opt, opt.isCorrect);
   };
-
-  const handleRemoveSelectedToken = (indexToRemove) => {
-    if (isReview) return;
-    const newTokens = selectedTokens.filter((_, idx) => idx !== indexToRemove);
-    setSelectedTokens(newTokens);
-    onAnswer(newTokens.length > 0 ? newTokens : null);
-  };
-
-  if (isReview) {
-    const isCorrect = answer && Array.isArray(answer) && answer.map(t => t.text).join('') === (content.term || content.origin?.term).replace(/\s/g, '');
-    // Logic review đơn giản cho Scramble
-    return (
-      <div className="flex flex-col h-full animate-in fade-in items-center justify-center space-y-4">
-        <div className={`w-full p-4 rounded-2xl border-2 text-center ${isCorrect ? 'bg-green-50 border-green-500 text-green-800' : 'bg-red-50 border-red-500 text-red-800'}`}>
-          <div className="text-xs font-bold uppercase mb-2 opacity-70">Đáp án của bạn:</div>
-          <div style={{ fontFamily }} className="text-xl font-black">
-            {Array.isArray(answer) ? answer.map(t => t.text).join(' ') : (answer || "Bỏ qua")}
-          </div>
-        </div>
-        {!isCorrect && (
-          <div className="w-full p-4 rounded-2xl border-2 border-blue-200 bg-blue-50 text-blue-800 text-center">
-            <div className="text-xs font-bold uppercase mb-2 opacity-70">Đáp án chuẩn:</div>
-            <div style={{ fontFamily }} className="text-xl font-black">
-              {content.term || content.origin?.term}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
 
   return (
-    <div className="flex flex-col h-full animate-in fade-in">
-      <div className="p-4 rounded-2xl bg-purple-50/70 border border-purple-100 text-center mb-4 shrink-0">
-        <div className="text-[10px] font-black uppercase tracking-widest text-purple-400 mb-1">
-          Nghĩa câu / từ mục tiêu
-        </div>
-        <div className="text-base sm:text-lg font-black text-gray-800 leading-snug break-words">
-          {content.definition || content.origin?.definition || "Lắp ráp các mảnh vỡ"}
-        </div>
+    <div className="flex flex-col items-center gap-6 w-full max-w-2xl mx-auto animate-in zoom-in duration-300">
+      <div className="text-sm font-bold text-purple-500 uppercase tracking-widest bg-purple-50 px-4 py-1.5 rounded-full border border-purple-200 flex items-center gap-2 shadow-sm">
+        <Icons.Link size={16} /> Nối với nghĩa đúng
       </div>
-
-      <div className="flex-1 flex flex-col justify-center space-y-6">
-        <div className={`min-h-[100px] p-4 rounded-2xl border-2 border-dashed flex flex-wrap items-center justify-center gap-2 transition-all ${selectedTokens.length > 0 ? 'bg-white border-purple-300' : 'bg-gray-50/80 border-gray-300'}`}>
-          {selectedTokens.length === 0 ? (
-            <span className="text-xs font-bold text-gray-400 italic select-none">
-              Chạm vào các mảnh từ bên dưới...
-            </span>
-          ) : (
-            selectedTokens.map((tok, idx) => (
-              <button
-                key={tok.id + idx}
-                onClick={() => handleRemoveSelectedToken(idx)}
-                style={{ fontFamily }}
-                className="px-3.5 py-2 rounded-xl font-bold text-base shadow-sm border border-purple-300 bg-purple-50 text-purple-800 hover:bg-red-50 hover:border-red-300 hover:text-red-600 transition-colors"
-              >
-                {tok.text}
-              </button>
-            ))
-          )}
-        </div>
-
-        <div className="space-y-2">
-          <div className="flex items-center justify-between px-1">
-            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
-              Kho mảnh ghép
-            </span>
-            {selectedTokens.length > 0 && (
-              <button onClick={() => { setSelectedTokens([]); onAnswer(null); }} className="text-xs font-bold text-gray-400 hover:text-red-500">
-                Làm lại
-              </button>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center justify-center gap-2 p-2">
-            {poolTokens.map((tok) => {
-              const isUsed = selectedTokens.some((s) => s.id === tok.id);
-              return (
-                <button
-                  key={tok.id}
-                  disabled={isUsed}
-                  onClick={() => handleSelectPoolToken(tok)}
-                  style={{ fontFamily }}
-                  className={`px-3.5 py-2 rounded-xl font-bold text-base border-2 transition-all ${
-                    isUsed
-                      ? 'bg-gray-100 text-transparent border-gray-200 pointer-events-none scale-95'
-                      : 'bg-white text-gray-800 border-gray-200 shadow-sm hover:border-blue-400 hover:bg-blue-50/40 active:scale-95'
-                  }`}
-                >
-                  {tok.text}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+      <div className="text-3xl md:text-4xl font-black text-gray-800 text-center leading-relaxed py-4 border-b-2 border-purple-100 w-full">
+        {safeTerm}
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full mt-2">
+        {safeOptions?.map((opt, i) => (
+          <button
+            key={i}
+            type="button"
+            onClick={() => handleSelect(opt)}
+            disabled={isSubmitted}
+            className={`p-5 border-2 border-purple-100 rounded-2xl text-lg font-bold transition-all bg-white text-gray-600 shadow-sm ${
+              isSubmitted
+                ? 'opacity-60 cursor-not-allowed'
+                : 'hover:bg-purple-50 hover:border-purple-400 hover:text-purple-700 active:scale-95'
+            }`}
+          >
+            {opt.text}
+          </button>
+        ))}
       </div>
     </div>
   );
 };
 
+// FillBlank Renderer
+const FillBlankRenderer = ({ content, onAnswer, lang }) => {
+  const [val, setVal] = useState('');
+  const [isSubmitted, setIsSubmitted] = useState(false);
+  const inputRef = useRef(null);
 
-// ============================================================================
-// MAIN COMPONENT: EXAM UI SHELL
-// ============================================================================
-export const ExamUIShell = ({
-  question,         // Dữ liệu câu hỏi từ QueueEngine
-  currentIndex,     // Vị trí hiện tại
-  totalQuestions,   // Tổng số câu
-  timeLeft,         // Thời gian còn lại
-  onAnswerSubmit,   // Hàm nộp bài (gọi khi bấm nút Tiếp theo)
-  onSpeak,          // Hàm đọc âm thanh
-  isReviewMode = false, // Cờ xem lại bài
-  userAnswer = null,    // Đáp án của User (trong lúc thi hoặc lúc xem lại)
-  isCorrect = null,     // Đúng/Sai (Lúc xem lại)
-  fontFamily = 'inherit',
-  lang = 'en'
-}) => {
-  // State quản lý đáp án được chọn hiện tại (chưa Submit)
-  const [currentAnswer, setCurrentAnswer] = useState(null);
-
-  // Sync answer state when question changes or in review mode
-  useEffect(() => {
-    setCurrentAnswer(userAnswer);
-  }, [question, userAnswer]);
-
-  if (!question || !question.metadata || !question.content) {
-    return (
-      <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50 rounded-2xl border-2 border-gray-200 border-dashed">
-        <Icons.AlertCircle size={48} className="text-gray-300 mb-4" />
-        <p className="font-bold text-gray-400 uppercase tracking-widest">Lỗi kết xuất câu hỏi</p>
-      </div>
-    );
-  }
-
-  const meta = question.metadata;
-  const content = question.content;
-  const type = meta.type || 'unknown';
-
-  // Điều phối Atomic Renderer
-  const renderQuestionBody = () => {
-    if (type.includes('multiple_choice') || type.includes('match') || type.includes('tfng') || type.includes('image_quiz') || type.includes('listening') || type.includes('pronunciation') || type.includes('reading')) {
-      return <RenderMCQ content={content} metadata={meta} answer={currentAnswer} onAnswer={setCurrentAnswer} onSpeak={onSpeak} isReview={isReviewMode} fontFamily={fontFamily} lang={lang} />;
-    }
-    if (type.includes('fill_blank')) {
-      return <RenderFillBlank content={content} answer={currentAnswer} onAnswer={setCurrentAnswer} onSpeak={onSpeak} isReview={isReviewMode} fontFamily={fontFamily} lang={lang} />;
-    }
-    if (type.includes('spot_mistake')) {
-      return <RenderSpotMistake content={content} answer={currentAnswer} onAnswer={setCurrentAnswer} onSpeak={onSpeak} isReview={isReviewMode} fontFamily={fontFamily} lang={lang} />;
-    }
-    if (type.includes('odd_one_out')) {
-      return <RenderOddOneOut content={content} answer={currentAnswer} onAnswer={setCurrentAnswer} onSpeak={onSpeak} isReview={isReviewMode} fontFamily={fontFamily} lang={lang} />;
-    }
-    if (type.includes('scramble')) {
-      return <RenderScramble content={content} answer={currentAnswer} onAnswer={setCurrentAnswer} onSpeak={onSpeak} isReview={isReviewMode} fontFamily={fontFamily} lang={lang} />;
-    }
-
-    // Fallback Renderer
-    return (
-      <div className="p-6 text-center text-red-500 font-bold bg-red-50 rounded-xl">
-        Không hỗ trợ hiển thị loại câu hỏi: {type}
-      </div>
-    );
-  };
-
-  // Xác định nút bấm Footer
-  const canSubmit = currentAnswer !== null && currentAnswer !== undefined;
+  const displaySentence = content?.displaySentence || 'Dữ liệu câu hỏi bị khuyết [__________]';
+  const targetWord = content?.targetWord || '';
 
   const handleSubmit = () => {
-    if (isReviewMode || !onAnswerSubmit) return;
-    
-    // Đánh giá Đúng/Sai cơ bản trước khi đẩy lên Logic
-    let isCorrectLocal = false;
-    
-    if (type.includes('multiple_choice') || type.includes('match') || type.includes('tfng') || type.includes('image_quiz') || type.includes('listening') || type.includes('pronunciation') || type.includes('reading')) {
-      isCorrectLocal = currentAnswer.isCorrect === true || String(currentAnswer.isCorrect).toLowerCase() === 'true';
-    } else if (type.includes('fill_blank')) {
-      isCorrectLocal = currentAnswer.isCorrect === true || String(currentAnswer.isCorrect).toLowerCase() === 'true' || currentAnswer.text === content.targetWord;
-    } else if (type.includes('spot_mistake')) {
-      const targetWrong = content.wrongWord || '';
-      isCorrectLocal = targetWrong && currentAnswer.original && currentAnswer.original.toLowerCase().includes(targetWrong.toLowerCase());
-    } else if (type.includes('odd_one_out')) {
-      isCorrectLocal = currentAnswer === content.oddWord;
-    } else if (type.includes('scramble')) {
-      const uText = Array.isArray(currentAnswer) ? currentAnswer.map(t=>t.text).join('') : (currentAnswer || "");
-      const cText = (content.term || content.origin?.term || "").replace(/\s/g, '');
-      isCorrectLocal = uText.toLowerCase() === cText.toLowerCase();
-    }
-    
-    onAnswerSubmit(currentAnswer, isCorrectLocal);
+    if (!val.trim() || isSubmitted) return;
+    setIsSubmitted(true);
+    if (inputRef.current) inputRef.current.blur();
+    const isCorrect =
+      Utils.advancedNormalize(val, lang) === Utils.advancedNormalize(targetWord, lang);
+    onAnswer(val, isCorrect);
   };
 
   return (
-    <div className="w-full h-full bg-white rounded-2xl shadow-xl flex flex-col border border-gray-200 overflow-hidden relative">
-      
-      {/* 1. TOP HUD (Chỉ hiển thị khi đang thi) */}
-      {!isReviewMode && (
-        <div className="bg-gray-900 text-white px-4 py-2.5 flex items-center justify-between shrink-0 shadow-md z-20">
-           <div className="flex items-center gap-3">
-             <div className="px-2.5 py-1 bg-white/20 rounded font-bold text-xs flex items-center gap-1 backdrop-blur-sm">
-                <span>Câu</span>
-                <span className="text-blue-300 font-black">{currentIndex + 1}</span>
-                <span>/</span>
-                <span>{totalQuestions}</span>
-             </div>
-             
-             {/* Badge Cấp độ / Chặng */}
-             <div className="hidden sm:block text-[10px] font-bold uppercase tracking-widest opacity-60">
-                {meta.chapter || meta.phase || "Mock Test"}
-             </div>
-           </div>
-           
-           <div className="flex items-center gap-4">
-             {timeLeft !== null && (
-               <div className={`px-3 py-1 rounded font-mono font-bold text-sm flex items-center gap-1.5 transition-colors ${timeLeft <= 60 ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-800 text-green-400'}`}>
-                 <Icons.Clock size={14} />
-                 <span>{Math.floor(timeLeft / 60).toString().padStart(2, '0')}:{(timeLeft % 60).toString().padStart(2, '0')}</span>
-               </div>
-             )}
-           </div>
-        </div>
-      )}
-
-      {/* 2. KHU VỰC CÂU HỎI TRUNG TÂM */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-3 sm:p-5 relative bg-gray-50/30">
-        
-        {/* Banner Review Mode */}
-        {isReviewMode && (
-          <div className={`mb-4 p-3 rounded-xl border flex items-center gap-3 shadow-sm ${isCorrect ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
-             <div className={`p-2 rounded-full ${isCorrect ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                {isCorrect ? <Icons.CheckCircle size={24} /> : <Icons.X size={24} />}
-             </div>
-             <div>
-                <div className="font-black uppercase tracking-wider text-xs">Kết quả câu hỏi</div>
-                <div className="text-sm font-medium opacity-80 mt-0.5">
-                  {isCorrect ? "Bạn đã trả lời chính xác!" : "Sai rồi. Hãy xem lại phần giải thích bên dưới."}
-                </div>
-             </div>
-          </div>
-        )}
-
-        {/* Gọi Component Render Câu hỏi tương ứng */}
-        {renderQuestionBody()}
-
-        {/* Giải thích (Chỉ hiện khi Review Mode) */}
-        {isReviewMode && (content.explanation || content.analysis) && (
-          <div className="mt-4 p-4 rounded-xl border border-purple-100 bg-purple-50/50 text-gray-700 text-sm whitespace-pre-wrap leading-relaxed shadow-inner">
-            <div className="font-black text-purple-600 uppercase tracking-widest text-[10px] mb-2 flex items-center gap-1">
-              <Icons.Sparkles size={14} /> Phân tích chuyên sâu
-            </div>
-            {content.explanation || content.analysis}
-          </div>
-        )}
+    <div className="flex flex-col items-center gap-8 w-full max-w-2xl mx-auto animate-in zoom-in duration-300">
+      <div className="text-2xl md:text-3xl font-bold text-gray-800 text-center leading-relaxed bg-white p-6 rounded-2xl shadow-sm border border-gray-100 w-full">
+        {displaySentence.split('[__________]').map((part, i, arr) => (
+          <React.Fragment key={i}>
+            {part}
+            {i < arr.length - 1 && (
+              <span className="inline-block w-24 border-b-4 border-gray-300 mx-2 mb-1"></span>
+            )}
+          </React.Fragment>
+        ))}
       </div>
-
-      {/* 3. FOOTER ĐIỀU KHIỂN */}
-      {!isReviewMode && (
-        <div className="p-4 bg-white border-t border-gray-100 shrink-0 shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.05)]">
-           <button
-             onClick={handleSubmit}
-             disabled={!canSubmit}
-             className={`w-full py-3.5 rounded-xl font-black text-white shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 text-base ${canSubmit ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-200' : 'bg-gray-300 cursor-not-allowed'}`}
-           >
-             {canSubmit ? (
-               <>Xác nhận đáp án <Icons.ChevronRight size={20} /></>
-             ) : (
-               "Chọn đáp án để tiếp tục"
-             )}
-           </button>
+      {content?.hint && (
+        <div className="text-sm md:text-base text-gray-500 italic font-medium">
+          &ldquo;{content.hint}&rdquo;
         </div>
       )}
-
+      <div className="flex gap-3 w-full max-w-md">
+        <input
+          ref={inputRef}
+          type="text"
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+          disabled={isSubmitted}
+          className={`flex-1 p-4 text-center text-xl font-bold border-4 rounded-2xl outline-none shadow-inner transition-colors ${
+            isSubmitted
+              ? 'border-gray-200 bg-gray-50 text-gray-400'
+              : 'border-blue-200 focus:border-blue-500 text-gray-800'
+          }`}
+          placeholder="Nhập từ còn thiếu..."
+          autoComplete="off"
+          spellCheck="false"
+        />
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={!val.trim() || isSubmitted}
+          className="px-6 bg-blue-600 text-white rounded-2xl font-bold shadow-lg hover:bg-blue-700 disabled:opacity-50 active:scale-95 transition-transform"
+        >
+          <Icons.Check size={28} />
+        </button>
+      </div>
     </div>
   );
 };
+
+// SpotMistake Renderer
+const SpotMistakeRenderer = ({ content, onAnswer, lang }) => {
+  const [step, setStep] = useState(1);
+  const [selectedWord, setSelectedWord] = useState('');
+  const [correction, setCorrection] = useState('');
+  const [isSubmitted, setIsSubmitted] = useState(false);
+  const inputRef = useRef(null);
+
+  const wrongSentence = content?.wrongSentence || 'Dữ liệu câu hỏi bị khuyết';
+  const wrongWord = content?.wrongWord || '';
+  const correctWord = content?.correction || '';
+  const isChinese = /[\u4e00-\u9fa5]/.test(wrongSentence);
+  const separator = isChinese ? '' : ' ';
+  const words = wrongSentence.split(separator).filter((w) => w.trim().length > 0 || isChinese);
+
+  const handleSubmit = () => {
+    if (!correction.trim() || isSubmitted) return;
+    setIsSubmitted(true);
+    if (inputRef.current) inputRef.current.blur();
+    const isCorrectWord =
+      Utils.advancedNormalize(selectedWord, lang) === Utils.advancedNormalize(wrongWord, lang);
+    const isCorrectFix =
+      Utils.advancedNormalize(correction, lang) === Utils.advancedNormalize(correctWord, lang);
+    onAnswer({ selectedWord, correction }, isCorrectWord && isCorrectFix);
+  };
+
+  return (
+    <div className="flex flex-col items-center gap-8 w-full max-w-3xl mx-auto animate-in zoom-in duration-300">
+      <div className="text-sm font-bold text-red-500 uppercase tracking-widest bg-red-50 px-4 py-1.5 rounded-full border border-red-200">
+        {step === 1 ? 'Bước 1: Chọn từ bị sai' : 'Bước 2: Gõ lại cho đúng'}
+      </div>
+      <div className="flex flex-wrap justify-center gap-3 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        {words.map((w, i) => (
+          <button
+            key={i}
+            type="button"
+            onClick={() => {
+              setSelectedWord(w);
+              setStep(2);
+            }}
+            disabled={step === 2 || isSubmitted}
+            className={`px-4 py-3 text-xl md:text-2xl font-bold rounded-xl border-2 transition-colors ${
+              step === 1 && !isSubmitted
+                ? 'bg-gray-50 hover:bg-red-50 hover:border-red-300 hover:text-red-600 border-gray-200 text-gray-700'
+                : w === selectedWord
+                ? 'bg-red-100 border-red-500 text-red-700 shadow-md scale-105'
+                : 'bg-gray-100 text-gray-300 border-gray-100 opacity-50'
+            }`}
+          >
+            {w}
+          </button>
+        ))}
+      </div>
+      {step === 2 && (
+        <div className="flex gap-3 w-full max-w-md animate-in slide-in-from-bottom-4">
+          <input
+            ref={inputRef}
+            type="text"
+            value={correction}
+            onChange={(e) => setCorrection(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+            disabled={isSubmitted}
+            className={`flex-1 p-4 text-center text-xl font-bold border-4 rounded-2xl outline-none shadow-inner transition-colors ${
+              isSubmitted
+                ? 'border-gray-200 bg-gray-50 text-gray-400'
+                : 'border-red-200 focus:border-red-500 text-gray-800'
+            }`}
+            placeholder={`Sửa "${selectedWord}" thành...`}
+            autoComplete="off"
+            spellCheck="false"
+          />
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={!correction.trim() || isSubmitted}
+            className="px-6 bg-red-600 text-white rounded-2xl font-bold shadow-lg hover:bg-red-700 disabled:opacity-50 active:scale-95 transition-transform"
+          >
+            <Icons.Check size={28} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Scramble Renderer
+const ScrambleRenderer = ({ content, onAnswer, lang }) => {
+  const term = content?.term || 'Lỗi khuyết dữ liệu';
+  const definition = content?.definition || 'Lỗi tải giải nghĩa';
+
+  const [parts, setParts] = useState(() => {
+    const isChinese = /[\u4e00-\u9fa5]/.test(term);
+    const separator = isChinese ? '' : ' ';
+    let words = [];
+    if (content && content.parts && content.parts.length > 0) {
+      words = content.parts;
+    } else {
+      words = term.split(separator).filter((w) => w.trim().length > 0 || isChinese);
+    }
+    return Utils.shuffleArray(words).map((w, i) => ({ id: i, text: w }));
+  });
+  const [userAnswer, setUserAnswer] = useState([]);
+  const [isSubmitted, setIsSubmitted] = useState(false);
+
+  const handleSelect = (part) => {
+    if (isSubmitted) return;
+    setUserAnswer([...userAnswer, part]);
+    setParts(parts.filter((p) => p.id !== part.id));
+  };
+
+  const handleDeselect = (part) => {
+    if (isSubmitted) return;
+    setParts([...parts, part]);
+    setUserAnswer(userAnswer.filter((p) => p.id !== part.id));
+  };
+
+  const handleSubmit = () => {
+    if (userAnswer.length === 0 || isSubmitted) return;
+    setIsSubmitted(true);
+    const isChinese = /[\u4e00-\u9fa5]/.test(term);
+    const separator = isChinese ? '' : ' ';
+    const ansStr = userAnswer.map((p) => p.text).join(separator);
+    onAnswer(
+      ansStr,
+      Utils.advancedNormalize(ansStr, lang) === Utils.advancedNormalize(term, lang)
+    );
+  };
+
+  return (
+    <div className="flex flex-col items-center gap-8 w-full max-w-3xl mx-auto animate-in zoom-in duration-300">
+      <div className="text-lg text-gray-500 font-medium italic text-center px-4 bg-gray-50 p-4 rounded-xl border border-gray-200 w-full">
+        {definition}
+      </div>
+      <div className="min-h-[120px] w-full border-4 border-dashed border-orange-200 rounded-2xl p-4 flex flex-wrap items-center justify-center gap-3 bg-orange-50/30">
+        {userAnswer.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => handleDeselect(p)}
+            disabled={isSubmitted}
+            className={`px-5 py-3 text-white text-xl font-bold rounded-xl shadow-md transition-transform animate-in zoom-in ${
+              isSubmitted
+                ? 'bg-orange-300 cursor-not-allowed'
+                : 'bg-orange-500 active:scale-95 hover:bg-orange-600'
+            }`}
+          >
+            {p.text}
+          </button>
+        ))}
+        {userAnswer.length === 0 && (
+          <span className="text-gray-400 text-lg font-bold mb-3 uppercase tracking-widest opacity-50">
+            Khu vực ghép câu
+          </span>
+        )}
+      </div>
+      <div className="w-full flex flex-col items-center border-t-2 border-gray-100 pt-6">
+        {parts.length > 0 && (
+          <span className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-4 text-center w-full flex items-center justify-center gap-1">
+            <Icons.Layers size={14} /> Các từ để chọn (Lưu ý: Có thể chứa từ nhiễu)
+          </span>
+        )}
+        <div className="flex flex-wrap justify-center gap-3 min-h-[60px] p-4 bg-gray-50 rounded-2xl w-full border border-gray-100 shadow-inner">
+          {parts.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => handleSelect(p)}
+              disabled={isSubmitted}
+              className={`px-5 py-3 text-gray-700 border-2 text-xl font-bold rounded-xl shadow-sm transition-all ${
+                isSubmitted
+                  ? 'bg-gray-100 border-gray-100 opacity-50 cursor-not-allowed'
+                  : 'bg-white border-gray-200 hover:bg-orange-50 hover:border-orange-300 hover:text-orange-700 active:scale-95'
+              }`}
+            >
+              {p.text}
+            </button>
+          ))}
+          {parts.length === 0 && (
+            <span className="text-gray-300 text-sm font-medium italic">Đã lấy hết từ</span>
+          )}
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={handleSubmit}
+        disabled={userAnswer.length === 0 || isSubmitted}
+        className="mt-2 px-10 py-4 bg-green-500 text-white text-xl font-bold rounded-2xl shadow-lg shadow-green-200 hover:bg-green-600 animate-in zoom-in active:scale-95 transition-transform flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <Icons.CheckCircle size={24} /> Nộp câu trả lời
+      </button>
+    </div>
+  );
+};
+
+// OddOneOut Renderer
+const OddOneOutRenderer = ({ content, onAnswer, lang }) => {
+  const [isSubmitted, setIsSubmitted] = useState(false);
+  const oddWord = content?.oddWord || '';
+
+  const handleSelect = (w) => {
+    if (isSubmitted) return;
+    setIsSubmitted(true);
+    const isCorrect =
+      Utils.advancedNormalize(w, lang || 'en') ===
+      Utils.advancedNormalize(oddWord, lang || 'en');
+    onAnswer(w, isCorrect);
+  };
+
+  return (
+    <div className="flex flex-col items-center gap-8 w-full max-w-2xl mx-auto animate-in zoom-in duration-300">
+      <div className="text-sm font-bold text-pink-500 uppercase tracking-widest bg-pink-50 px-4 py-1.5 rounded-full border border-pink-200">
+        Chọn từ khác loại
+      </div>
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 w-full">
+        {content?.words?.map((w, i) => (
+          <button
+            key={i}
+            type="button"
+            onClick={() => handleSelect(w)}
+            disabled={isSubmitted}
+            className={`p-6 md:p-8 border-2 rounded-2xl text-xl sm:text-2xl font-bold transition-all shadow-sm break-words flex items-center justify-center text-center ${
+              isSubmitted
+                ? 'bg-gray-50 border-gray-100 text-gray-400 cursor-not-allowed'
+                : 'bg-white border-gray-200 hover:bg-pink-50 hover:border-pink-400 hover:text-pink-700 text-gray-700 active:scale-95'
+            }`}
+          >
+            {w}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// 2. SPLIT VIEW CONTAINER (Cho IELTS Reading)
+// ============================================================================
+const SplitViewContainer = ({ passage, children }) => {
+  return (
+    <div className="flex flex-col lg:flex-row w-full h-full gap-4 p-4 lg:p-6 bg-gray-50">
+      <div className="flex-1 bg-white rounded-3xl shadow-sm border border-gray-200 p-6 overflow-y-auto custom-scrollbar">
+        <h2 className="text-xl font-black mb-4 font-serif text-gray-800 border-b pb-2 flex items-center gap-2">
+          <Icons.BookOpen size={24} className="text-blue-600" /> Reading Passage
+        </h2>
+        <div className="text-gray-700 leading-loose text-justify font-serif text-base md:text-lg">
+          {passage
+            ? passage.split('\n').map((line, i) => (
+                <React.Fragment key={i}>
+                  {line}
+                  <br />
+                </React.Fragment>
+              ))
+            : 'Không có dữ liệu bài đọc.'}
+        </div>
+      </div>
+      <div className="flex-1 bg-white rounded-3xl shadow-sm border border-gray-200 p-6 flex flex-col justify-center overflow-y-auto custom-scrollbar relative">
+        {children}
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// 3. EXAM UI SHELL (VỎ BỌC CHÍNH ĐIỀU PHỐI)
+// ============================================================================
+export const ExamUIShell = ({
+  examLogic = {},
+  mainColor = 'blue',
+  onExit,
+  onOpenIncorrect,
+  onBookmark,
+  notebook,
+  onPlay,
+  onSpeak,
+  lang
+}) => {
+  const {
+    examState = { status: 'idle', blueprint: [], answers: [], currentIndex: 0, timeRemaining: 0 },
+    currentQuestion,
+    isHydrating,
+    submitAnswer,
+    quitExam,
+    forceSubmitExam,
+    setTransitionState,
+    cachedCount = 0,
+    examCooldown = 0,
+    exportExamToExcel
+  } = examLogic;
+
+  const effectivePlay = onPlay || onSpeak;
+  const handleExitExam = onExit || quitExam;
+
+  const derivedLang =
+    lang ||
+    (examState.blueprint?.[0]?.level?.startsWith('zh')
+      ? 'zh'
+      : examState.blueprint?.[0]?.level?.startsWith('vi')
+      ? 'vi'
+      : 'en');
+
+  // [GIAI ĐOẠN 2 - CHIẾN DỊCH PHÂN CHẶNG] State quản lý màn hình nghỉ 20s & Modal xác nhận nộp bài
+  const [chapterOverlay, setChapterOverlay] = useState(null);
+  const [phaseIntermission, setPhaseIntermission] = useState(null); // { chapter: '...', countdown: 20 }
+  const [showConfirmSubmit, setShowConfirmSubmit] = useState(false);
+
+  const prevChapterRef = useRef(null);
+  const prevPhaseRef = useRef(null);
+
+  // Lắng nghe sự thay đổi của câu hỏi để bật Màn hình chuyển chặng
+  useEffect(() => {
+    let initTimerId;
+    let overlayTimerId;
+
+    if (currentQuestion && currentQuestion.metadata) {
+      const currentChap = currentQuestion.metadata.chapter;
+      const currentPhase = currentQuestion.metadata.phase;
+
+      // KÍCH HOẠT MÀN HÌNH NGHỈ 20s (Chỉ khi phase thay đổi và không phải câu đầu tiên)
+      if (prevPhaseRef.current !== null && currentPhase !== prevPhaseRef.current) {
+        initTimerId = setTimeout(() => {
+          setPhaseIntermission({ chapter: currentChap, countdown: 20 });
+          if (setTransitionState) setTransitionState(true); // Đóng băng timer chính
+        }, 0);
+      }
+      // NẾU CHỈ LÀ ĐỔI CHAPTER BÌNH THƯỜNG (Chớp 2.5s)
+      else if (
+        currentChap &&
+        currentChap !== prevChapterRef.current &&
+        prevPhaseRef.current !== null
+      ) {
+        initTimerId = setTimeout(() => {
+          setChapterOverlay(currentChap);
+          if (setTransitionState) setTransitionState(true);
+          overlayTimerId = setTimeout(() => {
+            setChapterOverlay(null);
+            if (setTransitionState) setTransitionState(false);
+          }, 2500);
+        }, 0);
+      }
+
+      prevChapterRef.current = currentChap;
+      prevPhaseRef.current = currentPhase;
+    }
+
+    return () => {
+      if (initTimerId) clearTimeout(initTimerId);
+      if (overlayTimerId) clearTimeout(overlayTimerId);
+    };
+  }, [currentQuestion, setTransitionState]);
+
+  // Động cơ đếm ngược cho Màn hình nghỉ 20s
+  useEffect(() => {
+    let tId;
+    if (phaseIntermission && phaseIntermission.countdown > 0) {
+      tId = setTimeout(() => {
+        setPhaseIntermission((prev) =>
+          prev ? { ...prev, countdown: prev.countdown - 1 } : null
+        );
+      }, 1000);
+    } else if (phaseIntermission && phaseIntermission.countdown === 0) {
+      // Hết thời gian nghỉ, mở khóa
+      tId = setTimeout(() => {
+        setPhaseIntermission(null);
+        if (setTransitionState) setTransitionState(false);
+      }, 0);
+    }
+    return () => {
+      if (tId) clearTimeout(tId);
+    };
+  }, [phaseIntermission, setTransitionState]);
+
+  if (examState.status === 'loading') {
+    const timeLeft = examState.preloadCountdown !== undefined ? examState.preloadCountdown : 30;
+    return (
+      <div className="flex flex-col items-center justify-center h-full bg-gray-50 z-[999] absolute inset-0 animate-in fade-in duration-300">
+        <div className="relative mb-6 flex items-center justify-center">
+          <div className={`absolute w-24 h-24 border-4 border-${mainColor}-100 rounded-full`}></div>
+          <div
+            className={`absolute w-24 h-24 border-4 border-${mainColor}-500 border-t-transparent rounded-full animate-spin`}
+          ></div>
+          <div
+            className={`relative z-10 font-black text-3xl text-${mainColor}-600 drop-shadow-sm`}
+          >
+            {timeLeft}
+          </div>
+        </div>
+        <h2 className="text-xl font-black text-gray-800 mb-2 tracking-wide uppercase">
+          Đang thiết lập đề thi
+        </h2>
+        <p className={`text-${mainColor}-600 text-sm font-bold animate-pulse mb-6`}>
+          Khởi tạo dữ liệu vòng 1...
+        </p>
+        {/* [NEW v1.06] Bộ giám sát nạp đạn */}
+        <div className="px-5 py-2.5 bg-blue-50 border border-blue-200 rounded-full flex items-center gap-2.5 shadow-sm animate-in slide-in-from-bottom-4">
+          <Icons.Database size={18} className="text-blue-500 animate-bounce" />
+          <span className="text-sm font-black text-blue-700 uppercase tracking-widest">
+            Đã nạp sẵn: {cachedCount} câu AI
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  if (
+    examState.status === 'error' ||
+    (examState.status === 'playing' && !currentQuestion && !isHydrating)
+  ) {
+    const handleSkipError = () => {
+      if (submitAnswer) {
+        submitAnswer({ error: 'Lỗi hệ thống/mạng' }, false);
+      }
+    };
+    return (
+      <div className="flex flex-col items-center justify-center h-full bg-gray-50 z-[999] absolute inset-0 animate-in zoom-in p-6 text-center">
+        <div className="w-20 h-20 bg-red-100 text-red-500 rounded-full flex items-center justify-center mb-6 shadow-inner">
+          <Icons.AlertCircle size={40} />
+        </div>
+        <h2 className="text-2xl font-black text-gray-800 mb-2">Gián đoạn nạp dữ liệu!</h2>
+        <p className="text-gray-500 mb-8 max-w-sm leading-relaxed">
+          Hệ thống không thể kết nối đến Máy chủ AI hoặc Kho lưu trữ để nạp câu hỏi này. Bạn muốn
+          xử lý thế nào?
+        </p>
+        <div className="flex gap-3 w-full max-w-sm">
+          <button
+            type="button"
+            onClick={handleSkipError}
+            className={`flex-1 py-3 bg-${mainColor}-100 text-${mainColor}-700 font-bold rounded-xl shadow-sm hover:bg-${mainColor}-200 transition-colors flex items-center justify-center gap-2`}
+          >
+            <Icons.SkipForward size={18} /> Bỏ qua câu này
+          </button>
+          <button
+            type="button"
+            onClick={handleExitExam}
+            className="flex-1 py-3 bg-red-600 text-white font-bold rounded-xl shadow-lg hover:bg-red-700 transition-colors flex items-center justify-center gap-2"
+          >
+            <Icons.X size={18} /> Thoát bài thi
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (examState.status === 'completed') {
+    const SafeExamReportUI =
+      ExamReportUI ||
+      (typeof window !== 'undefined' && (window.Block5_15_ExamReportUI || window.ExamReportUI));
+    if (SafeExamReportUI) {
+      return (
+        <SafeExamReportUI
+          examState={examState}
+          onExit={handleExitExam}
+          mainColor={mainColor}
+          onBookmark={onBookmark}
+          notebook={notebook}
+          exportExamToExcel={exportExamToExcel}
+        />
+      );
+    }
+    return (
+      <div className="flex flex-col items-center justify-center h-full bg-gray-50 z-[999] absolute inset-0 animate-in zoom-in">
+        <div
+          className={`w-24 h-24 bg-${mainColor}-100 text-${mainColor}-600 rounded-full flex items-center justify-center mb-6`}
+        >
+          <Icons.CheckCircle size={48} />
+        </div>
+        <h2 className="text-3xl font-black text-gray-800 mb-2">Đã nộp bài!</h2>
+        <div className="flex gap-4">
+          <button
+            type="button"
+            onClick={handleExitExam}
+            className={`px-8 py-3 bg-${mainColor}-600 text-white font-bold rounded-xl shadow-lg hover:bg-${mainColor}-700`}
+          >
+            Quay về Menu
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (handleExitExam) handleExitExam();
+              if (onOpenIncorrect) onOpenIncorrect();
+            }}
+            className="px-8 py-3 bg-white text-red-500 border border-red-200 font-bold rounded-xl shadow-sm hover:bg-red-50"
+          >
+            Xem lại lỗi sai
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const totalQ = examState.blueprint.length;
+  const currentQ = examState.currentIndex;
+  const progressPct = totalQ > 0 ? (currentQ / totalQ) * 100 : 0;
+
+  const formatTime = (sec) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const isUrgent = examState.timeRemaining < 300 && examState.timeRemaining > 0;
+  const timerClass = isUrgent
+    ? 'text-red-600 animate-pulse font-black'
+    : `text-${mainColor}-700 font-bold`;
+
+  // CHỌN RENDERER
+  let Renderer = null;
+  if (currentQuestion) {
+    const type = currentQuestion.metadata?.type || '';
+    if (type.includes('listening')) Renderer = ListeningRenderer;
+    else if (type.includes('multiple_choice') || type.includes('mcq'))
+      Renderer = MultipleChoiceRenderer;
+    else if (type.includes('fill_blank') || type.includes('tfng')) Renderer = FillBlankRenderer;
+    else if (type.includes('spot_mistake')) Renderer = SpotMistakeRenderer;
+    else if (type.includes('scramble')) Renderer = ScrambleRenderer;
+    else if (type.includes('odd_one_out')) Renderer = OddOneOutRenderer;
+    else if (type.includes('match')) Renderer = MiniMatchRenderer;
+    else if (type.includes('pronunciation')) Renderer = PronunciationRenderer;
+    else if (type.includes('image_quiz')) Renderer = ImageChoiceRenderer;
+    else Renderer = MultipleChoiceRenderer;
+  }
+
+  const questionContent = (
+    <div className="flex-1 w-full h-full overflow-y-auto custom-scrollbar relative bg-gray-50/30">
+      <div className="min-h-full w-full flex flex-col items-center justify-center p-4 sm:p-6 pb-12">
+        {isHydrating ? (
+          <div className="flex flex-col items-center gap-4 animate-in fade-in my-auto">
+            <div
+              className={`w-12 h-12 border-4 border-${mainColor}-200 border-t-${mainColor}-600 rounded-full animate-spin`}
+            ></div>
+            <div
+              className={`text-${mainColor}-600 font-bold animate-pulse uppercase tracking-widest text-sm`}
+            >
+              Đang tải câu hỏi...
+            </div>
+          </div>
+        ) : currentQuestion && Renderer ? (
+          <Renderer
+            key={currentQuestion.id}
+            content={currentQuestion.content}
+            onAnswer={(ans, isCorrect) => submitAnswer(ans, isCorrect)}
+            onPlay={effectivePlay}
+            lang={derivedLang}
+          />
+        ) : null}
+      </div>
+    </div>
+  );
+
+  const hasPassage = currentQuestion?.content?.passage;
+
+  return (
+    <div className="fixed inset-0 z-[1000] bg-gray-50 flex flex-col overflow-hidden">
+      {/* MODAL XÁC NHẬN NỘP BÀI SỚM (Thay thế window.confirm) */}
+      {showConfirmSubmit && (
+        <div
+          className="fixed inset-0 z-[1100] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in"
+          onClick={() => setShowConfirmSubmit(false)}
+        >
+          <div
+            className="bg-white p-6 rounded-2xl shadow-2xl max-w-sm w-full text-center border border-gray-100 flex flex-col items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-14 h-14 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-4">
+              <Icons.AlertCircle size={28} />
+            </div>
+            <h3 className="text-lg font-black text-gray-800 mb-2">Nộp bài sớm?</h3>
+            <p className="text-xs sm:text-sm text-gray-600 mb-6 leading-relaxed">
+              Bạn có chắc chắn muốn nộp bài sớm? Tiến trình hiện tại sẽ được tổng hợp.
+            </p>
+            <div className="flex gap-3 w-full">
+              <button
+                type="button"
+                onClick={() => setShowConfirmSubmit(false)}
+                className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-sm transition-colors"
+              >
+                Làm tiếp
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowConfirmSubmit(false);
+                  if (forceSubmitExam) forceSubmitExam();
+                }}
+                className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-sm shadow-md transition-colors"
+              >
+                Nộp bài ngay
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* GIAI ĐOẠN 2: MÀN HÌNH CHUYỂN CHẶNG (PHASE INTERMISSION SCREEN 20s) */}
+      {phaseIntermission && (
+        <div className="absolute inset-0 z-[1050] bg-gray-50 flex flex-col items-center justify-center animate-in fade-in duration-300 p-6">
+          <div
+            className={`w-32 h-32 rounded-full border-8 border-${mainColor}-100 flex items-center justify-center mb-8 relative shadow-inner`}
+          >
+            <svg className="absolute inset-0 w-full h-full -rotate-90">
+              <circle
+                cx="64"
+                cy="64"
+                r="60"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="8"
+                strokeDasharray="377"
+                strokeDashoffset={377 - (377 * phaseIntermission.countdown) / 20}
+                className={`text-${mainColor}-500 transition-all duration-1000 linear`}
+              />
+            </svg>
+            <span className={`text-4xl font-black text-${mainColor}-600`}>
+              {phaseIntermission.countdown}
+            </span>
+          </div>
+          <Icons.Layers size={48} className={`text-${mainColor}-400 mb-4`} />
+          <h2 className="text-xl md:text-2xl font-bold text-gray-500 mb-2 uppercase tracking-widest text-center">
+            Chuẩn bị chuyển sang
+          </h2>
+          <p
+            className={`text-3xl md:text-4xl font-black text-${mainColor}-700 text-center px-4 leading-tight mb-12 max-w-2xl`}
+          >
+            {phaseIntermission.chapter}
+          </p>
+          {/* [NEW v1.06] Bộ giám sát nạp đạn */}
+          <div className="flex flex-col items-center gap-3">
+            <div className="flex items-center gap-2 text-sm font-bold text-gray-400 animate-pulse">
+              <Icons.Clock size={16} /> Vui lòng chờ để AI chuẩn bị dữ liệu...
+            </div>
+            <div className="px-5 py-2.5 bg-blue-50 border border-blue-200 rounded-full flex items-center gap-2.5 shadow-sm animate-in slide-in-from-bottom-2">
+              <Icons.Database size={18} className="text-blue-500 animate-bounce" />
+              <span className="text-sm font-black text-blue-700 uppercase tracking-widest">
+                Đã nạp sẵn: {cachedCount} câu AI
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* OVERLAY CHUYỂN CHAPTER NHỎ (Giữ nguyên logic cũ chớp 2.5s) */}
+      {chapterOverlay && !phaseIntermission && (
+        <div
+          className={`absolute inset-0 z-[1050] bg-${mainColor}-600 text-white flex flex-col items-center justify-center animate-in fade-in zoom-in duration-300`}
+        >
+          <Icons.Layers size={64} className="mb-6 opacity-80" />
+          <h2 className="text-xl md:text-2xl font-bold mb-2 uppercase tracking-widest opacity-80">
+            Phần tiếp theo
+          </h2>
+          <p className="text-3xl md:text-5xl font-black text-center px-4 leading-tight">
+            {chapterOverlay}
+          </p>
+        </div>
+      )}
+
+      {/* HEADER */}
+      <div className="w-full bg-white border-b border-gray-200 shadow-sm shrink-0 z-50">
+        <div className="w-full h-1.5 bg-gray-100 flex">
+          <div
+            className={`h-full bg-${mainColor}-500 transition-all duration-500 ease-out`}
+            style={{ width: `${progressPct}%` }}
+          ></div>
+        </div>
+        <div className="flex justify-between items-center p-3 md:p-4">
+          <div className="flex flex-col">
+            <div className="flex items-center gap-3">
+              <div
+                className={`w-10 h-10 rounded-full bg-${mainColor}-100 text-${mainColor}-600 flex items-center justify-center font-black text-sm border-2 border-${mainColor}-200 shrink-0`}
+              >
+                {currentQ + 1}
+              </div>
+              <div className="hidden sm:block">
+                <div className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+                  Tiến trình
+                </div>
+                <div className="text-sm font-bold text-gray-700">
+                  {currentQ + 1} / {totalQ} câu
+                </div>
+              </div>
+            </div>
+            {currentQuestion?.content && (
+              <div className="mt-1.5 sm:ml-[52px] flex items-center gap-2 animate-in fade-in flex-wrap">
+                {/* 1. Nguồn câu hỏi hiện tại */}
+                {currentQuestion.content._isRescued ? (
+                  <span
+                    className="text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1 bg-orange-100 text-orange-700 border border-orange-200 shadow-sm"
+                    title="Sử dụng dữ liệu dự phòng do mất kết nối"
+                  >
+                    <Icons.AlertCircle size={10} className="text-orange-500" /> Nguồn: Dự phòng
+                  </span>
+                ) : currentQuestion.content.isAiGenerated ? (
+                  <span
+                    className="text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1 bg-indigo-100 text-indigo-700 border border-indigo-200 shadow-sm"
+                    title="Câu hỏi được tạo bởi AI"
+                  >
+                    <Icons.Sparkles size={10} className="text-indigo-500" /> Nguồn: AI
+                  </span>
+                ) : (
+                  <span
+                    className="text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1 bg-slate-100 text-slate-600 border border-slate-200"
+                    title="Trích xuất từ Bộ thẻ"
+                  >
+                    <Icons.Layers size={10} className="text-slate-400" /> Nguồn: Thẻ gốc
+                  </span>
+                )}
+                {/* 2. Băng đạn AI đang chờ */}
+                <span
+                  className="text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1 bg-blue-50 text-blue-600 border border-blue-200 shadow-sm"
+                  title={`Có ${cachedCount} câu hỏi do AI tạo đã sẵn sàng trong băng đạn`}
+                >
+                  <Icons.Database size={10} className="text-blue-500" /> Đã nạp sẵn: {cachedCount}{' '}
+                  câu AI
+                </span>
+                {/* 3. Đồng hồ Cooldown (Nếu có) */}
+                {examCooldown > 0 && (
+                  <span
+                    className="text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1 bg-red-50 text-red-600 border border-red-200 shadow-sm animate-pulse"
+                    title="Tạo thời gian nghỉ để AI sinh câu hỏi"
+                  >
+                    <Icons.Clock size={10} /> Chờ chuyển câu: {examCooldown}s
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="flex flex-col items-center">
+            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">
+              Thời gian còn lại
+            </div>
+            <div
+              className={`text-xl sm:text-2xl font-mono flex items-center gap-2 bg-gray-50 px-4 py-1 rounded-xl border border-gray-100 shadow-inner ${timerClass}`}
+            >
+              <Icons.Clock size={20} /> {formatTime(examState.timeRemaining)}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowConfirmSubmit(true)}
+              className="text-xs font-bold text-red-500 bg-red-50 px-3 py-2 rounded-xl border border-red-200 hover:bg-red-100 transition-colors flex items-center gap-1"
+            >
+              <Icons.CheckCircle size={16} /> <span className="hidden sm:inline">Nộp bài</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* MAIN CONTENT AREA */}
+      <div className="flex-1 w-full h-full relative">
+        {hasPassage ? (
+          <SplitViewContainer passage={currentQuestion?.content?.passage || ''}>
+            {questionContent}
+          </SplitViewContainer>
+        ) : (
+          questionContent
+        )}
+      </div>
+    </div>
+  );
+};
+
+if (typeof window !== 'undefined') {
+  window.ExamUIShell = ExamUIShell;
+  window.Block5_14_ExamUIShell = ExamUIShell;
+}
 
 export default ExamUIShell;

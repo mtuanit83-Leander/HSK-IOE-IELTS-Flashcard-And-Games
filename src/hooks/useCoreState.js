@@ -1,16 +1,26 @@
-/**
- * @file src/hooks/useCoreState.js
- * @description Quản lý trạng thái cốt lõi (Core State) của toàn bộ ứng dụng (Data, UI toggles, User configs).
- * @origin Tầng 6 - Block 6.1 (Core State)
- */
+// ============================================================================
+// FILE 75/85: src/hooks/useCoreState.js
+// NGUỒN GỐC: Tầng 6 - Block 6.1 (Core State - Version 2.4)
+// NHIỆM VỤ: Quản lý toàn bộ State gốc, layoutAlign, khởi tạo IndexedDB (FcDB)
+//           và vận hành Động cơ "Vòi nước" lọc dữ liệu đa chiều.
+// ============================================================================
 
 import { useState, useEffect, useRef } from 'react';
-import { STORAGE_KEYS, CONFIG_SAMPLES } from '@/config/constants';
+import {
+  STORAGE_KEYS,
+  DEFAULT_SHEETS,
+  DEFAULT_API_KEY_SHEET,
+  CONFIG_SAMPLES
+} from '@/config/constants';
 import { Utils } from '@/utils/helpers';
+import { AiMemoryManager } from '@/utils/memoryManager';
 import { FcDB } from '@/services/db';
-import { ExamEngine } from '@/engines/exam';
+import { fetchWithFallback } from '@/services/geminiApi';
+import { ExamEngine } from '@/engines/exam/index';
 
+// Hàm nạp Font chữ động cho Tiếng Trung / Thư pháp
 const loadFont = (id, url) => {
+  if (typeof document === 'undefined') return;
   let link = document.getElementById(id);
   if (!link) {
     link = document.createElement('link');
@@ -23,7 +33,7 @@ const loadFont = (id, url) => {
   }
 };
 
-// Trình phân tích Storage thông minh, dọn dẹp rác chuỗi
+// [BẢN VÁ V2.1] Trình phân tích Storage thông minh, dọn dẹp rác chuỗi
 const parseArrayStorage = (key, defaultArr) => {
   const raw = localStorage.getItem(key);
   if (!raw) return defaultArr;
@@ -39,37 +49,60 @@ const parseArrayStorage = (key, defaultArr) => {
   }
 };
 
-export const useCoreState = () => {
-  // --- CONSTANTS ---
-  const DEFAULT_SETTINGS = {
-    rate: 0.8, pitch: 1, selectedVoice: null,
-    delayAfterRead: 1000, delayFlip: 2000, delayNext: 1500, repeatCount: 1,
-    startSide: 'term', fontFamily: 'sans', fontSize: 3, backFontSize: 1.25, cardSize: 1, fontWeight: 'bold',
-    srsEnabled: true,
-    srsHard: '2d',
-    srsGood: '4d',
-    srsEasy: '7d'
-  };
-  const DEFAULT_AI_CONFIG = { loadingTime: 22, delayMs: 2500, maxAmmo: 4, uiCooldown: 9 };
+export const DEFAULT_SETTINGS = {
+  rate: 0.8,
+  pitch: 1,
+  selectedVoice: null,
+  delayAfterRead: 1000,
+  delayFlip: 2000,
+  delayNext: 1500,
+  repeatCount: 1,
+  startSide: 'term',
+  fontFamily: 'sans',
+  fontSize: 3,
+  backFontSize: 1.25,
+  cardSize: 1,
+  fontWeight: 'bold',
+  srsEnabled: true,
+  srsHard: '2d',
+  srsGood: '4d',
+  srsEasy: '7d'
+};
 
+export const DEFAULT_AI_CONFIG = {
+  loadingTime: 22,
+  delayMs: 2500,
+  maxAmmo: 4,
+  uiCooldown: 9
+};
+
+export const useCoreState = () => {
   // --- STATE DEFINITIONS ---
   const [viewMode, setViewMode] = useState('learn');
-  const [lang, setLang] = useState(() => Utils.safeJsonParse(STORAGE_KEYS.LANG || 'fc_lang', 'en') || 'en');
-  
+  const [lang, setLang] = useState(() => {
+    const saved =
+      Utils?.safeJsonParse(STORAGE_KEYS?.LANG || 'fc_lang', 'en') || 'en';
+    return saved === 'zh' ? 'zh' : 'en';
+  });
+
   // Chốt chặn để phân biệt lần đầu tải trang và đổi ngôn ngữ
   const prevLangRef = useRef(lang);
-  
-  const [uiLang, setUiLang] = useState(() => Utils.safeJsonParse(STORAGE_KEYS.UI_LANG || 'fc_ui_lang', 'en') || 'en');
+
+  const [uiLang, setUiLang] = useState(() => {
+    return (
+      Utils?.safeJsonParse(STORAGE_KEYS?.UI_LANG || 'fc_ui_lang', 'en') || 'en'
+    );
+  });
+
   const [dataMode, setDataMode] = useState(() => {
     const saved = localStorage.getItem('fc_data_mode');
     return saved ? saved.replace(/"/g, '') : 'vocab';
   });
 
-  // BOOT HYDRATION DESYNC FIX - Khởi tạo Level với độ tin cậy 100%
+  // [BẢN VÁ V2.3] BOOT HYDRATION DESYNC FIX - Khởi tạo Level với độ tin cậy 100%
   const [currentLevel, setCurrentLevel] = useState(() => {
     const def = lang === 'zh' ? ['zh_level_1'] : ['en_level_4'];
     let initialVal = parseArrayStorage('fc_current_level_' + lang, null);
-    
     // Quét dự phòng: Nếu chưa có trong storage chuẩn, thử tìm trong settings cũ
     if (!initialVal) {
       try {
@@ -77,12 +110,13 @@ export const useCoreState = () => {
         if (settingsStr) {
           const settingsObj = JSON.parse(settingsStr);
           if (settingsObj.currentLevel) {
-            initialVal = Array.isArray(settingsObj.currentLevel) ? settingsObj.currentLevel : [settingsObj.currentLevel];
+            initialVal = Array.isArray(settingsObj.currentLevel)
+              ? settingsObj.currentLevel
+              : [settingsObj.currentLevel];
           }
         }
       } catch (e) {}
     }
-    
     // Chốt chặn cuối cùng: Trả về Mặc định nếu vẫn rỗng
     if (!initialVal || initialVal.length === 0) {
       initialVal = def;
@@ -93,9 +127,6 @@ export const useCoreState = () => {
   const [currentTopic, setCurrentTopic] = useState(() => {
     return parseArrayStorage('fc_current_topic_' + lang, []);
   });
-
-  // [BẢN VÁ ĐỒNG BỘ] Tín hiệu kích hoạt Động cơ "Vòi Nước" khi nạp dữ liệu mới từ useDataIO
-  const [masterDataVersion, setMasterDataVersion] = useState(0);
 
   // Data States
   const [cards, setCards] = useState([]);
@@ -111,17 +142,31 @@ export const useCoreState = () => {
   const [globalRetryBag, setGlobalRetryBag] = useState({});
 
   // SYSTEM EVENT LOGS STATE
-  const [systemLogs, setSystemLogs] = useState(() => Utils.safeJsonParse('fc_system_logs', []) || []);
+  const [systemLogs, setSystemLogs] = useState(
+    () => Utils?.safeJsonParse('fc_system_logs', []) || []
+  );
 
   // Config & Token
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem(STORAGE_KEYS.API_KEY || 'fc_apikey') || '');
-  const [totalTokens, setTotalTokens] = useState(() => parseInt(localStorage.getItem('fc_total_tokens') || '0', 10));
-  const [aiConfig, setAiConfig] = useState(() => Utils.safeJsonParse('fc_ai_config', DEFAULT_AI_CONFIG) || DEFAULT_AI_CONFIG);
-  
-  // Bổ sung State quản lý Mô hình AI
-  const [aiModel, setAiModel] = useState(() => localStorage.getItem('fc_ai_model') || 'gemini-3.5-flash-lite');
-  
-  // Bổ sung State quản lý vị trí Không gian học (Responsive Layout Alignment)
+  const [apiKey, setApiKey] = useState(
+    () => localStorage.getItem(STORAGE_KEYS?.API_KEY || 'fc_apikey') || ''
+  );
+  const [totalTokens, setTotalTokens] = useState(() =>
+    parseInt(localStorage.getItem('fc_total_tokens') || '0', 10)
+  );
+  const [aiConfig, setAiConfig] = useState(() => {
+    const saved = Utils?.safeJsonParse('fc_ai_config', DEFAULT_AI_CONFIG);
+    return {
+      ...DEFAULT_AI_CONFIG,
+      ...(saved && typeof saved === 'object' ? saved : {})
+    };
+  });
+
+  // [V2.3] Bổ sung State quản lý Mô hình AI
+  const [aiModel, setAiModel] = useState(
+    () => localStorage.getItem('fc_ai_model') || 'gemini-3.5-flash-lite'
+  );
+
+  // [V2.4] Bổ sung State quản lý vị trí Không gian học (Responsive Layout Alignment)
   const [layoutAlign, setLayoutAlign] = useState(() => {
     return localStorage.getItem('fc_layout_align') || 'center';
   });
@@ -154,12 +199,16 @@ export const useCoreState = () => {
   const [isAiModeGame, setIsAiModeGame] = useState(false);
   const [resetPending, setResetPending] = useState(false);
 
-  // URLs - Đồng bộ chính xác theo từng ngôn ngữ
-  const [exportUrl, setExportUrl] = useState(() => {
-    const baseKey = STORAGE_KEYS.EXPORT_URL || 'fc_export_url';
-    return localStorage.getItem(baseKey + '_' + lang) || localStorage.getItem(baseKey) || "";
-  });
-  const [apiKeySheetUrl, setApiKeySheetUrl] = useState(() => localStorage.getItem(STORAGE_KEYS.API_KEY_SHEET || 'fc_apikey_sheet') || "");
+  // URLs
+  const [exportUrl, setExportUrl] = useState(
+    () => localStorage.getItem(STORAGE_KEYS?.EXPORT_URL || 'fc_export_url') || ''
+  );
+  const [apiKeySheetUrl, setApiKeySheetUrl] = useState(
+    () =>
+      localStorage.getItem(STORAGE_KEYS?.API_KEY_SHEET || 'fc_apikey_sheet') ||
+      DEFAULT_API_KEY_SHEET ||
+      ''
+  );
   const [importUrl, setImportUrl] = useState('');
   const [defaultUrl, setDefaultUrl] = useState('');
 
@@ -174,23 +223,43 @@ export const useCoreState = () => {
 
   // Quản lý Sessions đa ngôn ngữ
   const [globalGameSessions, setGlobalGameSessions] = useState(() => {
-    const data = Utils.safeJsonParse('fc_game_sessions', {});
+    const data = Utils?.safeJsonParse('fc_game_sessions', {});
     if (data && (data.quiz || data.match || data.scramble)) return {};
-    return data;
+    return data || {};
   });
 
   // Proxy các biến state cho riêng ngôn ngữ hiện tại
   const gameSessions = globalGameSessions[lang] || {};
   const setGameSessions = (updater) => {
-    setGlobalGameSessions(prev => {
+    setGlobalGameSessions((prev) => {
       const currentLangSessions = prev[lang] || {};
-      const nextLangSessions = typeof updater === 'function' ? updater(currentLangSessions) : updater;
+      const nextLangSessions =
+        typeof updater === 'function' ? updater(currentLangSessions) : updater;
       return { ...prev, [lang]: nextLangSessions };
     });
   };
 
   const [isMuted, setIsMuted] = useState(false);
-  const [settings, setSettings] = useState(() => Utils.safeJsonParse(STORAGE_KEYS.SETTINGS || 'fc_settings', DEFAULT_SETTINGS));
+
+  // Khởi tạo Settings kèm cơ chế tự làm sạch nếu bị nhiễm thông số lệch (VD: backFontSize = 26)
+  const [settings, setSettings] = useState(() => {
+    const raw = Utils?.safeJsonParse(
+      STORAGE_KEYS?.SETTINGS || 'fc_settings',
+      DEFAULT_SETTINGS
+    );
+    const merged = {
+      ...DEFAULT_SETTINGS,
+      ...(raw && typeof raw === 'object' ? raw : {})
+    };
+    if (typeof merged.backFontSize === 'number' && merged.backFontSize > 8) {
+      merged.backFontSize = DEFAULT_SETTINGS.backFontSize;
+    }
+    if (typeof merged.fontSize === 'number' && merged.fontSize > 10) {
+      merged.fontSize = DEFAULT_SETTINGS.fontSize;
+    }
+    return merged;
+  });
+
   const [voices, setVoices] = useState([]);
   const [isContentHidden, setIsContentHidden] = useState(false);
   const [isBatterySaverMode, setIsBatterySaverMode] = useState(false);
@@ -204,70 +273,43 @@ export const useCoreState = () => {
   const isAiQueueProcessing = useRef(false);
 
   // --- INITIALIZATION EFFECTS ---
-
-  // ĐỘNG CƠ KHỞI TẠO CƠ SỞ DỮ LIỆU (INDEXEDDB INIT & BACKUP MIGRATION)
+  // ĐỘNG CƠ KHỞI TẠO CƠ SỞ DỮ LIỆU (INDEXEDDB INIT)
   useEffect(() => {
     const initPersistence = async () => {
-      if (!FcDB) {
+      const dbInstance =
+        FcDB || (typeof window !== 'undefined' ? window.FcDB : null);
+      if (!dbInstance) {
         console.error('[CoreState] FcDB not found');
         setIsDbReady(true);
         return;
       }
       try {
-        await FcDB.init();
-
-        // [BẢN VÁ BACKUP RESTORE] Chuyển giao dữ liệu từ LocalStorage sang IndexedDB nếu vừa nạp file Backup
-        const incBase = STORAGE_KEYS.INCORRECT_LIST || 'fc_incorrect_list';
-        const dbMigrationKeys = [
-          'fc_ai_harvest_pool',
-          'fc_global_retry_bag_en',
-          'fc_global_retry_bag_zh',
-          'fc_notebook_en',
-          'fc_notebook_zh',
-          'fc_mastered_en',
-          'fc_mastered_zh',
-          incBase + '_en',
-          incBase + '_zh'
-        ];
-
-        for (const mKey of dbMigrationKeys) {
-          const rawLs = localStorage.getItem(mKey);
-          if (rawLs !== null) {
-            try {
-              const parsedData = JSON.parse(rawLs);
-              await FcDB.set(mKey, parsedData);
-              localStorage.removeItem(mKey);
-            } catch (migErr) {
-              console.warn('[CoreState] Migration skipped for ' + mKey, migErr);
-            }
-          }
+        await dbInstance.init();
+        const pool = await dbInstance.get('fc_ai_harvest_pool');
+        if (pool && typeof pool === 'object' && !Array.isArray(pool)) {
+          setAiHarvestPool(pool);
         }
-
-        // Tương thích ngược nếu file backup cũ lưu key 'fc_global_retry_bag' không hậu tố
-        const legacyRetryRaw = localStorage.getItem('fc_global_retry_bag');
-        if (legacyRetryRaw !== null) {
-          try {
-            const parsedLegacy = JSON.parse(legacyRetryRaw);
-            await FcDB.set('fc_global_retry_bag_' + lang, parsedLegacy);
-            localStorage.removeItem('fc_global_retry_bag');
-          } catch (e) {}
-        }
-
-        const pool = await FcDB.get('fc_ai_harvest_pool');
-        if (pool) setAiHarvestPool(pool);
-        
         try {
-          const viKeys = ['fc_data_vi', 'fc_current_level_vi', 'fc_current_topic_vi', 'fc_master_data_vi_vocab', 'fc_master_data_vi_sentence', 'fc_ai_memory_vi'];
-          viKeys.forEach(k => localStorage.removeItem(k));
-          await FcDB.set('fc_notebook_vi', []);
-          await FcDB.set('fc_mastered_vi', []);
-          const incorrectKey = STORAGE_KEYS.INCORRECT_LIST ? STORAGE_KEYS.INCORRECT_LIST + '_vi' : 'fc_incorrect_list_vi';
-          await FcDB.set(incorrectKey, []);
-          await FcDB.set('fc_global_retry_bag_vi', {});
+          const viKeys = [
+            'fc_data_vi',
+            'fc_current_level_vi',
+            'fc_current_topic_vi',
+            'fc_master_data_vi_vocab',
+            'fc_master_data_vi_sentence',
+            'fc_ai_memory_vi'
+          ];
+          viKeys.forEach((k) => localStorage.removeItem(k));
+          await dbInstance.set('fc_notebook_vi', []);
+          await dbInstance.set('fc_mastered_vi', []);
+          const incorrectKey =
+            STORAGE_KEYS && STORAGE_KEYS.INCORRECT_LIST
+              ? STORAGE_KEYS.INCORRECT_LIST + '_vi'
+              : 'fc_incorrect_list_vi';
+          await dbInstance.set(incorrectKey, []);
+          await dbInstance.set('fc_global_retry_bag_vi', {});
         } catch (err) {
           console.warn('[CoreState] Silenced Cleanup Error:', err);
         }
-        
         setIsDbReady(true);
         console.log('[CoreState] IndexedDB ready. Vietnamese deprecated.');
       } catch (e) {
@@ -281,9 +323,11 @@ export const useCoreState = () => {
   // 1. Load Fonts
   useEffect(() => {
     const googleId = 'fc-google-fonts';
-    const googleUrl = 'https://fonts.googleapis.com/css2?family=Long+Cang&family=Noto+Serif+SC:wght@400;700&display=swap';
+    const googleUrl =
+      'https://fonts.googleapis.com/css2?family=Long+Cang&family=Noto+Serif+SC:wght@400;700&display=swap';
     const kaitiId = 'fc-kaiti-font';
-    const kaitiUrl = 'https://cdn.jsdelivr.net/npm/lxgw-wenkai-lite-webfont@1.7.0/style.css';
+    const kaitiUrl =
+      'https://cdn.jsdelivr.net/npm/lxgw-wenkai-lite-webfont@1.7.0/style.css';
     loadFont(googleId, googleUrl);
     loadFont(kaitiId, kaitiUrl);
   }, []);
@@ -291,43 +335,57 @@ export const useCoreState = () => {
   // 2. Load Voices
   useEffect(() => {
     const loadVoices = () => {
-      if (window.speechSynthesis) {
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
         setVoices(window.speechSynthesis.getVoices());
       }
     };
     loadVoices();
-    if (window.speechSynthesis) {
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
       window.speechSynthesis.onvoiceschanged = loadVoices;
     }
   }, []);
 
   // Lưu UI Lang riêng biệt
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.UI_LANG || 'fc_ui_lang', JSON.stringify(uiLang));
+    localStorage.setItem(
+      STORAGE_KEYS?.UI_LANG || 'fc_ui_lang',
+      JSON.stringify(uiLang)
+    );
   }, [uiLang]);
 
   // 3. EFFECT: Đổi Ngôn Ngữ -> Tải các Sổ tay, Túi Nháp và Khởi tạo Level
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.LANG || 'fc_lang', JSON.stringify(lang));
-    
-    // Đồng bộ lại exportUrl tương ứng với ngôn ngữ đang chọn
-    const baseExportKey = STORAGE_KEYS.EXPORT_URL || 'fc_export_url';
-    setExportUrl(localStorage.getItem(baseExportKey + '_' + lang) || localStorage.getItem(baseExportKey) || "");
+    localStorage.setItem(
+      STORAGE_KEYS?.LANG || 'fc_lang',
+      JSON.stringify(lang)
+    );
+    const dbInstance =
+      FcDB || (typeof window !== 'undefined' ? window.FcDB : null);
 
     const loadUserData = async () => {
-      if (isDbReady && FcDB) {
-        const savedNote = await FcDB.get('fc_notebook_' + lang) || [];
-        const savedMaster = await FcDB.get('fc_mastered_' + lang) || [];
-        const savedIncorrect = await FcDB.get((STORAGE_KEYS.INCORRECT_LIST || 'fc_incorrect_list') + '_' + lang) || [];
-        const savedRetryBag = await FcDB.get('fc_global_retry_bag_' + lang) || {};
-        setNotebook(savedNote);
-        setMastered(savedMaster);
-        setIncorrectList(savedIncorrect);
-        setGlobalRetryBag(savedRetryBag);
+      if (isDbReady && dbInstance) {
+        const savedNote =
+          (await dbInstance.get('fc_notebook_' + lang)) || [];
+        const savedMaster =
+          (await dbInstance.get('fc_mastered_' + lang)) || [];
+        const savedIncorrect =
+          (await dbInstance.get(
+            (STORAGE_KEYS?.INCORRECT_LIST || 'fc_incorrect_list') + '_' + lang
+          )) || [];
+        const savedRetryBag =
+          (await dbInstance.get('fc_global_retry_bag_' + lang)) || {};
+        setNotebook(Array.isArray(savedNote) ? savedNote : []);
+        setMastered(Array.isArray(savedMaster) ? savedMaster : []);
+        setIncorrectList(Array.isArray(savedIncorrect) ? savedIncorrect : []);
+        setGlobalRetryBag(
+          savedRetryBag && typeof savedRetryBag === 'object'
+            ? savedRetryBag
+            : {}
+        );
       }
     };
     loadUserData();
-    
+
     // Cầu dao bảo vệ: Chỉ reset các trạng thái khi THỰC SỰ đổi ngôn ngữ
     if (prevLangRef.current !== lang) {
       setCurrentCardIndex(0);
@@ -335,186 +393,351 @@ export const useCoreState = () => {
       setStudySourceName(null);
       aiQueueRef.current = [];
       localStorage.removeItem('fc_ai_memory');
-      
-      if (ExamEngine && typeof ExamEngine.clearVolatileMemory === 'function') {
+
+      if (
+        ExamEngine &&
+        typeof ExamEngine.clearVolatileMemory === 'function'
+      ) {
         ExamEngine.clearVolatileMemory();
       }
-      if (Utils && Utils.AiMemoryManager && typeof Utils.AiMemoryManager.clear === 'function') {
-        Utils.AiMemoryManager.clear();
+      if (
+        AiMemoryManager &&
+        typeof AiMemoryManager.clear === 'function'
+      ) {
+        AiMemoryManager.clear();
       }
-      
+
+      // [CẬP NHẬT V2.0] Trả về Mảng cho biến Level
       const defLvl = lang === 'zh' ? ['zh_level_1'] : ['en_level_4'];
       setCurrentLevel(parseArrayStorage('fc_current_level_' + lang, defLvl));
       setCurrentTopic(parseArrayStorage('fc_current_topic_' + lang, []));
-      
       prevLangRef.current = lang;
     }
   }, [lang, isDbReady]);
 
-  // ĐỘNG CƠ "VÒI NƯỚC" - ĐỒNG BỘ DỮ LIỆU ĐA CHIỀU (MULTI-SELECT MATRIX)
+  // [ĐẠI PHẪU V2.2] ĐỘNG CƠ "VÒI NƯỚC" - ĐỒNG BỘ DỮ LIỆU ĐA CHIỀU (MULTI-SELECT MATRIX)
+  // Loại bỏ isAiLoading khỏi mảng dependency để triệt tiêu lỗi reset index=0 khi AI phân tích xong
   useEffect(() => {
     if (isStudyingNotebook || studySourceName) return;
-    
-    const storageKey = 'fc_master_data_' + lang + '_' + dataMode;
-    const masterData = Utils.safeJsonParse(storageKey, null);
-    
+    const storageKey = `fc_master_data_${lang}_${dataMode}`;
+    const masterData = Utils?.safeJsonParse(storageKey, null);
     let targetCards = [];
-    if (masterData && typeof masterData === 'object') {
+
+    if (masterData) {
       // Cưỡng chế Mảng, đề phòng lỗi State bất thường
-      const levelsArr = Array.isArray(currentLevel) ? currentLevel : (currentLevel ? [currentLevel] : []);
-      const topicsArr = Array.isArray(currentTopic) ? currentTopic : (currentTopic ? [currentTopic] : []);
-      
+      const levelsArr = Array.isArray(currentLevel)
+        ? currentLevel
+        : currentLevel
+        ? [currentLevel]
+        : [];
+      const topicsArr = Array.isArray(currentTopic)
+        ? currentTopic
+        : currentTopic
+        ? [currentTopic]
+        : [];
+
       // BƯỚC 1: Lọc theo Level - Gộp các mảng lại với nhau
       if (levelsArr.length === 0) {
-        Object.values(masterData).forEach(arr => {
+        Object.values(masterData).forEach((arr) => {
           if (Array.isArray(arr)) targetCards = targetCards.concat(arr);
         });
       } else {
-        levelsArr.forEach(lv => {
+        levelsArr.forEach((lv) => {
           if (masterData[lv] && Array.isArray(masterData[lv])) {
             targetCards = targetCards.concat(masterData[lv]);
           }
         });
-
-        // [PHÒNG HỘ THÔNG MINH] Nếu Level đang chọn không tồn tại trong kho dữ liệu mới, tự động nhảy về Level đầu tiên có dữ liệu
-        if (targetCards.length === 0) {
-          const availableLevels = Object.keys(masterData).filter(
-            k => Array.isArray(masterData[k]) && masterData[k].length > 0
-          );
-          if (availableLevels.length > 0) {
-            const fallbackLevel = [availableLevels[0]];
-            targetCards = [...masterData[availableLevels[0]]];
-            setCurrentLevel(fallbackLevel);
-          }
-        }
       }
-      
+
       // BƯỚC 2: Lọc theo Topic
-      if (topicsArr.length > 0 && targetCards.length > 0) {
-        const topicFiltered = targetCards.filter(c => topicsArr.includes(c.topic));
-        // Nếu Topic cũ không khớp với bộ thẻ mới, tự động mở khóa Topic để không bị trắng màn hình
-        if (topicFiltered.length > 0) {
-          targetCards = topicFiltered;
-        } else {
-          setCurrentTopic([]);
-        }
+      if (topicsArr.length > 0) {
+        targetCards = targetCards.filter((c) => topicsArr.includes(c.topic));
+      }
+    } else {
+      // Nếu chưa có masterData trong localStorage nhưng đã có fc_data_${lang} hoặc mẫu mặc định
+      const existingFlatData = Utils?.safeJsonParse('fc_data_' + lang, null);
+      if (Array.isArray(existingFlatData) && existingFlatData.length > 0) {
+        targetCards = existingFlatData;
+      } else if (CONFIG_SAMPLES?.[lang]?.cards) {
+        targetCards = CONFIG_SAMPLES[lang].cards;
       }
     }
-    
+
     // Bơm vào màn hình và đồng bộ Storage
     if (targetCards.length > 0) {
       setCards(targetCards);
-      Utils.safeLocalStorageSet('fc_data_' + lang, targetCards);
+      Utils?.safeLocalStorageSet('fc_data_' + lang, targetCards);
       setCurrentCardIndex(0);
     } else {
       setCards([]);
-      Utils.safeLocalStorageSet('fc_data_' + lang, []);
+      Utils?.safeLocalStorageSet('fc_data_' + lang, []);
       setCurrentCardIndex(0);
     }
-  }, [lang, dataMode, currentLevel, currentTopic, isStudyingNotebook, studySourceName, masterDataVersion]);
+  }, [
+    lang,
+    dataMode,
+    currentLevel,
+    currentTopic,
+    isStudyingNotebook,
+    studySourceName
+  ]);
 
   // 4. Persistence Effects
-  useEffect(() => { if (toast) { const t = setTimeout(() => setToast(null), 3000); return () => clearTimeout(t); } }, [toast]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.SETTINGS || 'fc_settings', JSON.stringify(settings)); }, [settings]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.API_KEY || 'fc_apikey', apiKey); }, [apiKey]);
-  useEffect(() => { Utils.safeLocalStorageSet('fc_game_sessions', globalGameSessions); }, [globalGameSessions]);
-  
+  useEffect(() => {
+    if (toast) {
+      const t = setTimeout(() => setToast(null), 3000);
+      return () => clearTimeout(t);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      STORAGE_KEYS?.SETTINGS || 'fc_settings',
+      JSON.stringify(settings)
+    );
+  }, [settings]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS?.API_KEY || 'fc_apikey', apiKey);
+  }, [apiKey]);
+
+  useEffect(() => {
+    Utils?.safeLocalStorageSet('fc_game_sessions', globalGameSessions);
+  }, [globalGameSessions]);
+
   // SYSTEM LOGS PERSISTENCE
-  useEffect(() => { Utils.safeLocalStorageSet('fc_system_logs', systemLogs); }, [systemLogs]);
-  
+  useEffect(() => {
+    Utils?.safeLocalStorageSet('fc_system_logs', systemLogs);
+  }, [systemLogs]);
+
   // AI CONFIG PERSISTENCE
-  useEffect(() => { Utils.safeLocalStorageSet('fc_ai_config', aiConfig); }, [aiConfig]);
-  
-  // AI MODEL PERSISTENCE
-  useEffect(() => { localStorage.setItem('fc_ai_model', aiModel); }, [aiModel]);
-  
-  // LAYOUT ALIGN PERSISTENCE
-  useEffect(() => { localStorage.setItem('fc_layout_align', layoutAlign); }, [layoutAlign]);
+  useEffect(() => {
+    Utils?.safeLocalStorageSet('fc_ai_config', aiConfig);
+  }, [aiConfig]);
+
+  // [V2.3] AI MODEL PERSISTENCE
+  useEffect(() => {
+    localStorage.setItem('fc_ai_model', aiModel);
+  }, [aiModel]);
+
+  // [V2.4] LAYOUT ALIGN PERSISTENCE
+  useEffect(() => {
+    localStorage.setItem('fc_layout_align', layoutAlign);
+  }, [layoutAlign]);
 
   // LƯU TRỮ TRÊN INDEXEDDB (ASYNC)
   useEffect(() => {
-    if (isDbReady && FcDB) FcDB.set('fc_ai_harvest_pool', aiHarvestPool);
+    const dbInstance =
+      FcDB || (typeof window !== 'undefined' ? window.FcDB : null);
+    if (isDbReady && dbInstance) {
+      dbInstance.set('fc_ai_harvest_pool', aiHarvestPool);
+    }
   }, [aiHarvestPool, isDbReady]);
-  
+
   useEffect(() => {
-    if (isDbReady && FcDB) FcDB.set('fc_global_retry_bag_' + lang, globalRetryBag);
+    const dbInstance =
+      FcDB || (typeof window !== 'undefined' ? window.FcDB : null);
+    if (isDbReady && dbInstance) {
+      dbInstance.set('fc_global_retry_bag_' + lang, globalRetryBag);
+    }
   }, [globalRetryBag, isDbReady, lang]);
 
-  useEffect(() => { Utils.safeLocalStorageSet('fc_data_mode', dataMode); }, [dataMode]);
-  useEffect(() => { Utils.safeLocalStorageSet('fc_current_level_' + lang, currentLevel); }, [currentLevel, lang]);
-  useEffect(() => { Utils.safeLocalStorageSet('fc_current_topic_' + lang, currentTopic); }, [currentTopic, lang]);
+  useEffect(() => {
+    Utils?.safeLocalStorageSet('fc_data_mode', dataMode);
+  }, [dataMode]);
+
+  useEffect(() => {
+    Utils?.safeLocalStorageSet('fc_current_level_' + lang, currentLevel);
+  }, [currentLevel, lang]);
+
+  useEffect(() => {
+    Utils?.safeLocalStorageSet('fc_current_topic_' + lang, currentTopic);
+  }, [currentTopic, lang]);
 
   // 5. Shuffle Effect
   useEffect(() => {
     if (isShuffle && cards.length > 1) {
-      setCards(prev => Utils.shuffleArray([...prev]));
+      setCards((prev) => Utils.shuffleArray([...prev]));
       setCurrentCardIndex(0);
     }
   }, [isShuffle]);
 
-  // 6. Auto-load API Key (CHỐT CHẶN CACHE-FIRST: Chỉ gọi mạng khi chưa có Key trong máy)
+  // 6. Auto-load API Key
   useEffect(() => {
-    const existingKey = localStorage.getItem(STORAGE_KEYS.API_KEY || 'fc_apikey');
-    const existingPool = Utils.safeJsonParse('fc_apikey_pool', []);
-    
-    // Nếu đã có sẵn API Key hoặc Pool Key trong Cache thì dùng luôn, tuyệt đối không gọi mạng khi F5
-    if ((existingKey && existingKey.trim().length > 20) || (Array.isArray(existingPool) && existingPool.length > 0)) {
-      if ((!existingKey || existingKey.trim().length <= 20) && existingPool.length > 0) {
-        setApiKey(existingPool[0]);
-      }
-      return;
-    }
-
-    const savedSheetUrl = localStorage.getItem(STORAGE_KEYS.API_KEY_SHEET || 'fc_apikey_sheet');
-    if (savedSheetUrl && savedSheetUrl.trim().length > 5) {
-      Utils.fetchWithFallback(savedSheetUrl)
-        .then(res => res.text())
-        .then(text => {
-          const keys = text.split(/[\n,]/).map(k => k.trim()).filter(k => k.length > 20 && !k.includes(' '));
+    const savedSheetUrl = localStorage.getItem(
+      STORAGE_KEYS?.API_KEY_SHEET || 'fc_apikey_sheet'
+    );
+    const fetchFn = fetchWithFallback || Utils?.fetchWithFallback;
+    if (
+      savedSheetUrl &&
+      savedSheetUrl.trim().length > 5 &&
+      typeof fetchFn === 'function'
+    ) {
+      fetchFn(savedSheetUrl)
+        .then((res) => res.text())
+        .then((text) => {
+          const keys = text
+            .split(/[\n,]/)
+            .map((k) => k.trim())
+            .filter((k) => k.length > 20 && !k.includes(' '));
           if (keys.length > 0) {
-            Utils.safeLocalStorageSet('fc_apikey_pool', keys);
+            Utils?.safeLocalStorageSet('fc_apikey_pool', keys);
             setApiKey(keys[0]);
-            console.log('[System] Auto-set API Key from Sheet (Pool size: ' + keys.length + ')');
-            if (window.globalShowToast) window.globalShowToast('Đã cập nhật ' + keys.length + ' API Key từ Sheet', 'success');
+            console.log(
+              `[System] Auto-set API Key from Sheet (Pool size: ${keys.length})`
+            );
+            if (typeof window !== 'undefined' && window.globalShowToast) {
+              window.globalShowToast(
+                `Đã cập nhật ${keys.length} API Key từ Sheet`,
+                'success'
+              );
+            }
           }
         })
-        .catch(e => console.warn("Auto load API Key failed:", e));
+        .catch((e) => console.warn('Auto load API Key failed:', e));
     }
   }, []);
 
   return {
     // State
-    viewMode, lang, uiLang, cards, notebook, mastered, masteredCount: mastered.length, isStudyingNotebook,
-    incorrectList, studySourceName, apiKey, totalTokens, aiHarvestPool, globalRetryBag, systemLogs,
-    isDbReady, aiConfig, aiModel, layoutAlign, masterDataVersion,
-    
+    viewMode,
+    lang,
+    uiLang,
+    cards,
+    notebook,
+    mastered,
+    masteredCount: mastered.length,
+    isStudyingNotebook,
+    incorrectList,
+    studySourceName,
+    apiKey,
+    totalTokens,
+    aiHarvestPool,
+    globalRetryBag,
+    systemLogs,
+    isDbReady,
+    aiConfig,
+    aiModel,
+    layoutAlign,
     // Multi-dimensional State
-    dataMode, setDataMode,
-    currentLevel, setCurrentLevel,
-    currentTopic, setCurrentTopic,
-    
+    dataMode,
+    setDataMode,
+    currentLevel,
+    setCurrentLevel,
+    currentTopic,
+    setCurrentTopic,
     // UI Toggles
-    showSettings, showApiKeyModal, showNotebook, showManual, showLinkManager, showWordSelect, showMastered, showIncorrectModal,
-    showAiChat, showHelp, showSaveLoadModal, showHanziSelector, showHanziWriter, currentHanziChar, showExamPoolManager, showAiConfigModal,
-    wordSelectTarget, toast, isAiLoading, isAiModeLearn, isAiModeGame, resetPending,
-    importUrl, defaultUrl, exportUrl, apiKeySheetUrl,
-    
-    // Playback & Game State
-    currentCardIndex, isFlipped, isAutoPlaying, isShuffle, isAutoMode, isFlipLocked,
-    isMuted, isGamePlaying, settings, voices, DEFAULT_SETTINGS, isContentHidden, isBatterySaverMode, gameSessions,
-    
+    showSettings,
+    showApiKeyModal,
+    showNotebook,
+    showManual,
+    showLinkManager,
+    showWordSelect,
+    showMastered,
+    showIncorrectModal,
+    showAiChat,
+    showHelp,
+    showSaveLoadModal,
+    showHanziSelector,
+    showHanziWriter,
+    currentHanziChar,
+    showExamPoolManager,
+    showAiConfigModal,
+    wordSelectTarget,
+    toast,
+    isAiLoading,
+    isAiModeLearn,
+    isAiModeGame,
+    resetPending,
+    importUrl,
+    defaultUrl,
+    exportUrl,
+    apiKeySheetUrl,
+    currentCardIndex,
+    isFlipped,
+    isAutoPlaying,
+    isShuffle,
+    isAutoMode,
+    isFlipLocked,
+    isMuted,
+    isGamePlaying,
+    settings,
+    voices,
+    DEFAULT_SETTINGS,
+    isContentHidden,
+    isBatterySaverMode,
+    gameSessions,
     // Setters
-    setViewMode, setLang, setUiLang, setCards, setNotebook, setMastered, setIsStudyingNotebook,
-    setIncorrectList, setStudySourceName, setApiKey, setTotalTokens, setAiHarvestPool, setGlobalRetryBag, setSystemLogs, setAiConfig, setAiModel, setLayoutAlign,
-    setMasterDataVersion,
-    setShowSettings, setShowApiKeyModal, setShowNotebook, setShowManual, setShowLinkManager, setShowWordSelect, setShowMastered, setShowIncorrectModal,
-    setShowAiChat, setShowHelp, setShowSaveLoadModal, setShowHanziSelector, setShowHanziWriter, setCurrentHanziChar, setShowExamPoolManager, setShowAiConfigModal,
-    setWordSelectTarget, setToast, setIsAiLoading, setIsAiModeLearn, setIsAiModeGame, setResetPending,
-    setImportUrl, setDefaultUrl, setExportUrl, setApiKeySheetUrl,
-    setCurrentCardIndex, setIsFlipped, setIsAutoPlaying, setIsShuffle, setIsAutoMode, setIsFlipLocked,
-    setIsMuted, setIsGamePlaying, setSettings, setIsContentHidden, setIsBatterySaverMode, setGameSessions,
-    
+    setViewMode,
+    setLang,
+    setUiLang,
+    setCards,
+    setNotebook,
+    setMastered,
+    setIsStudyingNotebook,
+    setIncorrectList,
+    setStudySourceName,
+    setApiKey,
+    setTotalTokens,
+    setAiHarvestPool,
+    setGlobalRetryBag,
+    setSystemLogs,
+    setAiConfig,
+    setAiModel,
+    setLayoutAlign,
+    setShowSettings,
+    setShowApiKeyModal,
+    setShowNotebook,
+    setShowManual,
+    setShowLinkManager,
+    setShowWordSelect,
+    setShowMastered,
+    setShowIncorrectModal,
+    setShowAiChat,
+    setShowHelp,
+    setShowSaveLoadModal,
+    setShowHanziSelector,
+    setShowHanziWriter,
+    setCurrentHanziChar,
+    setShowExamPoolManager,
+    setShowAiConfigModal,
+    setWordSelectTarget,
+    setToast,
+    setIsAiLoading,
+    setIsAiModeLearn,
+    setIsAiModeGame,
+    setResetPending,
+    setImportUrl,
+    setDefaultUrl,
+    setExportUrl,
+    setApiKeySheetUrl,
+    setCurrentCardIndex,
+    setIsFlipped,
+    setIsAutoPlaying,
+    setIsShuffle,
+    setIsAutoMode,
+    setIsFlipLocked,
+    setIsMuted,
+    setIsGamePlaying,
+    setSettings,
+    setIsContentHidden,
+    setIsBatterySaverMode,
+    setGameSessions,
     // Refs
-    audioTimeoutRef, autoPlayTimeoutRef, processingCardsRef, resetTimeoutRef, aiQueueRef, isAiQueueProcessing
+    audioTimeoutRef,
+    autoPlayTimeoutRef,
+    processingCardsRef,
+    resetTimeoutRef,
+    aiQueueRef,
+    isAiQueueProcessing
   };
 };
+
+export const Block6_1_useCoreState = useCoreState;
+
+if (typeof window !== 'undefined') {
+  window.Block6_1_useCoreState = useCoreState;
+  window.useCoreState = useCoreState;
+}
+
+export default useCoreState;

@@ -1,497 +1,1138 @@
-/**
- * @file src/features/games/PronunciationGame.jsx
- * @description Controller điều phối Mini-game Vua Ngữ Âm (Pronunciation Game) với QueueEngine & Fallback.
- * @origin Tầng 5 - Block 5.20 (Pronunciation Game Logic)
- */
+// ============================================================================
+// FILE 67/85: src/features/games/PronunciationGame.jsx
+// NGUỒN GỐC: tang_5.js (Block 5.20 - Pronunciation Logic & Wrapper V1.18)
+// NHIỆM VỤ: Động cơ xử lý Logic (usePronunciationLogic) và Container điều phối
+//           (PronunciationGame) cho trò chơi Vua Ngữ Âm (Pronunciation).
+// ============================================================================
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { STORAGE_KEYS } from '@/config/constants';
 import { Utils } from '@/utils/helpers';
 import { pullRetryCardWithLock } from '@/services/db';
 import { QueueEngine } from '@/engines/queueEngine';
-import { ExamEngine } from '@/engines/exam';
-import { GameAlgoEngine } from '@/engines/gameOfflineEngine';
+import { AiFactoryEngine } from '@/engines/aiFactory';
 import { FallbackDataEngine } from '@/engines/fallbackData';
-import { GlobalLoadingScreen } from '@/components/common/GlobalLoadingScreen';
-
+import { ExamEngine } from '@/engines/exam';
 import {
-  calculateGameScore,
-  playGameSFX,
-  handleExitDiscipline,
-  normalizeLevelAndTopic,
+  getSafeLevelString,
+  applyAntiStreakShuffle,
   getConfiguredUiCooldown,
-  applyAntiStreakShuffle
+  extractPendingCardsFromQueue
 } from './common/gameHelpers';
-import { GameSummaryScreen } from './common/GameSharedUI';
-import { PronunciationSetup, PronunciationBoard } from './PronunciationUI';
+import { PronunciationPlayScreen } from './PronunciationUI';
 
-export const PronunciationGame = ({
-  cards = [],
-  lang = 'en',
-  apiKey = '',
-  settings = {},
-  currentLevel,
-  setCurrentLevel,
-  currentTopic,
-  setCurrentTopic,
-  dataMode = 'vocab',
-  setDataMode,
-  gameSessions = {},
-  setGameSessions,
-  globalRetryBag = {},
-  addToRetryBag,
-  removeFromRetryBag,
-  onLogWrong,
-  onSaveToHarvest,
-  onOpenWordSelector,
-  onOpenHanzi,
-  speak,
-  isMuted = false,
-  onBack,
-  onMissingKey,
-  setIsGamePlaying,
-  mainColor = 'blue',
-  t
-}) => {
-  // ============================================================================
-  // 1. STATE CẤU HÌNH & TRẠNG THÁI VÒNG ĐỜI GAME
-  // ============================================================================
-  const [config, setConfig] = useState(() => {
-    const saved = Utils.safeJsonParse('fc_pronunciation_config', {});
-    return {
-      sourceMode: cards.length >= 4 ? (saved.sourceMode || 'local') : 'ai',
-      isEndless: saved.isEndless || false,
-      totalQuestions: saved.totalQuestions || 20,
-      timerEnabled: saved.timerEnabled !== false,
-      timeLimit: saved.timeLimit || 20
-    };
-  });
+// ============================================================================
+// 1. ĐỘNG CƠ LOGIC (usePronunciationLogic Hook)
+// ============================================================================
+export const usePronunciationLogic = (cards, config, callbacks) => {
+  const {
+    isAiMode,
+    apiKey,
+    lang,
+    timeLimit,
+    level,
+    sourceMode,
+    savedState,
+    timerMode,
+    globalRetryBag
+  } = config;
 
-  const [status, setStatus] = useState('setup'); // 'setup' | 'loading' | 'playing' | 'summary'
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [score, setScore] = useState(0);
-  const [streak, setStreak] = useState(0);
-  const [correctCount, setCorrectCount] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(null);
-  const [cooldownLeft, setCooldownLeft] = useState(0);
-  const [ammoCount, setAmmoCount] = useState(0);
+  const {
+    showToast,
+    onLogWrong,
+    onSaveToHarvest,
+    onAutoSave,
+    onBack,
+    addToRetryBag,
+    removeFromRetryBag,
+    onEndGame
+  } = callbacks;
 
-  // State Bàn chơi hiện tại
-  const [currentCard, setCurrentCard] = useState(null);
-  const [selectedOption, setSelectedOption] = useState(null);
-  const [isChecked, setIsChecked] = useState(false);
+  // Vành đai phòng thủ chống nhiễm độc Mảng từ Multi-select
+  const safeLevelString = getSafeLevelString(level, 'level_4_discovery_basic');
+  const savedPronun = savedState?.pronunciationState || null;
 
-  // Refs điều phối đa luồng & logic game
-  const coordinatorRef = useRef(null);
-  const timerRef = useRef(null);
-  const cooldownRef = useRef(null);
-  const streakTrackerRef = useRef([]);
-
-  // Lưu cấu hình khi thay đổi
-  useEffect(() => {
-    Utils.safeLocalStorageSet('fc_pronunciation_config', config);
-  }, [config]);
-
-  // Đồng bộ cờ đang chơi lên App
-  useEffect(() => {
-    if (setIsGamePlaying) {
-      setIsGamePlaying(status === 'playing' || status === 'loading');
-    }
-    return () => {
-      if (setIsGamePlaying) setIsGamePlaying(false);
-    };
-  }, [status, setIsGamePlaying]);
-
-  // Quét số lượng đạn AI dự trữ mỗi 500ms
-  useEffect(() => {
-    const id = setInterval(() => {
-      if (coordinatorRef.current && coordinatorRef.current.queue) {
-        const aiItems = coordinatorRef.current.queue.filter((b) => b && b.content && b.content.isAiGenerated);
-        setAmmoCount(aiItems.length);
-      } else {
-        setAmmoCount(0);
-      }
-    }, 500);
-    return () => clearInterval(id);
-  }, []);
-
-  // Dọn dẹp khi unmount
-  useEffect(() => {
-    return () => {
-      if (coordinatorRef.current) coordinatorRef.current.destroy();
-      if (timerRef.current) clearInterval(timerRef.current);
-      if (cooldownRef.current) clearInterval(cooldownRef.current);
-    };
-  }, []);
-
-  // ============================================================================
-  // 2. HÀM ĐÓNG GÓI BÀN CHƠI NGOẠI TUYẾN (LOCAL / FALLBACK BOARD BUILDER)
-  // ============================================================================
-  const buildLocalBoard = useCallback(() => {
-    const { pickedLevel } = normalizeLevelAndTopic(currentLevel, currentTopic, lang);
-    const fallbackList = FallbackDataEngine.getGameReadyFallback('pronunciation', lang, pickedLevel, { dataMode });
-    
-    // Đảm bảo Options được xáo trộn chuẩn chống Streak
-    if (fallbackList && Array.isArray(fallbackList.options)) {
-      fallbackList.options = applyAntiStreakShuffle(fallbackList.options, streakTrackerRef);
-    }
-    
-    return fallbackList;
-  }, [currentLevel, currentTopic, dataMode, lang]);
-
-  // ============================================================================
-  // 3. HÀM TẢI ĐẠN AI CHO QUEUE COORDINATOR
-  // ============================================================================
-  const fetchAiQuestion = useCallback(async () => {
-    const { pickedLevel, pickedTopic } = normalizeLevelAndTopic(
-      currentLevel,
-      currentTopic,
-      lang
-    );
-
-    const meta = {
-      id: `pronunciation_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      type: 'pronunciation', // ExamEngine sẽ ánh xạ sang 'ioe_pronunciation'
-      mode: 'minigame',
-      lang,
-      level: pickedLevel,
-      topic: pickedTopic,
-      dataMode
-    };
-
-    const hydrated = await ExamEngine.hydrateQuestion(meta, apiKey);
-    if (hydrated && hydrated.content) {
-      if (onSaveToHarvest && hydrated.isNewHarvest) {
-        onSaveToHarvest(pickedLevel, hydrated.content.origin || hydrated.content);
-      }
-      return hydrated;
-    }
-    throw new Error('Dữ liệu Pronunciation AI trả về rỗng.');
-  }, [apiKey, currentLevel, currentTopic, dataMode, lang, onSaveToHarvest]);
-
-  // ============================================================================
-  // 4. NẠP BÀN CHƠI MỚI & ĐỒNG HỒ ĐẾM NGƯỢC
-  // ============================================================================
-  const startCooldownIfNeeded = useCallback((isAiRound) => {
-    if (cooldownRef.current) clearInterval(cooldownRef.current);
-    if (!isAiRound) {
-      setCooldownLeft(0);
-      return;
-    }
-    const cdSec = getConfiguredUiCooldown(9);
-    setCooldownLeft(cdSec);
-    cooldownRef.current = setInterval(() => {
-      setCooldownLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(cooldownRef.current);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  }, []);
-
-  const loadQuestionBoard = useCallback(
-    (targetIndex) => {
-      let nextData = null;
-
-      if (config.sourceMode === 'ai' && coordinatorRef.current) {
-        nextData = coordinatorRef.current.pop();
-      }
-
-      let qContent = null;
-      if (nextData && nextData.content) {
-        qContent = nextData.content;
-      } else {
-        if (config.sourceMode === 'ai' && window.globalShowToast && targetIndex > 0) {
-          window.globalShowToast('Đang dùng dữ liệu dự phòng trong lúc đợi AI nạp đạn...', 'warning');
-        }
-        qContent = buildLocalBoard();
-      }
-      
-      if (qContent && Array.isArray(qContent.options)) {
-        qContent.options = applyAntiStreakShuffle(qContent.options, streakTrackerRef);
-      }
-
-      setCurrentCard(qContent);
-      setSelectedOption(null);
-      setIsChecked(false);
-      
-      setTimeLeft(config.timerEnabled ? config.timeLimit : null);
-      startCooldownIfNeeded(config.sourceMode === 'ai');
-    },
-    [buildLocalBoard, config.sourceMode, config.timeLimit, config.timerEnabled, startCooldownIfNeeded]
+  // Khởi tạo State thông minh từ phiên lưu (nếu có) để tránh cascading renders
+  const [currentQuestion, setCurrentQuestion] = useState(() =>
+    savedPronun && !savedPronun._needsNextOnResume
+      ? savedPronun.currentQuestion || null
+      : null
+  );
+  const [selectedIndex, setSelectedIndex] = useState(() =>
+    savedPronun && !savedPronun._needsNextOnResume
+      ? savedPronun.selectedIndex ?? null
+      : null
+  );
+  const [checkStatus, setCheckStatus] = useState(() =>
+    savedPronun && !savedPronun._needsNextOnResume
+      ? savedPronun.checkStatus || 'idle'
+      : 'idle'
+  );
+  const [attempts, setAttempts] = useState(() =>
+    savedPronun && !savedPronun._needsNextOnResume
+      ? savedPronun.attempts || 0
+      : 0
+  );
+  const [score, setScore] = useState(() => savedPronun?.score || 0);
+  const [combo, setCombo] = useState(() => savedPronun?.combo || 1);
+  const [playedCount, setPlayedCount] = useState(
+    () => savedPronun?.playedCount || 0
+  );
+  const [time, setTime] = useState(() => savedPronun?.time || 0);
+  const [isFinished] = useState(false);
+  const [correctCount, setCorrectCount] = useState(
+    () => savedPronun?.correctCount || 0
+  );
+  const [wrongCount, setWrongCount] = useState(
+    () => savedPronun?.wrongCount || 0
+  );
+  const [isGenerating, setIsGenerating] = useState(() =>
+    savedPronun ? Boolean(savedPronun._needsNextOnResume) : true
   );
 
-  // Đồng hồ đếm ngược
+  // UX Timer State cho màn hình hiển thị kết quả
+  const [resultTimer, setResultTimer] = useState(0);
+  const [isResultPaused, setIsResultPaused] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(() =>
+    savedPronun?.timeLeft !== undefined
+      ? savedPronun.timeLeft
+      : timeLimit || 20
+  );
+
+  // Biến đếm đạn và Phanh UI (UI Cooldown)
+  const [queueLength, setQueueLength] = useState(0);
+  const [aiWaitTime, setAiWaitTime] = useState(() =>
+    savedPronun?.aiWaitTime !== undefined ? savedPronun.aiWaitTime : 0
+  );
+
+  // Refs quản lý bất đồng bộ
+  const historyQueueRef = useRef(Utils.safeJsonParse('fc_ai_memory', []));
+  const coordinatorRef = useRef(null);
+  const isGameActiveRef = useRef(true);
+  const gameTimerRef = useRef(null);
+  const isInitializingRef = useRef(false);
+  const aiGeneratedCountRef = useRef(0);
+  const deckRef = useRef([]);
+  const cardsRef = useRef(cards);
+
+  // Trí nhớ lưu vết vị trí đáp án đúng 2 lượt gần nhất
+  const streakTrackerRef = useRef([]);
+
+  // Đồng bộ túi nháp RAM & thẻ gốc
+  const globalRetryBagRef = useRef(globalRetryBag);
   useEffect(() => {
-    if (status !== 'playing' || !config.timerEnabled || isChecked || timeLeft === null) {
-      if (timerRef.current) clearInterval(timerRef.current);
-      return;
+    globalRetryBagRef.current = globalRetryBag;
+  }, [globalRetryBag]);
+
+  useEffect(() => {
+    cardsRef.current = cards;
+  }, [cards]);
+
+  const safeShowToast = useCallback(
+    (msg, type = 'success') => {
+      if (showToast) {
+        showToast({
+          text: typeof msg === 'string' ? msg : msg.text,
+          type,
+          id: Date.now()
+        });
+      }
+    },
+    [showToast]
+  );
+
+  // BỘ NÃO LƯU TRỮ VÀ AUTO-SAVE
+  const latestStateRef = useRef({});
+  useEffect(() => {
+    latestStateRef.current = {
+      currentQuestion,
+      selectedIndex,
+      checkStatus,
+      attempts,
+      score,
+      combo,
+      playedCount,
+      time,
+      correctCount,
+      wrongCount,
+      timeLeft,
+      deck: deckRef.current,
+      aiWaitTime
+    };
+  }, [
+    currentQuestion,
+    selectedIndex,
+    checkStatus,
+    attempts,
+    score,
+    combo,
+    playedCount,
+    time,
+    correctCount,
+    wrongCount,
+    timeLeft,
+    aiWaitTime
+  ]);
+
+  // ==========================================================================
+  // HÀM TRIGGER AUTO SAVE (Thu hồi đạn chưa bắn từ QueueEngine)
+  // ==========================================================================
+  const triggerAutoSave = useCallback(() => {
+    if (
+      isGameActiveRef.current &&
+      onAutoSave &&
+      latestStateRef.current &&
+      latestStateRef.current.currentQuestion
+    ) {
+      const currentData = latestStateRef.current;
+      const pendingCards = extractPendingCardsFromQueue(coordinatorRef.current);
+      const mergedDeck = [...pendingCards, ...(currentData.deck || [])];
+
+      onAutoSave({
+        pronunciationState: {
+          ...currentData,
+          deck: mergedDeck,
+          _needsNextOnResume: false
+        }
+      });
+    }
+  }, [onAutoSave]);
+
+  useEffect(() => {
+    const intervalTimer = setInterval(() => triggerAutoSave(), 5000);
+    return () => {
+      clearInterval(intervalTimer);
+      triggerAutoSave();
+    };
+  }, [triggerAutoSave]);
+
+  // ĐỒNG HỒ QUÉT ĐẠN NGẦM (HONEST AMMO SCANNER 500ms)
+  useEffect(() => {
+    const queueScanner = setInterval(() => {
+      if (
+        coordinatorRef.current &&
+        typeof coordinatorRef.current.length === 'function'
+      ) {
+        const q = coordinatorRef.current.queue || [];
+        const validAmmoCount = q.filter(
+          (item) => item && !item._isRescued
+        ).length;
+        setQueueLength(validAmmoCount);
+      }
+    }, 500);
+    return () => clearInterval(queueScanner);
+  }, []);
+
+  // ĐỒNG HỒ LÀM NGUỘI UI (UI COOLDOWN TIMER)
+  useEffect(() => {
+    let cdTimer = null;
+    if (aiWaitTime > 0 && !isGenerating && !isResultPaused) {
+      cdTimer = setTimeout(() => setAiWaitTime((prev) => prev - 1), 1000);
+    }
+    return () => {
+      if (cdTimer) clearTimeout(cdTimer);
+    };
+  }, [aiWaitTime, isGenerating, isResultPaused]);
+
+  // ==========================================================================
+  // HÀM TIỆN ÍCH ANTI-STREAK
+  // ==========================================================================
+  const applyAntiStreak = useCallback((data) => {
+    if (data && Array.isArray(data.options)) {
+      return {
+        ...data,
+        options: applyAntiStreakShuffle(data.options, streakTrackerRef)
+      };
+    }
+    return data;
+  }, []);
+
+  // ==========================================================================
+  // BỘ NÃO TÚI NHÁP TOÀN CỤC & LOG LỖI SAI
+  // ==========================================================================
+  const localPushToRetryBag = useCallback(
+    (questionData) => {
+      if (addToRetryBag) addToRetryBag('pronunciation', questionData);
+    },
+    [addToRetryBag]
+  );
+
+  const localRemoveFromRetryBag = useCallback(
+    (termToCheck) => {
+      if (removeFromRetryBag) removeFromRetryBag('pronunciation', termToCheck);
+    },
+    [removeFromRetryBag]
+  );
+
+  const logMistake = useCallback(
+    (question) => {
+      if (!onLogWrong || !question) return;
+      const correctOpt = question.options?.find((o) => o.isCorrect);
+      const cleanTerm = correctOpt ? correctOpt.text : question.term;
+      const mistakeCard = {
+        id: `mistake_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        type: 'mistake',
+        term: Array.isArray(question.options)
+          ? question.options.map((o) => o.text).join(' • ')
+          : String(question.term || ''),
+        definition: `Phát âm khác: ${cleanTerm}`,
+        analysis: question.definition || 'Câu hỏi phân biệt ngữ âm',
+        tags: ['pronunciation', safeLevelString, sourceMode],
+        timestamp: Date.now()
+      };
+      onLogWrong(mistakeCard);
+    },
+    [onLogWrong, safeLevelString, sourceMode]
+  );
+
+  const handleSaveAndBack = useCallback(() => {
+    const currentData = latestStateRef.current;
+    let finalWrongCount = currentData.wrongCount;
+    let finalCombo = currentData.combo;
+    let needsNext = false;
+
+    if (
+      currentData.checkStatus !== 'correct' &&
+      currentData.checkStatus !== 'failed' &&
+      currentData.currentQuestion
+    ) {
+      localPushToRetryBag(currentData.currentQuestion);
+      logMistake(currentData.currentQuestion);
+      finalWrongCount += 1;
+      finalCombo = 1;
+      needsNext = true;
+      safeShowToast('Thoát ngang bị tính 1 lỗi sai!', 'warning');
     }
 
-    timerRef.current = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev === null) return null;
-        if (prev <= 1) {
-          clearInterval(timerRef.current);
-          playGameSFX('wrong', isMuted);
-          setStreak(0);
-          setIsChecked(true);
-          
-          if (currentCard?.origin) {
-             if (onLogWrong) onLogWrong(currentCard.origin);
-             if (addToRetryBag) addToRetryBag('pronunciation', currentCard.origin);
-          }
-          return 0;
+    if (onBack) {
+      onBack({
+        pronunciationState: {
+          ...currentData,
+          wrongCount: finalWrongCount,
+          combo: finalCombo,
+          _needsNextOnResume: needsNext
         }
-        return prev - 1;
       });
-    }, 1000);
+    }
+  }, [localPushToRetryBag, logMistake, onBack, safeShowToast]);
+
+  // ==========================================================================
+  // HÀM CỨU HỘ KHẨN CẤP (HARD FALLBACK)
+  // ==========================================================================
+  const getPronunciationFallback = useCallback(() => {
+    let fb = FallbackDataEngine?.getGameReadyFallback
+      ? FallbackDataEngine.getGameReadyFallback(
+          'pronunciation',
+          'en',
+          safeLevelString,
+          config
+        )
+      : null;
+
+    if (!fb || fb.term?.includes('Lỗi hệ thống')) {
+      fb = {
+        term: 'cat, bat, tall, map',
+        definition: 'Từ tall có âm /ɔː/ khác với âm /æ/ ở các từ còn lại.',
+        options: Utils.shuffleArray([
+          { text: 'cat', isCorrect: false },
+          { text: 'bat', isCorrect: false },
+          { text: 'tall', isCorrect: true },
+          { text: 'map', isCorrect: false }
+        ]),
+        isAiGenerated: false,
+        _isRescued: true
+      };
+    }
+    return fb;
+  }, [config, safeLevelString]);
+
+  // ==========================================================================
+  // ĐƯỜNG ỐNG DỮ LIỆU THỐNG NHẤT (UNIFIED DATA PIPELINE - FETCH TASK)
+  // ==========================================================================
+  const fetchTask = useCallback(async () => {
+    // 1. ĐÁNH CHẶN 30%: Bốc từ túi nháp (Khóa nguyên tử)
+    const pulledCard = pullRetryCardWithLock(
+      'pronunciation',
+      globalRetryBagRef.current,
+      lang
+    );
+    if (pulledCard) return pulledCard;
+
+    const isPureMode = sourceMode === 'ai_pure';
+    const currentApiKey =
+      apiKey || localStorage.getItem(STORAGE_KEYS.API_KEY);
+
+    // 2. AI PURE MODE: Tự động sinh thử thách Ngữ Âm qua ExamEngine
+    if (isPureMode && currentApiKey && ExamEngine?.hydrateQuestion) {
+      try {
+        const meta = {
+          id: `pronunciation_${Date.now()}`,
+          type: 'ioe_pronunciation',
+          level: safeLevelString,
+          topic: config?.topic || '',
+          dataMode: 'vocab',
+          mode: 'minigame'
+        };
+        const freshHistory = Utils.safeJsonParse('fc_ai_memory', []);
+        const qData = await ExamEngine.hydrateQuestion(
+          meta,
+          currentApiKey,
+          freshHistory
+        );
+        if (qData && qData.content) {
+          if (onSaveToHarvest) {
+            onSaveToHarvest(
+              meta.level,
+              {
+                displaySentence: qData.content.term,
+                targetWord:
+                  qData.content.options?.find((o) => o.isCorrect)?.text || '',
+                hint: qData.content.definition || qData.content.explanation
+              },
+              'ioe_pronunciation'
+            );
+          }
+          if (isInitializingRef.current) {
+            aiGeneratedCountRef.current += 1;
+            safeShowToast(
+              `Đã nạp xong câu ${aiGeneratedCountRef.current} bằng AI...`,
+              'success'
+            );
+          }
+          return qData.content;
+        }
+      } catch (e) {
+        console.warn('AI Pronunciation Pure Fallback:', e.message);
+        if (window.logSystemEvent) {
+          window.logSystemEvent(
+            'Lỗi API/Parse Máy Trộn Đề Pronunciation AI',
+            e
+          );
+        }
+      }
+    }
+
+    // 2.5 HYBRID AI MODE (Thử thách AI với Thẻ gốc làm hạt giống)
+    if (!isPureMode && currentApiKey && AiFactoryEngine?.forgeMatrix) {
+      let poppedCard = null;
+      try {
+        if (deckRef.current.length === 0) {
+          const validCards = (cardsRef.current || []).filter(
+            (c) => c.term && c.term.trim().length > 0
+          );
+          deckRef.current = Utils.shuffleArray([...validCards]);
+        }
+        poppedCard = deckRef.current.shift();
+
+        if (poppedCard) {
+          const historyPrompt = AiFactoryEngine.getHistoryPrompt(
+            historyQueueRef.current
+          );
+          const hybridPrompt =
+            historyPrompt +
+            `\nCRITICAL REQUIREMENT: You MUST include the exact word "${poppedCard.term}" as one of the 4 items. It can be the one with different pronunciation or not.`;
+
+          const parsed = await AiFactoryEngine.forgeMatrix(
+            'pronunciation',
+            safeLevelString,
+            lang,
+            currentApiKey,
+            config?.topic,
+            hybridPrompt,
+            'vocab'
+          );
+
+          if (parsed && parsed.options && parsed.options.length === 4) {
+            parsed.options.forEach((opt) => {
+              if (opt && opt.text) {
+                historyQueueRef.current.push(opt.text.toLowerCase().trim());
+              }
+            });
+            while (historyQueueRef.current.length > 400) {
+              historyQueueRef.current.shift();
+            }
+            try {
+              localStorage.setItem(
+                'fc_ai_memory',
+                JSON.stringify(historyQueueRef.current)
+              );
+            } catch (e) {
+              console.warn('Sync fc_ai_memory failed:', e);
+            }
+
+            const result = {
+              ...parsed,
+              isAiGenerated: true,
+              type: 'pronunciation'
+            };
+
+            if (parsed._tokenUsage) {
+              const used = parsed._tokenUsage.totalTokenCount || 0;
+              const currentTotal = parseInt(
+                localStorage.getItem('fc_total_tokens') || '0',
+                10
+              );
+              localStorage.setItem(
+                'fc_total_tokens',
+                String(currentTotal + used)
+              );
+            }
+
+            if (onSaveToHarvest) {
+              onSaveToHarvest(
+                safeLevelString,
+                {
+                  displaySentence: parsed.term,
+                  targetWord:
+                    parsed.options.find((o) => o.isCorrect)?.text || '',
+                  hint: parsed.definition || parsed.explanation
+                },
+                'ioe_pronunciation'
+              );
+            }
+
+            if (isInitializingRef.current) {
+              aiGeneratedCountRef.current += 1;
+              safeShowToast(
+                `Đã nạp xong câu ${aiGeneratedCountRef.current} bằng AI...`,
+                'success'
+              );
+            }
+
+            return { ...result, originCards: [poppedCard] };
+          }
+        }
+      } catch (e) {
+        console.warn('Hybrid AI Pronunciation Fallback:', e.message);
+        if (window.logSystemEvent) {
+          window.logSystemEvent(
+            'Lỗi API/Parse Lò đúc Pronunciation Hybrid AI',
+            e
+          );
+        }
+        if (poppedCard) deckRef.current.unshift(poppedCard);
+      }
+    }
+
+    // Nếu các luồng AI thất bại -> trả về null để QueueEngine không nạp đạn lép
+    return null;
+  }, [
+    apiKey,
+    config?.topic,
+    lang,
+    onSaveToHarvest,
+    safeLevelString,
+    safeShowToast,
+    sourceMode
+  ]);
+
+  // ==========================================================================
+  // KHỞI TẠO & PHỤC HỒI VÒNG ĐỜI GAME
+  // ==========================================================================
+  const hasStartedRef = useRef(false);
+  useEffect(() => {
+    if (hasStartedRef.current) return;
+    hasStartedRef.current = true;
+    isGameActiveRef.current = true;
+
+    const startNewGame = async () => {
+      const currentApiKey =
+        apiKey || localStorage.getItem(STORAGE_KEYS.API_KEY);
+      if (!currentApiKey) {
+        safeShowToast(
+          'Dạng bài Ngữ âm bắt buộc phải có API Key để hoạt động!',
+          'error'
+        );
+        if (onEndGame) onEndGame({ correct: 0, time: 0, wrong: 0 });
+        return;
+      }
+
+      setIsGenerating(true);
+      setPlayedCount(0);
+      setScore(0);
+      setCombo(1);
+      setTime(0);
+      setCorrectCount(0);
+      setWrongCount(0);
+      isInitializingRef.current = true;
+      aiGeneratedCountRef.current = 0;
+      streakTrackerRef.current = [];
+
+      if (sourceMode === 'card') {
+        let validCards = (cardsRef.current || []).filter(
+          (c) => c.term && c.term.trim().length > 0
+        );
+        if (validCards.length === 0) {
+          validCards = [{ term: 'cat' }, { term: 'school' }];
+        }
+        deckRef.current = Utils.shuffleArray([...validCards]);
+      } else {
+        deckRef.current = [];
+      }
+
+      if (coordinatorRef.current) coordinatorRef.current.destroy();
+      if (QueueEngine?.createQueueCoordinator) {
+        coordinatorRef.current = QueueEngine.createQueueCoordinator(
+          fetchTask,
+          4
+        );
+      } else {
+        safeShowToast('Lỗi hệ thống: Không tìm thấy QueueEngine', 'error');
+        return;
+      }
+
+      const isOfflineFastTrack = sourceMode === 'card' && !isAiMode;
+      await coordinatorRef.current.maintain(true, 22000, isOfflineFastTrack);
+
+      let firstData = coordinatorRef.current.pop();
+      if (!firstData) {
+        if (window.logSystemEvent) {
+          window.logSystemEvent(
+            'Queue cạn đạn lúc khởi tạo Game Ngữ Âm',
+            'Kích hoạt Hard Fallback'
+          );
+        }
+        safeShowToast('Mạng yếu, đã kích hoạt dữ liệu dự phòng!', 'warning');
+        firstData = getPronunciationFallback();
+      }
+
+      if (isGameActiveRef.current && firstData) {
+        setCurrentQuestion(applyAntiStreak(firstData));
+        setSelectedIndex(null);
+        setCheckStatus('idle');
+        setAttempts(0);
+        setIsGenerating(false);
+        isInitializingRef.current = false;
+        setTimeLeft(timeLimit || 20);
+        setAiWaitTime(getConfiguredUiCooldown(9));
+        safeShowToast('Hoàn tất! Bắt đầu luyện phát âm.', 'success');
+      } else if (isGameActiveRef.current) {
+        safeShowToast(
+          'Lỗi nghiêm trọng khi tải dữ liệu AI. Buộc kết thúc.',
+          'error'
+        );
+        setIsGenerating(false);
+        isInitializingRef.current = false;
+        if (onEndGame) onEndGame({ correct: 0, time: 0, wrong: 0 });
+      }
+
+      if (gameTimerRef.current) clearInterval(gameTimerRef.current);
+      gameTimerRef.current = setInterval(() => {
+        setTime((prev) => prev + 1);
+      }, 1000);
+    };
+
+    if (savedState && savedState.pronunciationState) {
+      const st = savedState.pronunciationState;
+      if (st.deck) {
+        deckRef.current = [...st.deck];
+      }
+
+      if (coordinatorRef.current) coordinatorRef.current.destroy();
+      if (QueueEngine?.createQueueCoordinator) {
+        coordinatorRef.current = QueueEngine.createQueueCoordinator(
+          fetchTask,
+          4
+        );
+        const isOfflineFastTrack = sourceMode === 'card' && !isAiMode;
+        coordinatorRef.current.maintain(false, 22000, isOfflineFastTrack);
+      }
+
+      if (st._needsNextOnResume) {
+        const isOfflineFastTrack = sourceMode === 'card' && !isAiMode;
+        coordinatorRef.current
+          .maintain(false, 22000, isOfflineFastTrack)
+          .then(() => {
+            if (isGameActiveRef.current) {
+              let data = coordinatorRef.current.pop();
+              if (!data) {
+                if (window.logSystemEvent) {
+                  window.logSystemEvent(
+                    'Queue cạn đạn lúc Resume Game Ngữ Âm',
+                    'Kích hoạt Hard Fallback'
+                  );
+                }
+                safeShowToast(
+                  'Mạng yếu, đã kích hoạt dữ liệu dự phòng!',
+                  'warning'
+                );
+                data = getPronunciationFallback();
+              }
+              if (data) {
+                setCurrentQuestion(applyAntiStreak(data));
+                setSelectedIndex(null);
+                setCheckStatus('idle');
+                setAttempts(0);
+                setIsGenerating(false);
+                setTimeLeft(timeLimit || 20);
+                setAiWaitTime(getConfiguredUiCooldown(9));
+              } else {
+                safeShowToast('Lỗi tải dữ liệu. Buộc kết thúc.', 'error');
+                setIsGenerating(false);
+                if (onEndGame) {
+                  onEndGame({
+                    correct: st.correctCount || 0,
+                    time: st.time || 0,
+                    wrong: st.wrongCount || 0
+                  });
+                }
+              }
+            }
+          });
+      }
+
+      if (gameTimerRef.current) clearInterval(gameTimerRef.current);
+      gameTimerRef.current = setInterval(() => {
+        setTime((prev) => prev + 1);
+      }, 1000);
+    } else {
+      startNewGame();
+    }
 
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [status, config.timerEnabled, isChecked, timeLeft, isMuted, currentCard, onLogWrong, addToRetryBag]);
-
-  // ============================================================================
-  // 5. KHỞI ĐỘNG GAME & KHÔI PHỤC PHIÊN CHƠI
-  // ============================================================================
-  const handleStartGame = () => {
-    streakTrackerRef.current = [];
-    setCurrentIndex(0);
-    setScore(0);
-    setStreak(0);
-    setCorrectCount(0);
-
-    if (coordinatorRef.current) coordinatorRef.current.destroy();
-
-    if (config.sourceMode === 'ai') {
-      coordinatorRef.current = QueueEngine.createQueueCoordinator(fetchAiQuestion, 4);
-      setStatus('loading');
-      coordinatorRef.current.maintain(true, 22000, false);
-    } else {
-      loadQuestionBoard(0);
-      setStatus('playing');
-    }
-  };
-
-  const handleLoadingComplete = useCallback(() => {
-    loadQuestionBoard(0);
-    setStatus('playing');
-  }, [loadQuestionBoard]);
-
-  const handleResumeSession = () => {
-    const saved = gameSessions?.pronunciation;
-    if (!saved) return;
-
-    if (saved.config) setConfig(saved.config);
-    setCurrentIndex(saved.currentIndex || 0);
-    setScore(saved.score || 0);
-    setStreak(saved.streak || 0);
-    setCorrectCount(saved.correctCount || 0);
-
-    if (saved.currentCard) {
-      setCurrentCard(saved.currentCard);
-      setSelectedOption(saved.selectedOption || null);
-      setIsChecked(saved.isChecked || false);
-      setTimeLeft(saved.timeLeft ?? (config.timerEnabled ? config.timeLimit : null));
-      setStatus('playing');
-    } else {
-      loadQuestionBoard(saved.currentIndex || 0);
-      setStatus('playing');
-    }
-  };
-
-  const handleClearSession = () => {
-    if (setGameSessions) {
-      setGameSessions((prev) => {
-        const next = { ...prev };
-        delete next.pronunciation;
-        return next;
-      });
-    }
-  };
-
-  // ============================================================================
-  // 6. XỬ LÝ TƯƠNG TÁC (CHỌN ĐÁP ÁN)
-  // ============================================================================
-  const handleSelectOption = (opt) => {
-    if (isChecked || !currentCard) return;
-
-    setSelectedOption(opt);
-    setIsChecked(true);
-
-    const isCorrect = opt.isCorrect === true || String(opt.isCorrect).toLowerCase() === 'true';
-
-    if (isCorrect) {
-      playGameSFX('correct', isMuted);
-      const nextStreak = streak + 1;
-      const points = calculateGameScore(100, timeLeft || 0, nextStreak, 'normal');
-      setStreak(nextStreak);
-      setScore(prev => prev + points);
-      setCorrectCount(prev => prev + 1);
-      
-      const targetTerm = currentCard.origin?.term || currentCard.term || '';
-      if (removeFromRetryBag) removeFromRetryBag('pronunciation', targetTerm);
-      
-    } else {
-      playGameSFX('wrong', isMuted);
-      setStreak(0);
-      if (currentCard.origin) {
-        if (onLogWrong) onLogWrong(currentCard.origin);
-        if (addToRetryBag) addToRetryBag('pronunciation', currentCard.origin);
-      }
-    }
-  };
-
-  // ============================================================================
-  // 7. CHUYỂN CÂU & THOÁT GAME
-  // ============================================================================
-  const handleNextQuestion = () => {
-    if (cooldownLeft > 0) return;
-
-    if (!config.isEndless && currentIndex >= config.totalQuestions - 1) {
-      handleClearSession();
+      isGameActiveRef.current = false;
+      if (gameTimerRef.current) clearInterval(gameTimerRef.current);
       if (coordinatorRef.current) coordinatorRef.current.destroy();
-      setStatus('summary');
+    };
+  }, [
+    apiKey,
+    applyAntiStreak,
+    fetchTask,
+    getPronunciationFallback,
+    isAiMode,
+    onEndGame,
+    safeShowToast,
+    savedState,
+    sourceMode,
+    timeLimit
+  ]);
+
+  const proceedToNext = useCallback(
+    (defaultDelaySec) => {
+      if (isGameActiveRef.current) {
+        let delaySec = defaultDelaySec;
+        if (aiWaitTime > delaySec) {
+          delaySec = aiWaitTime;
+        }
+        if (delaySec < 1) delaySec = 1;
+        setResultTimer(delaySec);
+      }
+    },
+    [aiWaitTime]
+  );
+
+  const nextRound = useCallback(() => {
+    if (isGenerating) return;
+    setResultTimer(0);
+    setIsResultPaused(false);
+    setPlayedCount((prev) => prev + 1);
+
+    if (coordinatorRef.current && coordinatorRef.current.length() > 0) {
+      const nextData = coordinatorRef.current.pop();
+      setCurrentQuestion(applyAntiStreak(nextData));
+      setSelectedIndex(null);
+      setCheckStatus('idle');
+      setAttempts(0);
+      setTimeLeft(timeLimit || 20);
+      setAiWaitTime(getConfiguredUiCooldown(9));
+    } else {
+      setIsGenerating(true);
+      const isOfflineFastTrack = sourceMode === 'card' && !isAiMode;
+      coordinatorRef.current
+        .maintain(false, 22000, isOfflineFastTrack)
+        .then(() => {
+          if (isGameActiveRef.current) {
+            let data = coordinatorRef.current.pop();
+            if (!data) {
+              if (window.logSystemEvent) {
+                window.logSystemEvent(
+                  'Queue cạn đạn lúc chuyển vòng Game Ngữ Âm',
+                  'Kích hoạt Hard Fallback'
+                );
+              }
+              safeShowToast(
+                'Mạng yếu, đã kích hoạt dữ liệu dự phòng!',
+                'warning'
+              );
+              data = getPronunciationFallback();
+            }
+            if (data) {
+              setCurrentQuestion(applyAntiStreak(data));
+              setSelectedIndex(null);
+              setCheckStatus('idle');
+              setAttempts(0);
+              setIsGenerating(false);
+              setTimeLeft(timeLimit || 20);
+              setAiWaitTime(getConfiguredUiCooldown(9));
+            } else {
+              safeShowToast(
+                'Lỗi tải dữ liệu vòng mới. Buộc kết thúc.',
+                'error'
+              );
+              setIsGenerating(false);
+              if (onEndGame) {
+                onEndGame({
+                  correct: latestStateRef.current.correctCount,
+                  time: latestStateRef.current.time,
+                  wrong: latestStateRef.current.wrongCount
+                });
+              }
+            }
+          }
+        });
+    }
+    setTimeout(() => triggerAutoSave(), 150);
+  }, [
+    applyAntiStreak,
+    getPronunciationFallback,
+    isAiMode,
+    isGenerating,
+    onEndGame,
+    safeShowToast,
+    sourceMode,
+    timeLimit,
+    triggerAutoSave
+  ]);
+
+  // ==========================================================================
+  // TƯƠNG TÁC NGƯỜI DÙNG
+  // ==========================================================================
+  const handleOptionClick = useCallback(
+    (idx) => {
+      if (
+        checkStatus === 'correct' ||
+        checkStatus === 'failed' ||
+        isGenerating ||
+        !currentQuestion
+      ) {
+        return;
+      }
+
+      const clickedOpt = currentQuestion.options[idx];
+      setSelectedIndex(idx);
+      const isCorrect =
+        clickedOpt.isCorrect === true ||
+        String(clickedOpt.isCorrect).toLowerCase() === 'true';
+
+      if (isCorrect) {
+        if (attempts === 0) {
+          localRemoveFromRetryBag(currentQuestion.term);
+        }
+        setCheckStatus('correct');
+        setCorrectCount((p) => p + 1);
+        setScore((p) => p + 15 * combo);
+        setCombo((p) => p + 1);
+        safeShowToast('Xuất sắc!', 'success');
+        proceedToNext(5);
+      } else {
+        const newAttempts = attempts + 1;
+        setAttempts(newAttempts);
+        setCombo(1);
+        setScore((p) => Math.max(0, p - 5));
+        if (newAttempts >= 2) {
+          localPushToRetryBag(currentQuestion);
+          setCheckStatus('failed');
+          setWrongCount((p) => p + 1);
+          safeShowToast('Đã hết lượt!', 'error');
+          logMistake(currentQuestion);
+          proceedToNext(7);
+        } else {
+          setCheckStatus('wrong_retry');
+          safeShowToast(
+            `Chưa đúng! Còn ${2 - newAttempts} lượt.`,
+            'warning'
+          );
+          setTimeout(
+            () => setCheckStatus((p) => (p === 'wrong_retry' ? 'idle' : p)),
+            1000
+          );
+        }
+      }
+      setTimeout(() => triggerAutoSave(), 150);
+    },
+    [
+      attempts,
+      checkStatus,
+      combo,
+      currentQuestion,
+      isGenerating,
+      localPushToRetryBag,
+      localRemoveFromRetryBag,
+      logMistake,
+      proceedToNext,
+      safeShowToast,
+      triggerAutoSave
+    ]
+  );
+
+  const handleSkip = useCallback(() => {
+    if (
+      checkStatus === 'correct' ||
+      checkStatus === 'failed' ||
+      isGenerating ||
+      !currentQuestion
+    ) {
       return;
     }
+    localPushToRetryBag(currentQuestion);
+    setCombo(1);
+    setCheckStatus('failed');
+    setWrongCount((p) => p + 1);
+    setAttempts(2);
+    safeShowToast('Đã bỏ qua!', 'error');
+    logMistake(currentQuestion);
+    proceedToNext(7);
+    setTimeout(() => triggerAutoSave(), 150);
+  }, [
+    checkStatus,
+    currentQuestion,
+    isGenerating,
+    localPushToRetryBag,
+    logMistake,
+    proceedToNext,
+    safeShowToast,
+    triggerAutoSave
+  ]);
 
-    const nextIdx = currentIndex + 1;
-    setCurrentIndex(nextIdx);
-    loadQuestionBoard(nextIdx);
-  };
-
-  const handleExitGame = () => {
-    if (status === 'playing' && !isChecked) {
-      handleExitDiscipline({
-        isPlaying: true,
-        isAnswered: false,
-        currentCard: currentCard?.origin || currentCard,
-        gameType: 'pronunciation',
-        onLogWrong,
-        addToRetryBag
-      });
-
-      if (setGameSessions) {
-        setGameSessions((prev) => ({
-          ...prev,
-          pronunciation: {
-            config,
-            currentIndex,
-            score,
-            streak,
-            correctCount,
-            currentCard,
-            selectedOption,
-            isChecked,
-            timeLeft,
-            timestamp: Date.now()
+  // ĐỘNG CƠ ĐẾM NGƯỢC THỜI GIAN TỪNG CÂU
+  useEffect(() => {
+    let timerId = null;
+    if (
+      timerMode &&
+      checkStatus !== 'correct' &&
+      checkStatus !== 'failed' &&
+      !isGenerating &&
+      currentQuestion
+    ) {
+      timerId = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
+            clearInterval(timerId);
+            return 0;
           }
-        }));
-      }
+          return prev - 1;
+        });
+      }, 1000);
     }
+    return () => {
+      if (timerId) clearInterval(timerId);
+    };
+  }, [timerMode, checkStatus, isGenerating, currentQuestion]);
 
-    if (coordinatorRef.current) coordinatorRef.current.destroy();
-    setStatus('setup');
+  // CƠ CHẾ GIẬT CÒ KHI HẾT GIỜ (TIMEOUT TRIGGER)
+  useEffect(() => {
+    if (
+      timerMode &&
+      timeLeft === 0 &&
+      checkStatus !== 'correct' &&
+      checkStatus !== 'failed' &&
+      currentQuestion
+    ) {
+      const timeoutId = setTimeout(() => {
+        localPushToRetryBag(currentQuestion);
+        setCombo(1);
+        setAttempts(2);
+        setCheckStatus('failed');
+        setWrongCount((p) => p + 1);
+        safeShowToast('Hết giờ! Xem đáp án nhé.', 'error');
+        logMistake(currentQuestion);
+        proceedToNext(7);
+        triggerAutoSave();
+      }, 0);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [
+    timeLeft,
+    timerMode,
+    checkStatus,
+    currentQuestion,
+    logMistake,
+    safeShowToast,
+    triggerAutoSave,
+    localPushToRetryBag,
+    proceedToNext
+  ]);
+
+  // CHỐNG RACE CONDITION CHO AUTO-NEXT
+  useEffect(() => {
+    if (
+      (checkStatus === 'correct' || checkStatus === 'failed') &&
+      resultTimer > 0 &&
+      !isResultPaused &&
+      !isGenerating
+    ) {
+      const id = setTimeout(() => setResultTimer((t) => t - 1), 1000);
+      return () => clearTimeout(id);
+    } else if (
+      (checkStatus === 'correct' || checkStatus === 'failed') &&
+      resultTimer === 0 &&
+      !isResultPaused &&
+      !isGenerating
+    ) {
+      const id = setTimeout(() => nextRound(), 0);
+      return () => clearTimeout(id);
+    }
+  }, [checkStatus, resultTimer, isResultPaused, isGenerating, nextRound]);
+
+  const toggleResultPause = useCallback(
+    () => setIsResultPaused((p) => !p),
+    []
+  );
+
+  return {
+    currentQuestion,
+    selectedIndex,
+    checkStatus,
+    attempts,
+    score,
+    combo,
+    playedCount,
+    time,
+    isFinished,
+    isGenerating,
+    aiCountdown: 0,
+    correctCount,
+    wrongCount,
+    resultTimer,
+    isResultPaused,
+    toggleResultPause,
+    timeLeft,
+    queueLength,
+    handleOptionClick,
+    handleSkip,
+    nextRound,
+    handleNext: nextRound,
+    handleSaveAndBack,
+    aiWaitTime
+  };
+};
+
+// ============================================================================
+// 2. GAME WRAPPER COMPONENT (PronunciationGame)
+// ============================================================================
+export const PronunciationGame = ({
+  cards,
+  t,
+  onFinish,
+  onEndGame,
+  onQuit,
+  onBack,
+  mainColor = 'indigo',
+  lang = 'en',
+  apiKey,
+  onBookmark,
+  notebook,
+  onLogWrong,
+  settings,
+  config,
+  onUpdateCards,
+  onSaveToHarvest,
+  savedState,
+  onAutoSave,
+  onPlay,
+  globalRetryBag,
+  addToRetryBag,
+  removeFromRetryBag
+}) => {
+  const handleFinishGame = useCallback(
+    (stats) => {
+      if (onFinish) {
+        onFinish(stats?.correct || 0, stats?.time || 0, stats?.wrong || 0);
+      } else if (onEndGame) {
+        onEndGame({
+          correct: stats?.correct || 0,
+          wrong: stats?.wrong || 0,
+          time: stats?.time || 0
+        });
+      }
+    },
+    [onFinish, onEndGame]
+  );
+
+  const safeConfig = config || {
+    level: 'level_4_discovery_basic',
+    sourceMode: 'ai_pure'
   };
 
-  const handleSaveCurrentWord = () => {
-    if (!onOpenWordSelector || !currentCard) return;
-    const targetTerm = currentCard.origin?.term || currentCard.term;
-    if (targetTerm) onOpenWordSelector(targetTerm);
+  const hookCallbacks = {
+    showToast: window.globalShowToast,
+    onLogWrong,
+    onUpdateCards,
+    onSaveToHarvest,
+    onAutoSave,
+    onBack: onQuit || onBack,
+    addToRetryBag,
+    removeFromRetryBag,
+    onEndGame: handleFinishGame
   };
 
-  const handleOpenHanziCurrent = () => {
-    if (!onOpenHanzi || !currentCard) return;
-    const targetTerm = currentCard.origin?.term || currentCard.term;
-    if (targetTerm) onOpenHanzi(targetTerm);
-  };
+  const logic = usePronunciationLogic(
+    cards,
+    {
+      ...safeConfig,
+      isAiMode:
+        safeConfig.sourceMode === 'ai_pure' || Boolean(safeConfig.aiMode),
+      apiKey,
+      lang,
+      timeLimit: safeConfig.timeLimit || 20,
+      savedState,
+      globalRetryBag
+    },
+    hookCallbacks
+  );
 
-  // ============================================================================
-  // 8. RENDER THEO TRẠNG THÁI
-  // ============================================================================
-  if (status === 'loading') {
-    const { levelLabel } = normalizeLevelAndTopic(currentLevel, currentTopic, lang);
-    return (
-      <GlobalLoadingScreen
-        engine={coordinatorRef.current}
-        onComplete={handleLoadingComplete}
-        onCancel={() => {
-          if (coordinatorRef.current) coordinatorRef.current.destroy();
-          setStatus('setup');
-        }}
-        text="AI Đang Phân Tích Ngữ Âm..."
-        subText="Đang tìm kiếm từ vựng có cách phát âm đặc biệt"
-        mainColor={mainColor}
-        levelStr={levelLabel}
-      />
-    );
-  }
+  const handleSaveToNotebook = useCallback(
+    (payload) => {
+      if (onBookmark) {
+        onBookmark(payload);
+      } else if (window.handleSaveToNotebook) {
+        window.handleSaveToNotebook(payload);
+      } else if (window.globalShowToast) {
+        window.globalShowToast('Vui lòng lưu từ Sổ tay chính!', 'warning');
+      }
+    },
+    [onBookmark]
+  );
 
-  if (status === 'summary') {
-    return (
-      <GameSummaryScreen
-        score={score}
-        correctCount={correctCount}
-        totalQuestions={currentIndex + 1}
-        onRestart={handleStartGame}
-        onBack={onBack}
-        mainColor={mainColor}
-        t={t}
-      />
-    );
-  }
+  const correctOpt = logic.currentQuestion?.options?.find((o) => o.isCorrect);
+  const targetWord = correctOpt ? correctOpt.text : null;
+  const isBookmarked = Boolean(
+    targetWord &&
+      notebook?.some((n) => n.term === targetWord || n.term?.includes(targetWord))
+  );
 
-  if (status === 'playing') {
-    return (
-      <PronunciationBoard
-        currentIndex={currentIndex}
-        totalQuestions={config.totalQuestions}
-        isEndless={config.isEndless}
-        score={score}
-        streak={streak}
-        timeLeft={timeLeft}
-        ammoCount={ammoCount}
-        isAiSource={config.sourceMode === 'ai'}
-        currentCard={currentCard}
-        selectedOption={selectedOption}
-        isChecked={isChecked}
-        cooldownLeft={cooldownLeft}
-        onSelectOption={handleSelectOption}
-        onNextQuestion={handleNextQuestion}
-        onSpeak={speak}
-        onSaveWord={handleSaveCurrentWord}
-        onOpenHanzi={handleOpenHanziCurrent}
-        onExit={handleExitGame}
-        fontFamily={Utils.getFontFamily(settings)}
-        lang={lang}
-        mainColor={mainColor}
-        t={t}
-      />
-    );
-  }
+  const safeOnPlay =
+    onPlay ||
+    ((text) => {
+      if (!window.speechSynthesis) return;
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = lang === 'en' ? 'en-US' : 'vi-VN';
+      window.speechSynthesis.speak(u);
+    });
 
   return (
-    <PronunciationSetup
-      config={config}
-      setConfig={setConfig}
-      cardsCount={cards.length}
-      lang={lang}
-      currentLevel={currentLevel}
-      setCurrentLevel={setCurrentLevel}
-      currentTopic={currentTopic}
-      setCurrentTopic={setCurrentTopic}
-      dataMode={dataMode}
-      setDataMode={setDataMode}
-      savedSession={gameSessions?.pronunciation}
-      onResumeSession={handleResumeSession}
-      onClearSession={handleClearSession}
-      onStartGame={handleStartGame}
-      onBack={onBack}
-      onMissingKey={onMissingKey}
-      mainColor={mainColor}
+    <PronunciationPlayScreen
       t={t}
+      mainColor={mainColor}
+      config={safeConfig}
+      {...logic}
+      onBack={logic.handleSaveAndBack}
+      onEndGame={handleFinishGame}
+      onSaveToNotebook={handleSaveToNotebook}
+      isBookmarked={isBookmarked}
+      settings={settings}
+      onPlay={safeOnPlay}
     />
   );
 };
+
+// Gắn vào window để tương thích ngược trong quá trình chuyển đổi
+if (typeof window !== 'undefined') {
+  window.Block5_20_usePronunciationLogic = usePronunciationLogic;
+  window.usePronunciationLogic = usePronunciationLogic;
+  window.Block5_20_PronunciationGame = PronunciationGame;
+  window.PronunciationGame = PronunciationGame;
+}
+
+export default PronunciationGame;

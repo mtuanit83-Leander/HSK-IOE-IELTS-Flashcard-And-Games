@@ -1,11 +1,5 @@
-/**
- * @file src/engines/fallbackData.js
- * @description Kho chứa dữ liệu dự phòng khổng lồ (Offline) và Máy đóng gói Dữ liệu Cứu hộ chuẩn Game (Game-ready Fallback) khi AI sập.
- * @origin Tầng 2 - Block 2.4 (Fallback Data Engine)
- */
-
-import { Utils } from '@/utils/helpers';
-import { GameAlgoEngine } from './gameOfflineEngine';
+import { shuffleArray, detectSentence } from '../utils/helpers.js';
+import { GameAlgoEngine } from './gameOfflineEngine.js';
 
 export const FallbackDataEngine = {
   // --- PHÂN HỆ TIẾNG ANH (ENGLISH) ---
@@ -72,7 +66,7 @@ export const FallbackDataEngine = {
         { term: "ephemeral", definition: "phù du, sớm nở tối tàn" }, { term: "pragmatic", definition: "thực dụng" }, { term: "ubiquitous", definition: "có mặt khắp nơi" }, { term: "quintessential", definition: "tinh túy, hoàn hảo nhất" },
         { term: "myriad", definition: "vô số" }, { term: "catalyst", definition: "chất xúc tác" }, { term: "synergy", definition: "sự hợp lực" }, { term: "cohesive", definition: "gắn kết, dính liền" },
         { term: "eloquent", definition: "hùng hồn, lưu loát" }, { term: "articulate", definition: "ăn nói rõ ràng" }, { term: "rhetoric", definition: "thuật hùng biện" }, { term: "nuance", definition: "sắc thái" },
-        { term: "subtle", definition: "tinh tế, phảng phất" }, { term: "profound", definition: "uyên thâm, sâu sắc" }, { term: "intrinsic", definition: "bản chất, thực chất" }, { term: "benevolent", definition: " nhân từ, nhân hậu" }
+        { term: "subtle", definition: "tinh tế, phảng phất" }, { term: "profound", definition: "uyên thâm, sâu sắc" }, { term: "intrinsic", definition: "bản chất, thực chất" }, { term: "benevolent", definition: "nhân từ, nhân hậu" }
       ]
     },
     sentence: {
@@ -171,7 +165,7 @@ export const FallbackDataEngine = {
         { term: "责任", definition: "trách nhiệm" }, { term: "态度", definition: "thái độ" }, { term: "感情", definition: "tình cảm" }, { term: "脾气", definition: "tính khí" },
         { term: "性格", definition: "tính cách" }, { term: "骄傲", definition: "tự hào, kiêu ngạo" }, { term: "伤心", definition: "đau lòng" }, { term: "兴奋", definition: "hưng phấn" },
         { term: "激动", definition: "kích động" }, { term: "普遍", definition: "phổ biến" }, { term: "复杂", definition: "phức tạp" }, { term: "详细", definition: "chi tiết" },
-        { term: "准确", definition: "chính精确" }, { term: "严格", definition: "nghiêm khắc" }, { term: "浪漫", definition: "lãng mạn" }, { term: "幽默", definition: "hài hước" }
+        { term: "准确", definition: "chính xác" }, { term: "严格", definition: "nghiêm khắc" }, { term: "浪漫", definition: "lãng mạn" }, { term: "幽默", definition: "hài hước" }
       ],
       zh_level_5: [
         { term: "挑战", definition: "thách thức" }, { term: "优势", definition: "ưu thế" }, { term: "劣势", definition: "yếu thế" }, { term: "趋势", definition: "xu hướng" },
@@ -184,7 +178,7 @@ export const FallbackDataEngine = {
         { term: "垄断", definition: "độc quyền" }, { term: "妥协", definition: "thỏa hiệp" }, { term: "歧视", definition: "kỳ thị" }, { term: "偏见", definition: "thành kiến" },
         { term: "争议", definition: "tranh nghị, tranh cãi" }, { term: "矛盾", definition: "mâu thuẫn" }, { term: "冲突", definition: "xung đột" }, { term: "纠纷", definition: "tranh chấp" },
         { term: "危机", definition: "khủng hoảng" }, { term: "灾难", definition: "tai nạn, thảm họa" }, { term: "牺牲", definition: "hy sinh" }, { term: "奉献", definition: "cống hiến" },
-        { term: "剥夺", definition: "tước đoạt" }, { term: "侵犯", definition: "xâm phạm" }, { term: "捍卫", definition: "bảo vệ, bảo vệ" }, { term: "辩护", definition: "biện hộ" },
+        { term: "剥夺", definition: "tước đoạt" }, { term: "侵犯", definition: "xâm phạm" }, { term: "捍卫", definition: "bảo vệ" }, { term: "辩护", definition: "biện hộ" },
         { term: "申诉", definition: "khiếu nại" }, { term: "谴责", definition: "lên án" }, { term: "控告", definition: "buộc tội, khởi kiện" }, { term: "判决", definition: "phán quyết" }
       ],
       zh_level_7: [
@@ -212,16 +206,16 @@ export const FallbackDataEngine = {
   },
 
   // --- HÀM TRÍCH XUẤT DỮ LIỆU ĐƯỢC CHẾ BIẾN CHUẨN GAME (GAME-READY FALLBACK) ---
-  getGameReadyFallback: function(gameType, lang, level, config = {}) {
+  getGameReadyFallback: function (gameType, lang, level, config = {}) {
     const safeLang = (lang === 'en' || lang === 'zh') ? lang : 'en';
     const mode = config.dataMode === 'sentence' ? 'sentence' : 'vocab';
-    const safeLevel = level || (safeLang === 'zh' ? 'zh_level_1' : 'en_level_1');
+    const resolvedLevel = Array.isArray(level) ? level[0] : level;
+    const safeLevel = resolvedLevel || (safeLang === 'zh' ? 'zh_level_1' : 'en_level_1');
 
     if (gameType === 'match') {
       const difficulty = config.difficulty || 'easy';
       const targetCount = difficulty === 'hard' ? 4 : 5;
       let fbItems = this.getFallbackData(safeLang, mode, safeLevel, 10);
-      
       if (!fbItems || fbItems.length < targetCount) {
         fbItems = [
           { term: "Apple", definition: "Quả táo" },
@@ -232,22 +226,18 @@ export const FallbackDataEngine = {
         ];
       }
       const realCards = fbItems.slice(0, targetCount);
-      let trapCards = [];
-      
+      const trapCards = [];
       if (difficulty === 'hard') {
         const trapSources = fbItems.slice(targetCount, targetCount + 2);
         while (trapSources.length < 2) {
           trapSources.push({ term: "Trap FB " + trapSources.length, definition: "Bẫy DP " + trapSources.length });
         }
-        
         for (let i = 0; i < trapSources.length; i++) {
           const trapCard = trapSources[i];
           let distortedTerm = null;
           let explanation = "";
-          
-          const type = Utils.detectSentence(trapCard.term) ? 'sentence' : 'word';
-          
-          if (GameAlgoEngine?.DistortionEngine?.offline_distort) {
+          const type = detectSentence(trapCard.term) ? 'sentence' : 'word';
+          if (GameAlgoEngine && GameAlgoEngine.DistortionEngine && GameAlgoEngine.DistortionEngine.offline_distort) {
             const offRes = GameAlgoEngine.DistortionEngine.offline_distort(trapCard.term, safeLang, type);
             distortedTerm = type === 'word' ? offRes.wrongWord : offRes.wrongSentence;
             explanation = offRes.explanation;
@@ -255,7 +245,6 @@ export const FallbackDataEngine = {
             distortedTerm = trapCard.term + "x";
             explanation = "Lỗi hình thái từ (Offline).";
           }
-          
           trapCards.push({
             term: distortedTerm,
             distortedTerm: distortedTerm,
@@ -266,35 +255,48 @@ export const FallbackDataEngine = {
           });
         }
       }
-      
+
       const leftItems = [...realCards, ...trapCards].map((c, i) => ({
         id: `left_${i}_${Date.now()}`,
         term: c.term,
         definition: c.definition || "No definition",
-        isTrap: trapCards.some(t => t.term === c.term),
+        isTrap: trapCards.some((t) => t.term === c.term),
         origin: c
       }));
-      
+
       const rightItems = [];
-      realCards.forEach((c, i) => { rightItems.push({ id: `right_real_${i}_${Date.now()}`, term: c.term, isTrap: false }); });
-      
+      realCards.forEach((c, i) => {
+        rightItems.push({ id: `right_real_${i}_${Date.now()}`, term: c.term, isTrap: false });
+      });
       for (let i = 0; i < trapCards.length; i++) {
         const trapCard = trapCards[i];
-        rightItems.push({ id: `right_trap_${i}_${Date.now()}`, term: trapCard.distortedTerm || trapCard.term, isTrap: true, originalTerm: trapCard.originalTerm, explanation: trapCard.explanation });
+        rightItems.push({
+          id: `right_trap_${i}_${Date.now()}`,
+          term: trapCard.distortedTerm || trapCard.term,
+          isTrap: true,
+          originalTerm: trapCard.originalTerm,
+          explanation: trapCard.explanation
+        });
       }
-      
+
       const shuffleNoAdjacentTraps = (arr) => {
-        if (!Utils.shuffleArray) return arr;
-        let res = [...arr]; let valid = false; let tries = 0;
+        let res = [...arr];
+        let valid = false;
+        let tries = 0;
         while (!valid && tries < 50) {
-          res = Utils.shuffleArray(res);
+          res = shuffleArray(res);
           valid = true;
-          for (let j = 0; j < res.length - 1; j++) { if (res[j].isTrap && res[j+1].isTrap) { valid = false; break; } }
+          for (let j = 0; j < res.length - 1; j++) {
+            if (res[j].isTrap && res[j + 1].isTrap) {
+              valid = false;
+              break;
+            }
+          }
           tries++;
         }
         return res;
       };
-      
+
       return {
         pairs: realCards,
         leftItems: shuffleNoAdjacentTraps(leftItems),
@@ -303,47 +305,56 @@ export const FallbackDataEngine = {
         _isRescued: true
       };
     }
-    
+
     if (gameType === 'scramble') {
       const difficulty = config.difficulty || 'easy';
       const inputMethod = config.inputMethod || 'tap';
-      let fbItems = this.getFallbackData(safeLang, mode, safeLevel, 5);
-      
+      const fbItems = this.getFallbackData(safeLang, mode, safeLevel, 5);
       let fallbackItem = { term: "Learning languages is fun", definition: "Học ngôn ngữ rất vui", _isRescued: true };
       if (fbItems && fbItems.length > 0) {
         fallbackItem = { ...fbItems[Math.floor(Math.random() * fbItems.length)], _isRescued: true };
       }
-      
       let parts = [];
       if (inputMethod === 'tap') {
         const isChinese = safeLang === 'zh';
-        const isSentence = Utils.detectSentence(fallbackItem.term) || fallbackItem.term.includes(' ');
+        const isSentence = detectSentence(fallbackItem.term);
         const type = isSentence ? 'sentence' : 'word';
-        const cleanAndLower = (textArr) => textArr.map(p => { let cleaned = p.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""); if (!isChinese) cleaned = cleaned.toLowerCase(); return cleaned; }).filter(p => p.trim() !== "");
-        
-        if (isChinese) { parts = fallbackItem.term.split(''); } else { if (isSentence) parts = fallbackItem.term.split(' '); else parts = fallbackItem.term.split(''); }
+        const cleanAndLower = (textArr) =>
+          textArr
+            .map((p) => {
+              let cleaned = p.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+              if (!isChinese) cleaned = cleaned.toLowerCase();
+              return cleaned;
+            })
+            .filter((p) => p.trim() !== "");
+
+        if (isChinese) {
+          parts = fallbackItem.term.split('');
+        } else {
+          parts = isSentence ? fallbackItem.term.split(' ') : fallbackItem.term.split('');
+        }
         parts = cleanAndLower(parts);
-        
+
         if (difficulty === 'hard') {
           let targetCount = 2;
           const len = parts.length;
           if (len >= 5 && len <= 10) targetCount = Math.floor(Math.random() * 2) + 4;
           else if (len > 10) targetCount = Math.floor(Math.random() * 3) + 5;
-          
-          if (GameAlgoEngine?.ScrambleNoiseEngine?.offline_getNoise) {
+
+          if (GameAlgoEngine && GameAlgoEngine.ScrambleNoiseEngine && GameAlgoEngine.ScrambleNoiseEngine.offline_getNoise) {
             const noiseWords = GameAlgoEngine.ScrambleNoiseEngine.offline_getNoise(fallbackItem.term, [], safeLang, type, targetCount);
             if (noiseWords && noiseWords.length > 0) {
               let finalNoiseWords = [];
               if (isChinese || type === 'word') {
-                noiseWords.forEach(w => { const cleanW = String(w).replace(/\s/g, ''); finalNoiseWords.push(...cleanW.split('')); });
-              } else { finalNoiseWords = noiseWords; }
-              finalNoiseWords = cleanAndLower(finalNoiseWords);
-              
-              if (Utils.shuffleArray) {
-                finalNoiseWords = Utils.shuffleArray(finalNoiseWords).slice(0, targetCount);
+                noiseWords.forEach((w) => {
+                  const cleanW = String(w).replace(/\s/g, '');
+                  finalNoiseWords.push(...cleanW.split(''));
+                });
               } else {
-                finalNoiseWords = finalNoiseWords.slice(0, targetCount);
+                finalNoiseWords = noiseWords;
               }
+              finalNoiseWords = cleanAndLower(finalNoiseWords);
+              finalNoiseWords = shuffleArray(finalNoiseWords).slice(0, targetCount);
               parts.push(...finalNoiseWords);
             }
           }
@@ -351,49 +362,41 @@ export const FallbackDataEngine = {
       }
       return { origin: fallbackItem, parts, isAiGenerated: false, _isRescued: true };
     }
-    
+
     // Trắc nghiệm, Đoán Hình
     if (gameType === 'quiz' || gameType === 'imagequiz') {
-      let fbItems = this.getFallbackData(safeLang, mode, safeLevel, 5);
+      const fbItems = this.getFallbackData(safeLang, mode, safeLevel, 5);
       let baseCard = { term: "Apple", definition: "Quả táo", isAiGenerated: false };
       if (fbItems && fbItems.length > 0) {
         baseCard = fbItems[0];
       }
-      
       const isReverse = config.isReverse || false;
       const numOptions = 4;
       const correctOptText = isReverse ? baseCard.term : baseCard.definition;
       const correctOpt = { text: correctOptText, isCorrect: true };
       let distractors = [];
-      const type = Utils.detectSentence(correctOptText) ? 'sentence' : 'word';
-      
-      if (GameAlgoEngine?.OptionsEngine?.offline_generateOptions) {
+      const type = detectSentence(correctOptText) ? 'sentence' : 'word';
+
+      if (GameAlgoEngine && GameAlgoEngine.OptionsEngine && GameAlgoEngine.OptionsEngine.offline_generateOptions) {
         const distTexts = GameAlgoEngine.OptionsEngine.offline_generateOptions(correctOptText, [], safeLang, type, numOptions - 1, isReverse);
-        distractors = distTexts.map(d => ({ text: d, isCorrect: false }));
+        distractors = distTexts.map((d) => ({ text: d, isCorrect: false }));
       }
-      
       if (distractors.length < numOptions - 1) {
-        const needed = (numOptions - 1) - distractors.length;
+        const needed = numOptions - 1 - distractors.length;
         for (let i = 0; i < needed; i++) {
-          distractors.push({ text: correctOptText + " " + (i+1), isCorrect: false });
+          distractors.push({ text: correctOptText + " " + (i + 1), isCorrect: false });
         }
       }
-      
-      if (Utils.shuffleArray) {
-        distractors = Utils.shuffleArray(distractors.slice(0, numOptions - 1));
-      } else {
-        distractors = distractors.slice(0, numOptions - 1);
-      }
-      
+      distractors = shuffleArray(distractors.slice(0, numOptions - 1));
       const correctPos = Math.floor(Math.random() * (distractors.length + 1));
       const finalOptions = [...distractors];
       finalOptions.splice(correctPos, 0, correctOpt);
+
       let returnObj = { question: baseCard, options: finalOptions, isAiGenerated: false, _isRescued: true };
-      
       if (gameType === 'imagequiz') {
         returnObj = { ...baseCard, options: finalOptions, origin: baseCard, isAiGenerated: false, _isRescued: true };
-        returnObj.options = returnObj.options.map(opt => {
-          let query = opt.text + " isolated clipart";
+        returnObj.options = returnObj.options.map((opt) => {
+          const query = opt.text + " isolated clipart";
           return {
             ...opt,
             image: `https://tse4.mm.bing.net/th?q=${encodeURIComponent(query)}&w=300&h=300&c=7&rs=1&p=0`
@@ -402,16 +405,15 @@ export const FallbackDataEngine = {
       }
       return returnObj;
     }
-    
+
     // Điền từ khuyết
     if (gameType === 'fillblank') {
-      let fbItems = this.getFallbackData(safeLang, mode, safeLevel, 1);
+      const fbItems = this.getFallbackData(safeLang, mode, safeLevel, 1);
       let baseCard = { term: "Learning languages is very fun.", definition: "Học ngôn ngữ rất thú vị." };
       if (fbItems && fbItems.length > 0) baseCard = fbItems[0];
-      const type = Utils.detectSentence(baseCard.term) ? 'sentence' : 'word';
+      const type = detectSentence(baseCard.term) ? 'sentence' : 'word';
       let maskedResult = null;
-      
-      if (GameAlgoEngine?.ClozeEngine?.offline_mask) {
+      if (GameAlgoEngine && GameAlgoEngine.ClozeEngine && GameAlgoEngine.ClozeEngine.offline_mask) {
         const offRes = GameAlgoEngine.ClozeEngine.offline_mask(baseCard.term, safeLang, type);
         maskedResult = { ...offRes, origin: baseCard, hint: baseCard.definition || offRes.hint, type: type, isAiGenerated: false, _isRescued: true };
       } else {
@@ -419,24 +421,23 @@ export const FallbackDataEngine = {
       }
       return maskedResult;
     }
-    
+
     // Tìm lỗi sai
     if (gameType === 'spotmistake') {
-      let fbItems = this.getFallbackData(safeLang, 'sentence', safeLevel, 1);
+      const fbItems = this.getFallbackData(safeLang, 'sentence', safeLevel, 1);
       let baseCard = { term: "The childrens are playing in the park.", definition: "Bọn trẻ đang chơi trong công viên. (Dự phòng)" };
       if (fbItems && fbItems.length > 0) baseCard = fbItems[0];
-      const type = Utils.detectSentence(baseCard.term) ? 'sentence' : 'word';
+      const type = detectSentence(baseCard.term) ? 'sentence' : 'word';
       let offlineResult = { wrongSentence: baseCard.term + "x", wrongWord: baseCard.term + "x", correction: baseCard.term, explanation: "Lỗi hình thái (Dự phòng)" };
-      
-      if (GameAlgoEngine?.DistortionEngine?.offline_distort) {
+      if (GameAlgoEngine && GameAlgoEngine.DistortionEngine && GameAlgoEngine.DistortionEngine.offline_distort) {
         offlineResult = GameAlgoEngine.DistortionEngine.offline_distort(baseCard.term, safeLang, type);
       }
       return { ...offlineResult, origin: baseCard, isAiGenerated: false, _isRescued: true };
     }
-    
+
     // Từ khác loại
     if (gameType === 'oddoneout') {
-      if (GameAlgoEngine?.OddOneOutEngine?.offline_generate) {
+      if (GameAlgoEngine && GameAlgoEngine.OddOneOutEngine && GameAlgoEngine.OddOneOutEngine.offline_generate) {
         const offlineResult = GameAlgoEngine.OddOneOutEngine.offline_generate([], safeLang);
         if (offlineResult) {
           return { ...offlineResult, isAiGenerated: false, _isRescued: true };
@@ -444,24 +445,19 @@ export const FallbackDataEngine = {
       }
       return { words: ["apple", "banana", "orange", "cat"], oddWord: "cat", explanation: "Cat là động vật (Dự phòng tuyệt đối).", isAiGenerated: false, _isRescued: true };
     }
-    
+
     // Ngữ âm
     if (gameType === 'pronunciation') {
       if (safeLang === 'zh') {
         return {
           term: "妈, 吧, 哥, 喝",
           definition: "Chữ 吧 (ba) là thanh nhẹ, các chữ còn lại đều là thanh 1.",
-          options: Utils.shuffleArray ? Utils.shuffleArray([
+          options: shuffleArray([
             { text: "妈", isCorrect: false },
             { text: "哥", isCorrect: false },
             { text: "吧", isCorrect: true },
             { text: "喝", isCorrect: false }
-          ]) : [
-            { text: "妈", isCorrect: false },
-            { text: "哥", isCorrect: false },
-            { text: "吧", isCorrect: true },
-            { text: "喝", isCorrect: false }
-          ],
+          ]),
           isAiGenerated: false,
           _isRescued: true
         };
@@ -469,40 +465,30 @@ export const FallbackDataEngine = {
         return {
           term: "cat, bat, tall, map",
           definition: "Từ tall có âm /ɔː/ khác với âm /æ/ ở các từ còn lại.",
-          options: Utils.shuffleArray ? Utils.shuffleArray([
+          options: shuffleArray([
             { text: "cat", isCorrect: false },
             { text: "bat", isCorrect: false },
             { text: "tall", isCorrect: true },
             { text: "map", isCorrect: false }
-          ]) : [
-            { text: "cat", isCorrect: false },
-            { text: "bat", isCorrect: false },
-            { text: "tall", isCorrect: true },
-            { text: "map", isCorrect: false }
-          ],
+          ]),
           isAiGenerated: false,
           _isRescued: true
         };
       }
     }
-    
+
     // Nghe hiểu
     if (gameType === 'listening') {
       if (safeLang === 'zh') {
         return {
           audioScript: "你好，我叫王明。我喜欢吃苹果。",
           term: "王明喜欢吃什么？",
-          options: Utils.shuffleArray ? Utils.shuffleArray([
+          options: shuffleArray([
             { text: "苹果 (Píngguǒ)", isCorrect: true },
             { text: "香蕉 (Xiāngjiāo)", isCorrect: false },
             { text: "西瓜 (Xīguā)", isCorrect: false },
             { text: "米饭 (Mǐfàn)", isCorrect: false }
-          ]) : [
-            { text: "苹果 (Píngguǒ)", isCorrect: true },
-            { text: "香蕉 (Xiāngjiāo)", isCorrect: false },
-            { text: "西瓜 (Xīguā)", isCorrect: false },
-            { text: "米饭 (Mǐfàn)", isCorrect: false }
-          ],
+          ]),
           explanation: "Trong đoạn băng, người nói nói rằng: '我喜欢吃苹果' (Tôi thích ăn táo).",
           isAiGenerated: false,
           _isRescued: true
@@ -511,45 +497,41 @@ export const FallbackDataEngine = {
         return {
           audioScript: "Hello, my name is John. I like to eat apples and play football in the park.",
           term: "What does John like to eat?",
-          options: Utils.shuffleArray ? Utils.shuffleArray([
+          options: shuffleArray([
             { text: "Apples", isCorrect: true },
             { text: "Bananas", isCorrect: false },
             { text: "Oranges", isCorrect: false },
             { text: "Grapes", isCorrect: false }
-          ]) : [
-            { text: "Apples", isCorrect: true },
-            { text: "Bananas", isCorrect: false },
-            { text: "Oranges", isCorrect: false },
-            { text: "Grapes", isCorrect: false }
-          ],
+          ]),
           explanation: "Trong đoạn băng, người nói nói rằng: 'I like to eat apples'.",
           isAiGenerated: false,
           _isRescued: true
         };
       }
     }
-    
+
     // Fallback Default
     return { term: "Lỗi hệ thống", definition: "Dữ liệu cứu hộ không xác định", _isRescued: true };
   },
 
-  // --- HÀM TRÍCH XUẤT DỮ LIỆU TỰ ĐỘNG (Nguyên bản) ---
-  getFallbackData: function(lang, mode, level, count = 5) {
+  // --- HÀM TRÍCH XUẤT DỮ LIỆU TỰ ĐỘNG ---
+  getFallbackData: function (lang, mode, level, count = 5) {
     try {
-      let pool = this[lang]?.[mode]?.[level];
+      const safeLevel = Array.isArray(level) ? level[0] : level;
+      let pool = this[lang]?.[mode]?.[safeLevel];
       if (!pool || pool.length === 0) {
-        // Tính năng Cứu hộ chéo: Nếu thiếu level cụ thể, lấy ngẫu nhiên từ tất cả các level khác
-        const allLevelsData = Object.values(this[lang]?.[mode] || {});
+        // Tính năng Cứu hộ chéo: Nếu thiếu level hoặc mode cụ thể, lấy ngẫu nhiên từ tất cả các level khác
+        const modeObj = this[lang]?.[mode] || this[lang]?.vocab || {};
+        const allLevelsData = Object.values(modeObj);
         pool = allLevelsData.flat();
       }
-      
       if (!pool || pool.length === 0) return [];
-      
-      // Trả về dữ liệu ngẫu nhiên, giới hạn số lượng
-      return Utils.shuffleArray([...pool]).slice(0, count);
-    } catch(e) {
+      return shuffleArray([...pool]).slice(0, count);
+    } catch (e) {
       console.warn("FallbackDataEngine extraction failed:", e);
       return [];
     }
   }
 };
+
+export default FallbackDataEngine;
