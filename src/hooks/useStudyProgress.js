@@ -12,9 +12,114 @@ import { FcDB } from '@/services/db';
 // Trình lấy FcDB an toàn (Hỗ trợ cả ES Module lẫn Global Window)
 const getDb = () => FcDB || (typeof window !== 'undefined' ? window.FcDB : null);
 
+// Trình gom toàn bộ thẻ từ Kho lõi Đa chiều (All Levels/Modes) để phục vụ Local-First Lookup
+const buildGlobalLookupDeck = (targetLang) => {
+  const combined = [];
+  const activeDeck = Utils?.safeJsonParse('fc_data_' + targetLang, []);
+  if (Array.isArray(activeDeck)) {
+    combined.push(...activeDeck);
+  }
+
+  ['vocab', 'sentence'].forEach((mode) => {
+    const masterData = Utils?.safeJsonParse(`fc_master_data_${targetLang}_${mode}`, null);
+    if (masterData && typeof masterData === 'object') {
+      Object.values(masterData).forEach((levelArr) => {
+        if (Array.isArray(levelArr)) {
+          combined.push(...levelArr);
+        }
+      });
+    }
+  });
+
+  return combined;
+};
+
 export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
   const { showToast, handleNext } = callbacks;
   const { lang } = core;
+
+  // ==================================================================================
+  // 0. TRÌNH ĐỒNG BỘ SRS XUYÊN KHO LÕI (CHỐNG VÒI NƯỚC RỬA TRÔI & BẢO VỆ BỘ THẺ GỐC)
+  // ==================================================================================
+  const syncCardSrsAcrossStores = (cardTerm, transformCardFn) => {
+    if (!cardTerm || typeof transformCardFn !== 'function') return;
+    const state = latestStateRef.current || {};
+    const isReviewMode = Boolean(state.isStudyingNotebook || core.isStudyingNotebook || core.studySourceName);
+    const dbInstance = getDb();
+
+    // 1. Cập nhật danh sách thẻ đang hiển thị trên màn hình
+    core.setCards((prev) => {
+      const nextCards = prev.map((c) => (c && c.term === cardTerm ? transformCardFn(c) : c));
+      if (!isReviewMode) {
+        Utils.safeLocalStorageSet('fc_data_' + lang, nextCards);
+      }
+      return nextCards;
+    });
+
+    // 2. Nếu đang ở chế độ Ôn tập Sổ tay/Lỗi sai, cập nhật ngầm vào fc_data_ gốc mà không ghi đè mất bộ bài chính
+    if (isReviewMode) {
+      const savedMainDeck = Utils?.safeJsonParse('fc_data_' + lang, null);
+      if (Array.isArray(savedMainDeck) && savedMainDeck.length > 0) {
+        let mainChanged = false;
+        const updatedMainDeck = savedMainDeck.map((c) => {
+          if (c && c.term === cardTerm) {
+            mainChanged = true;
+            return transformCardFn(c);
+          }
+          return c;
+        });
+        if (mainChanged) {
+          Utils.safeLocalStorageSet('fc_data_' + lang, updatedMainDeck);
+        }
+      }
+    }
+
+    // 3. Tiêm trực tiếp dữ liệu SRS vào Kho lõi Master Data (Ngăn Động cơ Vòi nước rửa trôi khi F5/đổi Level)
+    const activeMode = core.dataMode || 'vocab';
+    const masterDataKey = `fc_master_data_${lang}_${activeMode}`;
+    const masterData = Utils?.safeJsonParse(masterDataKey, null);
+    if (masterData && typeof masterData === 'object') {
+      let updatedMaster = false;
+      Object.keys(masterData).forEach((levelKey) => {
+        if (Array.isArray(masterData[levelKey])) {
+          const mIdx = masterData[levelKey].findIndex((c) => c && c.term === cardTerm);
+          if (mIdx !== -1) {
+            masterData[levelKey][mIdx] = transformCardFn(masterData[levelKey][mIdx]);
+            updatedMaster = true;
+          }
+        }
+      });
+      if (updatedMaster) {
+        Utils.safeLocalStorageSet(masterDataKey, masterData);
+      }
+    }
+
+    // 4. Đồng bộ vào Sổ tay nếu thẻ này cũng nằm trong Sổ tay
+    if (Array.isArray(state.notebook) && state.notebook.some((c) => c && c.term === cardTerm)) {
+      core.setNotebook((prev) => {
+        const nextNote = prev.map((c) => (c && c.term === cardTerm ? transformCardFn(c) : c));
+        if (dbInstance && core.isDbReady) {
+          dbInstance.set('fc_notebook_' + lang, nextNote);
+        }
+        return nextNote;
+      });
+    }
+
+    // 5. Đồng bộ vào Danh sách lỗi sai nếu thẻ này đang nằm trong Sổ tay cần nhớ
+    if (
+      Array.isArray(state.incorrectList) &&
+      state.incorrectList.some((c) => c && c.term === cardTerm)
+    ) {
+      const incorrectKey = (STORAGE_KEYS?.INCORRECT_LIST || 'fc_incorrect_list') + '_' + lang;
+      core.setIncorrectList((prev) => {
+        const nextInc = prev.map((c) => (c && c.term === cardTerm ? transformCardFn(c) : c));
+        if (dbInstance && core.isDbReady) {
+          dbInstance.set(incorrectKey, nextInc);
+        }
+        return nextInc;
+      });
+    }
+  };
 
   // ==================================================================================
   // 1. QUẢN LÝ SỔ TAY TỪ VỰNG (NOTEBOOK ACTIONS)
@@ -75,8 +180,8 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
     const currentNotebook = latestStateRef.current.notebook || [];
     const existingTerms = new Set(currentNotebook.map((i) => i.term));
 
-    // Kéo toàn bộ kho từ vựng của ngôn ngữ hiện tại (Tất cả Level/Topic) để làm khiên lọc
-    const globalDeck = Utils?.safeJsonParse('fc_data_' + lang, []) || [];
+    // Kéo toàn bộ kho từ vựng của ngôn ngữ hiện tại (Tất cả Level/Topic & Master Data) để làm khiên lọc
+    const globalDeck = buildGlobalLookupDeck(lang);
     const unique = [];
     const aiQueueTargets = [];
 
@@ -149,18 +254,28 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
   // ==================================================================================
   // Đánh dấu thẻ là đã thuộc (Xóa khỏi danh sách học, thêm vào kho Mastered)
   const handleMarkMastered = async (card) => {
-    const { cards, mastered, currentCardIndex } = latestStateRef.current;
+    const { cards, mastered, currentCardIndex, isStudyingNotebook } = latestStateRef.current;
     const target = card && card.term ? card : cards[currentCardIndex];
     if (!target) return;
 
     const newCards = cards.filter((c) => c.term !== target.term);
-    const newMastered = [...mastered, target];
+    const existsInMastered = mastered.some((c) => c.term === target.term);
+    const newMastered = existsInMastered ? mastered : [...mastered, target];
 
     core.setCards(newCards);
     core.setMastered(newMastered);
 
-    // Cards vẫn lưu ở localStorage theo kiến trúc hiện tại của Tầng 7
-    Utils.safeLocalStorageSet('fc_data_' + lang, newCards);
+    // Bảo vệ bộ thẻ gốc nếu đang ở chế độ ôn tập Sổ tay
+    const isReviewMode = Boolean(isStudyingNotebook || core.isStudyingNotebook || core.studySourceName);
+    if (!isReviewMode) {
+      Utils.safeLocalStorageSet('fc_data_' + lang, newCards);
+    } else {
+      const savedMainDeck = Utils?.safeJsonParse('fc_data_' + lang, null);
+      if (Array.isArray(savedMainDeck)) {
+        const filteredMain = savedMainDeck.filter((c) => c && c.term !== target.term);
+        Utils.safeLocalStorageSet('fc_data_' + lang, filteredMain);
+      }
+    }
 
     // [INDEXEDDB] Lưu kho Thẻ đã thuộc
     const dbInstance = getDb();
@@ -180,13 +295,23 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
   // Khôi phục thẻ từ Mastered về danh sách học
   const handleRestoreMastered = async (card) => {
     if (!card) return;
-    const { cards, mastered } = latestStateRef.current;
+    const { cards, mastered, isStudyingNotebook } = latestStateRef.current;
     const newMaster = mastered.filter((c) => c.term !== card.term);
-    const newCards = [card, ...cards];
+    const newCards = [card, ...cards.filter((c) => c.term !== card.term)];
 
     core.setMastered(newMaster);
     core.setCards(newCards);
-    Utils.safeLocalStorageSet('fc_data_' + lang, newCards);
+
+    const isReviewMode = Boolean(isStudyingNotebook || core.isStudyingNotebook || core.studySourceName);
+    if (!isReviewMode) {
+      Utils.safeLocalStorageSet('fc_data_' + lang, newCards);
+    } else {
+      const savedMainDeck = Utils?.safeJsonParse('fc_data_' + lang, []);
+      if (Array.isArray(savedMainDeck)) {
+        const restoredMain = [card, ...savedMainDeck.filter((c) => c && c.term !== card.term)];
+        Utils.safeLocalStorageSet('fc_data_' + lang, restoredMain);
+      }
+    }
 
     const dbInstance = getDb();
     if (dbInstance && core.isDbReady) {
@@ -201,7 +326,7 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
 
   // Khôi phục toàn bộ thẻ đã thuộc
   const handleRestoreAllMastered = async () => {
-    const { cards, mastered } = latestStateRef.current;
+    const { cards, mastered, isStudyingNotebook } = latestStateRef.current;
     if (!mastered || mastered.length === 0) {
       if (typeof showToast === 'function') {
         showToast('Danh sách trống!', 'warning');
@@ -210,11 +335,25 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
     }
 
     const restoredCount = mastered.length;
-    const newCards = [...mastered, ...cards];
+    const masteredTerms = new Set(mastered.map((m) => m.term));
+    const newCards = [...mastered, ...cards.filter((c) => !masteredTerms.has(c.term))];
 
     core.setMastered([]);
     core.setCards(newCards);
-    Utils.safeLocalStorageSet('fc_data_' + lang, newCards);
+
+    const isReviewMode = Boolean(isStudyingNotebook || core.isStudyingNotebook || core.studySourceName);
+    if (!isReviewMode) {
+      Utils.safeLocalStorageSet('fc_data_' + lang, newCards);
+    } else {
+      const savedMainDeck = Utils?.safeJsonParse('fc_data_' + lang, []);
+      if (Array.isArray(savedMainDeck)) {
+        const restoredMain = [
+          ...mastered,
+          ...savedMainDeck.filter((c) => c && !masteredTerms.has(c.term))
+        ];
+        Utils.safeLocalStorageSet('fc_data_' + lang, restoredMain);
+      }
+    }
 
     const dbInstance = getDb();
     if (dbInstance && core.isDbReady) {
@@ -285,15 +424,13 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
   const handleSrsGrade = (grade) => {
     const current = latestStateRef.current;
     const card = current.cards?.[current.currentCardIndex];
-    if (!card) return;
+    if (!card || !card.term) return;
 
     const srsResult = Utils.calculateSRS(card, grade, current.settings);
-    core.setCards((prev) => {
-      const newCards = [...prev];
-      newCards[current.currentCardIndex] = { ...card, ...srsResult };
-      Utils.safeLocalStorageSet('fc_data_' + lang, newCards);
-      return newCards;
-    });
+    syncCardSrsAcrossStores(card.term, (targetCard) => ({
+      ...targetCard,
+      ...srsResult
+    }));
 
     if (typeof handleNext === 'function') {
       handleNext();
@@ -304,19 +441,15 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
   const handleResetSrs = () => {
     const current = latestStateRef.current;
     const card = current.cards?.[current.currentCardIndex];
-    if (!card) return;
+    if (!card || !card.term) return;
 
-    const newCard = { ...card };
-    delete newCard.srs_interval;
-    delete newCard.srs_repetition;
-    delete newCard.srs_ease;
-    delete newCard.srs_due;
-
-    core.setCards((prev) => {
-      const newCards = [...prev];
-      newCards[current.currentCardIndex] = newCard;
-      Utils.safeLocalStorageSet('fc_data_' + lang, newCards);
-      return newCards;
+    syncCardSrsAcrossStores(card.term, (targetCard) => {
+      const cleaned = { ...targetCard };
+      delete cleaned.srs_interval;
+      delete cleaned.srs_repetition;
+      delete cleaned.srs_ease;
+      delete cleaned.srs_due;
+      return cleaned;
     });
 
     if (typeof showToast === 'function') {
@@ -337,6 +470,8 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
     handleResetSrs
   };
 };
+
+export const Block6_5_useStudyProgress = useStudyProgress;
 
 if (typeof window !== 'undefined') {
   window.Block6_5_useStudyProgress = useStudyProgress;
