@@ -1,3 +1,9 @@
+// ============================================================================
+// FILE 14/85: src/services/geminiApi.js
+// NGUỒN GỐC: Tầng 2 - Block 2.1c (Gemini API Service V4.23)
+// NHIỆM VỤ: Trạm điều phối Gemini API: Mutex Lock, Radar theo dõi RPD, 7 tầng Proxy vượt CORS, Vòng lặp kép Key × Model Cascade, Làm giàu thẻ (Từ vựng & Câu văn).
+// ============================================================================
+
 import { STORAGE_KEYS, AI_MODELS, IoeEnumRegistry } from '../config/constants.js';
 import { DEFAULT_PROMPTS } from '../config/prompts.js';
 import {
@@ -71,6 +77,30 @@ export const getCooldown429Ms = () => {
   return (config.cooldown429 || 120) * 60 * 1000;
 };
 
+// Helper: Tập hợp danh sách API Key an toàn từ Pool + Key đơn + Paid Key
+const resolveEffectiveKeyPool = (apiKeyOverride = null) => {
+  const rawPool = safeJsonParse('fc_apikey_pool', []);
+  const pool = Array.isArray(rawPool) ? [...rawPool] : [];
+
+  const addUniqueKey = (k) => {
+    if (!k || typeof k !== 'string') return;
+    const trimmed = k.replace(/["'\s]/g, '');
+    if (trimmed.length >= 10 && !pool.includes(trimmed)) {
+      pool.push(trimmed);
+    }
+  };
+
+  if (apiKeyOverride) addUniqueKey(apiKeyOverride);
+
+  const primaryStorageKey = STORAGE_KEYS?.API_KEY || 'fc_apikey';
+  addUniqueKey(localStorage.getItem(primaryStorageKey));
+  addUniqueKey(localStorage.getItem('fc_apikey'));
+  addUniqueKey(localStorage.getItem('fc_gemini_api_key'));
+  addUniqueKey(localStorage.getItem('fc_paid_apikey'));
+
+  return pool;
+};
+
 // ============================================================================
 // 0.C BỘ ĐẾM RPD (REQUESTS PER DAY) THÔNG MINH - MA TRẬN 2 CHIỀU
 // ============================================================================
@@ -106,17 +136,51 @@ export const RPDTracker = {
   },
 
   getUsage: function (key, modelId) {
-    if (!key || !modelId) return 0;
     const data = this._load();
-    return data.usage[key]?.[modelId] || 0;
+    if (!key && !modelId) return data.usage || {};
+    if (!key || !modelId) return 0;
+    const cleanK = String(key).replace(/["'\s]/g, '');
+    return data.usage[cleanK]?.[modelId] || data.usage[key]?.[modelId] || 0;
   },
 
   incrementUsage: function (key, modelId) {
     if (!key || !modelId) return;
+    const cleanK = String(key).replace(/["'\s]/g, '');
     const data = this._load();
-    if (!data.usage[key]) data.usage[key] = {};
-    data.usage[key][modelId] = (data.usage[key][modelId] || 0) + 1;
+    if (!data.usage[cleanK]) data.usage[cleanK] = {};
+    data.usage[cleanK][modelId] = (data.usage[cleanK][modelId] || 0) + 1;
     this._save(data);
+  },
+
+  // Alias tương thích NewMapping.md
+  increment: function (key, modelId) {
+    return this.incrementUsage(key, modelId);
+  },
+
+  isExhausted: function (key, modelId, limitOverride = null) {
+    if (!key || !modelId) return false;
+    const used = this.getUsage(key, modelId);
+    if (limitOverride !== null) return used >= limitOverride;
+    const modelObj = Array.isArray(AI_MODELS)
+      ? AI_MODELS.find((m) => m.id === modelId)
+      : null;
+    const limit = modelObj?.rpdLimit || 500;
+    return used >= limit;
+  },
+
+  getMatrix: function (keys = [], models = AI_MODELS || []) {
+    const matrix = {};
+    const keyList = Array.isArray(keys) ? keys : [];
+    const modelList = Array.isArray(models) ? models : [];
+    keyList.forEach((k) => {
+      const cleanK = String(k).replace(/["'\s]/g, '');
+      matrix[cleanK] = {};
+      modelList.forEach((m) => {
+        const mId = typeof m === 'string' ? m : m.id;
+        matrix[cleanK][mId] = this.getUsage(cleanK, mId);
+      });
+    });
+    return matrix;
   }
 };
 
@@ -206,15 +270,12 @@ export const callGeminiApi = async (prompt, schema = null, apiKeyOverride = null
       throw new Error('[GLOBAL_PAUSE] Mạng đang tạm nghỉ 15s để chống bộ lọc IP Spam.');
     }
 
-    const keyPool = safeJsonParse('fc_apikey_pool', []);
-    if (apiKeyOverride && !keyPool.includes(apiKeyOverride)) {
-      keyPool.push(apiKeyOverride);
-    }
+    const keyPool = resolveEffectiveKeyPool(apiKeyOverride);
     if (keyPool.length === 0) {
       throw new Error('Chưa nhập API Key (Vui lòng cấu hình trong Settings)');
     }
 
-    let dynamicTimeoutMs = 20000;
+    let dynamicTimeoutMs = 25000;
     try {
       const aiCfg = safeJsonParse('fc_ai_config', {});
       if (aiCfg && aiCfg.loadingTime) {
@@ -423,8 +484,9 @@ export const callGeminiApi = async (prompt, schema = null, apiKeyOverride = null
     if (keyPool.length > 1) {
       setKeyCooldown(usedApiKey, 5000);
     }
-    if (usedApiKey !== localStorage.getItem(STORAGE_KEYS?.API_KEY || 'fc_gemini_api_key')) {
-      localStorage.setItem(STORAGE_KEYS?.API_KEY || 'fc_gemini_api_key', usedApiKey);
+    const activeStorageKey = STORAGE_KEYS?.API_KEY || 'fc_apikey';
+    if (usedApiKey !== localStorage.getItem(activeStorageKey)) {
+      localStorage.setItem(activeStorageKey, usedApiKey);
     }
 
     await new Promise((r) => setTimeout(r, 3000));
@@ -449,11 +511,18 @@ export const fillCardWithAi = async (
       throw new Error('[GLOBAL_PAUSE] Mạng đang tạm nghỉ 15s để chống bộ lọc IP Spam.');
     }
 
-    const keyPool = safeJsonParse('fc_apikey_pool', []);
-    if (apiKey && !keyPool.includes(apiKey)) {
-      keyPool.push(apiKey);
-    }
+    const keyPool = resolveEffectiveKeyPool(apiKey);
     if (keyPool.length === 0) throw new Error('Chưa nhập API Key (Thiếu Key Pool)');
+
+    let dynamicTimeoutMs = 25000;
+    try {
+      const aiCfg = safeJsonParse('fc_ai_config', {});
+      if (aiCfg && aiCfg.loadingTime) {
+        dynamicTimeoutMs = parseInt(aiCfg.loadingTime, 10) * 1000 + 5000;
+      }
+    } catch (e) {
+      // Bỏ qua lỗi cấu hình
+    }
 
     const cleanTermForAi = term ? term.replace(/\u0332/g, '') : '';
     const isSentence = dataMode === 'sentence';
@@ -501,8 +570,9 @@ export const fillCardWithAi = async (
       sinoViet: { type: 'STRING' },
       example: {
         type: 'STRING',
-        description:
-          "Multiline string containing examples. MUST generate exactly ONE example sentence for EACH part of speech listed in 'partOfSpeech'. Format each line exactly as: - Foreign Sentence | Vietnamese Translation"
+        description: isSentence
+          ? '1 example sentence with a similar grammatical structure and its Vietnamese translation. Format: - Foreign Sentence | Vietnamese Translation'
+          : "Multiline string containing examples. MUST generate exactly ONE example sentence for EACH part of speech listed in 'partOfSpeech'. Format each line exactly as: - Foreign Sentence | Vietnamese Translation"
       },
       image_keyword: { type: 'STRING' },
       grammar_type: { type: 'ARRAY', items: { type: 'STRING' } }
@@ -526,7 +596,11 @@ export const fillCardWithAi = async (
       delete propertiesToFetch.sinoViet;
       requiredFields = requiredFields.filter((f) => f !== 'sinoViet');
     }
-    if (!isSentence) {
+    if (isSentence) {
+      // Câu văn không dùng tờ giấy nháp tính % từ loại của từ đơn
+      delete propertiesToFetch.posAnalysis;
+      requiredFields = requiredFields.filter((f) => f !== 'posAnalysis');
+    } else {
       delete propertiesToFetch.grammar_type;
       requiredFields = requiredFields.filter((f) => f !== 'grammar_type');
     }
@@ -536,34 +610,39 @@ export const fillCardWithAi = async (
       isTrimming = true;
       const mappedTargetFields = targetFields.map((f) => (f === 'image' ? 'image_keyword' : f));
       requiredFields = requiredFields.filter((f) => mappedTargetFields.includes(f));
-      if (requiredFields.includes('partOfSpeech') && !requiredFields.includes('posAnalysis')) {
+      if (
+        !isSentence &&
+        requiredFields.includes('partOfSpeech') &&
+        !requiredFields.includes('posAnalysis')
+      ) {
         requiredFields.push('posAnalysis');
       }
       if (requiredFields.length === 0) {
         requiredFields = ['term'];
       }
-      const strictOrder = [
-        'posAnalysis',
-        'partOfSpeech',
-        'example',
-        'term',
-        'pronunciation',
-        'definition',
-        'topic',
-        'analysis',
-        'sinoViet',
-        'image_keyword',
-        'grammar_type'
-      ];
-      const trimmedProperties = {};
-      strictOrder.forEach((f) => {
-        if (requiredFields.includes(f) && propertiesToFetch[f]) {
-          trimmedProperties[f] = propertiesToFetch[f];
-        }
-      });
-      propertiesToFetch = trimmedProperties;
-      requiredFields.sort((a, b) => strictOrder.indexOf(a) - strictOrder.indexOf(b));
     }
+
+    const strictOrder = [
+      'posAnalysis',
+      'partOfSpeech',
+      'example',
+      'term',
+      'pronunciation',
+      'definition',
+      'topic',
+      'analysis',
+      'sinoViet',
+      'image_keyword',
+      'grammar_type'
+    ];
+    const orderedProperties = {};
+    strictOrder.forEach((f) => {
+      if (requiredFields.includes(f) && propertiesToFetch[f]) {
+        orderedProperties[f] = propertiesToFetch[f];
+      }
+    });
+    propertiesToFetch = orderedProperties;
+    requiredFields.sort((a, b) => strictOrder.indexOf(a) - strictOrder.indexOf(b));
 
     const promptKey = isSentence ? 'enrich_sentence' : 'enrich_word';
     let basePrompt = DEFAULT_PROMPTS ? DEFAULT_PROMPTS[promptKey] : 'Phân tích {term} ({lang})';
@@ -597,19 +676,29 @@ export const fillCardWithAi = async (
         userQuery += `2. NGÔN NGỮ: Xử lý bằng Tiếng Việt dễ hiểu.\n`;
         userQuery += `3. PHONG CÁCH: Cực kỳ NGẮN GỌN (tối đa 2-3 câu), không lan man.\n`;
       }
-
-      if (requiredFields.includes('partOfSpeech') || requiredFields.includes('posAnalysis')) {
-        userQuery += `\n[CÁC LỖI NGỮ PHÁP NGHIÊM CẤM]:\n`;
-        const grammarRule = activePedagogyEngine?.getMicroTierGrammarRule
-          ? activePedagogyEngine.getMicroTierGrammarRule(lang)
-          : `- Chỉ phân loại theo đúng ngữ pháp ngôn ngữ gốc, tuyệt đối không vay mượn ngữ pháp bản dịch Tiếng Việt.\n`;
-        userQuery += grammarRule + '\n';
-      }
-
-      userQuery += `4. ĐỊNH DẠNG & THỨ TỰ BẮT BUỘC: TRỌNG TÂM: Phải xuất trường 'posAnalysis' ĐẦU TIÊN trong chuỗi JSON để làm nháp. Chỉ xuất CHÍNH XÁC các trường: ${requiredFields.join(', ')}.\n`;
-      userQuery += `${dynamicInstruction}`;
     } else {
-      userQuery = `Hãy phân tích toàn diện ${typeLabel} này: "${cleanTermForAi}" (Ngôn ngữ: ${lang}). Bắt buộc xuất đầy đủ JSON Schema đã định nghĩa.${dynamicInstruction}`;
+      userQuery = `Hãy phân tích toàn diện ${typeLabel} này: "${cleanTermForAi}" (Ngôn ngữ: ${lang}). Bắt buộc xuất đầy đủ JSON Schema đã định nghĩa.${dynamicInstruction}\n`;
+    }
+
+    // Luôn bơm Vắc-xin Ngữ pháp cho chế độ Từ vựng khi cần phân loại từ loại (bất kể isTrimming hay Full Enrich)
+    if (
+      !isSentence &&
+      (requiredFields.includes('partOfSpeech') || requiredFields.includes('posAnalysis'))
+    ) {
+      userQuery += `\n[CÁC LỖI NGỮ PHÁP NGHIÊM CẤM]:\n`;
+      const grammarRule = activePedagogyEngine?.getMicroTierGrammarRule
+        ? activePedagogyEngine.getMicroTierGrammarRule(lang)
+        : `- Chỉ phân loại theo đúng ngữ pháp ngôn ngữ gốc, tuyệt đối không vay mượn ngữ pháp bản dịch Tiếng Việt.\n`;
+      userQuery += grammarRule + '\n';
+    }
+
+    if (isTrimming) {
+      if (!isSentence && requiredFields.includes('posAnalysis')) {
+        userQuery += `4. ĐỊNH DẠNG & THỨ TỰ BẮT BUỘC: TRỌNG TÂM: Phải xuất trường 'posAnalysis' ĐẦU TIÊN trong chuỗi JSON để làm nháp. Chỉ xuất CHÍNH XÁC các trường: ${requiredFields.join(', ')}.\n`;
+      } else {
+        userQuery += `4. ĐỊNH DẠNG BẮT BUỘC: Chỉ xuất CHÍNH XÁC các trường: ${requiredFields.join(', ')}.\n`;
+      }
+      userQuery += `${dynamicInstruction}`;
     }
 
     let validTagsStr = '';
@@ -621,13 +710,14 @@ export const fillCardWithAi = async (
           tagsArr.push(...traps);
         }
       }
-      if (tagsArr.length > 0) {
-        validTagsStr = `Chỉ chọn tag từ danh sách: [${tagsArr.join(', ')}].`;
+      const uniqueTags = [...new Set(tagsArr)];
+      if (uniqueTags.length > 0) {
+        validTagsStr = `1. Nếu câu mang cấu trúc giao tiếp bình thường, không chứa bẫy ngữ pháp đặc biệt, BẮT BUỘC trả về mảng rỗng []. 2. Nếu có cấu trúc đặc trưng, chỉ chọn 1 đến 2 mã cốt lõi nhất từ danh sách: [${uniqueTags.join(', ')}].`;
       } else {
-        validTagsStr = `Chỉ xuất mã nhãn hợp lệ.`;
+        validTagsStr = `Chỉ xuất mã nhãn hợp lệ hoặc mảng rỗng [].`;
       }
     } else {
-      validTagsStr = `Chỉ xuất mã nhãn hợp lệ.`;
+      validTagsStr = `Chỉ xuất mã nhãn hợp lệ hoặc mảng rỗng [].`;
     }
 
     let fieldRules = `\n[QUY TẮC CÁC TRƯỜNG]:\n`;
@@ -635,7 +725,11 @@ export const fillCardWithAi = async (
       fieldRules += `- 'pronunciation': Phiên âm (IPA/Pinyin) TOÀN BỘ CÂU VĂN.\n`;
     }
     if (requiredFields.includes('definition')) {
-      fieldRules += `- 'definition': Bản dịch Tiếng Việt trực tiếp, chuẩn xác. ${pedagogyRules.definition}\n`;
+      if (isSentence) {
+        fieldRules += `- 'definition': Dịch nghĩa của toàn bộ câu sang Tiếng Việt tự nhiên, chuẩn xác.\n`;
+      } else {
+        fieldRules += `- 'definition': Bản dịch Tiếng Việt trực tiếp, chuẩn xác. ${pedagogyRules.definition}\n`;
+      }
     }
     if (requiredFields.includes('topic')) {
       const predefinedTopics =
@@ -654,30 +748,46 @@ export const fillCardWithAi = async (
             ];
       fieldRules += `- 'topic': Chọn CHÍNH XÁC 1 từ khóa từ: [${predefinedTopics.join(', ')}].\n`;
     }
-    if (requiredFields.includes('posAnalysis')) {
+    if (!isSentence && requiredFields.includes('posAnalysis')) {
       fieldRules += `- 'posAnalysis' (TỜ GIẤY NHÁP): Tư duy theo chuỗi. BẮT BUỘC viết phân tích chức năng ngữ pháp TRƯỚC, sau đó mới chốt lại tỉ lệ % ở cuối cùng. [LUẬT ÉP 0%]: Nếu vi phạm [CÁC LỖI NGỮ PHÁP NGHIÊM CẤM], lập tức ép % về 0.\n`;
     }
     if (requiredFields.includes('partOfSpeech')) {
-      const posDifficulty =
-        translatedLevels.length > 0
-          ? ` Chỉ liệt kê từ loại phổ biến, phù hợp cấp độ [${translatedLevels.join(', ')}].`
-          : ` Chỉ liệt kê từ loại phổ biến trong giao tiếp.`;
-      const posFormatRule = ` Dựa vào 'posAnalysis', CHỈ xuất các từ loại >${posThresholdStr}. Dịch tên từ loại sang Tiếng Việt.`;
-      if (existingData && existingData.partOfSpeech) {
-        fieldRules += `- 'partOfSpeech': User đã chỉ định là [${existingData.partOfSpeech}]. Giữ từ loại này, liệt kê thêm (nếu >${posThresholdStr}), cách nhau bằng '|'.${posDifficulty}${posFormatRule}\n`;
+      if (isSentence) {
+        fieldRules += `- 'partOfSpeech': Ghi ngắn gọn là "Câu văn" (hoặc phân loại câu: Câu trần thuật / Câu nghi vấn / Câu cảm thán).\n`;
       } else {
-        fieldRules += `- 'partOfSpeech': Xuất kết quả cuối cùng từ 'posAnalysis', cách nhau bằng '|'.${posDifficulty}${posFormatRule}\n`;
+        const posDifficulty =
+          translatedLevels.length > 0
+            ? ` Chỉ liệt kê từ loại phổ biến, phù hợp cấp độ [${translatedLevels.join(', ')}].`
+            : ` Chỉ liệt kê từ loại phổ biến trong giao tiếp.`;
+        const posFormatRule = ` Dựa vào 'posAnalysis', CHỈ xuất các từ loại >${posThresholdStr}. Dịch tên từ loại sang Tiếng Việt.`;
+        if (existingData && existingData.partOfSpeech) {
+          fieldRules += `- 'partOfSpeech': User đã chỉ định là [${existingData.partOfSpeech}]. Giữ từ loại này, liệt kê thêm (nếu >${posThresholdStr}), cách nhau bằng '|'.${posDifficulty}${posFormatRule}\n`;
+        } else {
+          fieldRules += `- 'partOfSpeech': Xuất kết quả cuối cùng từ 'posAnalysis', cách nhau bằng '|'.${posDifficulty}${posFormatRule}\n`;
+        }
+      }
+    }
+    if (requiredFields.includes('analysis')) {
+      if (isSentence) {
+        fieldRules += `- 'analysis': Phân tích cấu trúc ngữ pháp của câu và giải nghĩa các từ vựng quan trọng trong câu (bằng Tiếng Việt, trình bày gạch đầu dòng rõ ràng).\n`;
+      } else {
+        fieldRules += `- 'analysis': Giải thích chi tiết cách dùng, cấu trúc đi kèm (collocations) và sắc thái nghĩa bằng Tiếng Việt.\n`;
       }
     }
     if (requiredFields.includes('image_keyword')) {
       fieldRules += `- 'image_keyword': 1 từ khóa TIẾNG ANH mô tả trực quan nhất để tìm ảnh minh họa.\n`;
     }
     if (requiredFields.includes('example')) {
-      fieldRules += `- 'example': Sáng tác các câu có chứa CHÍNH XÁC từ "${cleanTermForAi}". [TIÊU CHUẨN SƯ PHẠM]: ${pedagogyRules.example}\n`;
-      fieldRules += `  -> [ĐỊNH DẠNG BẮT BUỘC]:\n`;
-      fieldRules += `  1. Ánh xạ 1:1 với 'partOfSpeech' (Đúng số lượng, đúng thứ tự từ loại), mỗi câu 1 dòng.\n`;
-      fieldRules += `  2. Bắt đầu mỗi câu bằng dấu "- " (gạch ngang và khoảng trắng), theo sau là: Câu ngoại ngữ | Bản dịch.\n`;
-      fieldRules += `  3. KHÔNG chứa Pinyin/IPA, KHÔNG chèn tag từ loại.\n`;
+      if (isSentence) {
+        fieldRules += `- 'example': Tạo 1 câu ví dụ mới có cấu trúc ngữ pháp tương tự câu gốc. [TIÊU CHUẨN SƯ PHẠM]: ${pedagogyRules.example}\n`;
+        fieldRules += `  -> [ĐỊNH DẠNG BẮT BUỘC]: Bắt đầu bằng dấu "- " theo sau là: Câu ngoại ngữ | Bản dịch Tiếng Việt. KHÔNG chứa Pinyin/IPA.\n`;
+      } else {
+        fieldRules += `- 'example': Sáng tác các câu có chứa CHÍNH XÁC từ "${cleanTermForAi}". [TIÊU CHUẨN SƯ PHẠM]: ${pedagogyRules.example}\n`;
+        fieldRules += `  -> [ĐỊNH DẠNG BẮT BUỘC]:\n`;
+        fieldRules += `  1. Ánh xạ 1:1 với 'partOfSpeech' (Đúng số lượng, đúng thứ tự từ loại), mỗi câu 1 dòng.\n`;
+        fieldRules += `  2. Bắt đầu mỗi câu bằng dấu "- " (gạch ngang và khoảng trắng), theo sau là: Câu ngoại ngữ | Bản dịch.\n`;
+        fieldRules += `  3. KHÔNG chứa Pinyin/IPA, KHÔNG chèn tag từ loại.\n`;
+      }
     }
     if (requiredFields.includes('grammar_type')) {
       fieldRules += `- 'grammar_type': ${validTagsStr}\n`;
@@ -687,7 +797,13 @@ export const fillCardWithAi = async (
     const payload = {
       contents: [{ parts: [{ text: userQuery }] }],
       systemInstruction: {
-        parts: [{ text: 'BẮT BUỘC TRẢ VỀ JSON HỢP LỆ THEO SCHEMA. Không bình luận.' }]
+        parts: [
+          {
+            text: isTrimming
+              ? 'BẮT BUỘC TRẢ VỀ JSON HỢP LỆ THEO SCHEMA. Không bình luận.'
+              : basePrompt
+          }
+        ]
       },
       generationConfig: {
         responseMimeType: 'application/json',
@@ -698,10 +814,6 @@ export const fillCardWithAi = async (
         }
       }
     };
-
-    if (!isTrimming) {
-      payload.systemInstruction = { parts: [{ text: basePrompt }] };
-    }
 
     const abortSignal =
       typeof window !== 'undefined' && window.__currentGameAbortController
@@ -791,8 +903,12 @@ export const fillCardWithAi = async (
           const timeoutPromise = new Promise((_, reject) => {
             setTimeout(() => {
               controller.abort();
-              reject(new Error('Hết thời gian chờ 15s (Bị treo ở tầng Network).'));
-            }, 15000);
+              reject(
+                new Error(
+                  `Hết thời gian chờ ${Math.round(dynamicTimeoutMs / 1000)}s (Bị treo ở tầng Network).`
+                )
+              );
+            }, dynamicTimeoutMs);
           });
 
           const res = await Promise.race([fetchPromise, timeoutPromise]);
@@ -895,8 +1011,9 @@ export const fillCardWithAi = async (
     if (keyPool.length > 1) {
       setKeyCooldown(usedApiKey, 5000);
     }
-    if (usedApiKey !== localStorage.getItem(STORAGE_KEYS?.API_KEY || 'fc_gemini_api_key')) {
-      localStorage.setItem(STORAGE_KEYS?.API_KEY || 'fc_gemini_api_key', usedApiKey);
+    const activeStorageKey = STORAGE_KEYS?.API_KEY || 'fc_apikey';
+    if (usedApiKey !== localStorage.getItem(activeStorageKey)) {
+      localStorage.setItem(activeStorageKey, usedApiKey);
     }
 
     const text = finalData.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -1018,5 +1135,11 @@ export const GeminiApiService = {
   fetchAiDistractorsBatch,
   explainSentenceGrammar
 };
+
+if (typeof window !== 'undefined') {
+  window.GeminiApiService = GeminiApiService;
+  window.RPDTracker = RPDTracker;
+  window.Utils = Object.assign(window.Utils || {}, GeminiApiService);
+}
 
 export default GeminiApiService;

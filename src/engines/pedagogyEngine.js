@@ -1,3 +1,9 @@
+// ============================================================================
+// FILE 15/85: src/engines/pedagogyEngine.js
+// NGUỒN GỐC: Tầng 2 - Block 2.2 (IoeDataEngine / PedagogyEngine V1.21)
+// NHIỆM VỤ: Ma trận sư phạm CEFR & HSK 3.0 (GRADE_CONTEXTS, LEVEL_DICTIONARY, TOPICS, getPedagogyMatrixRule, getLevelConstraint).
+// ============================================================================
+
 import { shuffleArray } from '../utils/helpers.js';
 import {
   MICRO_PROMPTS,
@@ -6,7 +12,6 @@ import {
   getGrammarTopics,
   _getGrammarGroup
 } from './microPrompts.js';
-
 
 // HẰNG SỐ DẠNG BÀI (Mock Test Era - Atomic Question Types)
 export const QUESTION_TYPES = {
@@ -26,7 +31,6 @@ export const QUESTION_TYPES = {
   IELTS_WRITING_TASK1: 'ielts_writing_task1',
   IELTS_WRITING_TASK2: 'ielts_writing_task2'
 };
-
 
 // CẤU TRÚC KỲ THI TỔNG HỢP (LEVEL STRUCTURES BLUEPRINTS) BÁM SÁT MA TRẬN
 export const LEVEL_STRUCTURES = {
@@ -88,7 +92,6 @@ export const LEVEL_STRUCTURES = {
   }
 };
 
-
 // 1. HỆ THỐNG CẤP ĐỘ ĐÀO TẠO NỀN TẢNG (GRADE CONTEXTS)
 export const GRADE_CONTEXTS = {
   en_level_1:
@@ -129,7 +132,6 @@ export const GRADE_CONTEXTS = {
     "HSK 9 (Cao cấp). Từ vựng: 文言文 (Văn ngôn), phê bình kinh tế vĩ mô, tín ngưỡng tôn giáo. Diễn đạt như người bản xứ.",
   vi_default: 'Mặc định Tiếng Việt. Giao tiếp cơ bản.'
 };
-
 
 // TỪ ĐIỂN ÁNH XẠ CẤP ĐỘ (LEVEL DICTIONARY)
 export const LEVEL_DICTIONARY = {
@@ -181,7 +183,6 @@ export const LEVEL_DICTIONARY = {
   expert: 'Tiếng Anh C1-C2 (Expert)'
 };
 
-
 // 2. HỆ THỐNG CHỦ ĐỀ MỞ RỘNG (MACRO TOPICS)
 export const TOPICS = [
   'Self & Body',
@@ -194,7 +195,6 @@ export const TOPICS = [
   'Travel & Exploration',
   'Other'
 ];
-
 
 // Bảng ánh xạ CEFR nội bộ phục vụ _buildSystemPromptForFactory (Tránh phụ thuộc vòng với examProfiles.js)
 const INTERNAL_CEFR_MAP = {
@@ -218,6 +218,14 @@ const INTERNAL_CEFR_MAP = {
   zh_level_9: 'HSK 9 (Native-like/Academic)'
 };
 
+// Hàm chuẩn hóa tên ngôn ngữ về 'English' | 'Chinese' | 'Vietnamese' để tương thích mọi nơi gọi
+const normalizeTargetLang = (langInput) => {
+  if (!langInput) return 'English';
+  const str = String(langInput).toLowerCase().trim();
+  if (str === 'zh' || str.includes('chinese') || str.includes('trung')) return 'Chinese';
+  if (str === 'vi' || str.includes('vietnamese') || str.includes('việt')) return 'Vietnamese';
+  return 'English';
+};
 
 // ==================================================================================
 // HỆ THỐNG ĐỘNG CƠ SƯ PHẠM VI PHÂN (MICRO-TIER PEDAGOGY RULES)
@@ -234,7 +242,6 @@ export const IoeDataEngine = {
   getGrammarTopics,
   _getGrammarGroup,
 
-
   // [MA TRẬN ĐỊNH TUYẾN SƯ PHẠM V1.21 - POOL AGGREGATION ALGORITHM]
   getPedagogyMatrixRule: function (mappedKeys, lang) {
     const rules = {
@@ -242,23 +249,20 @@ export const IoeDataEngine = {
       definition: 'Bản dịch Tiếng Việt trực tiếp, chuẩn xác.'
     };
 
-
     if (!mappedKeys || (Array.isArray(mappedKeys) && mappedKeys.length === 0)) {
       rules.example += ' Tránh sinh câu cụt lủn, vô hồn.';
       rules.definition += ' TUYỆT ĐỐI KHÔNG giải nghĩa kiểu từ điển bách khoa.';
       return rules;
     }
 
-
     const keysArray = Array.isArray(mappedKeys) ? mappedKeys : [mappedKeys];
     const keyStrs = keysArray.map((k) => String(k).toLowerCase());
-
+    const normLang = normalizeTargetLang(lang);
 
     // Gom các hồ bơi được kích hoạt
     const activePools = new Set();
 
-
-    if (lang === 'zh') {
+    if (normLang === 'Chinese') {
       // ============================================================
       // HỆ THỐNG HỒ BƠI TIẾNG TRUNG (CHUẨN HSK 3.0 MỚI)
       // ============================================================
@@ -270,11 +274,9 @@ export const IoeDataEngine = {
         if (['level_8', 'level_9', 'hsk8', 'hsk9'].some((k) => keyStr.includes(k))) activePools.add(5);
       });
 
-
       if (activePools.size === 0) activePools.add(1);
       const minPool = Math.min(...activePools);
       const maxPool = Math.max(...activePools);
-
 
       const lengths = [
         'cực kỳ ngắn gọn (4-7 chữ)',
@@ -288,10 +290,8 @@ export const IoeDataEngine = {
           ? lengths[minPool - 1]
           : `linh hoạt, đa dạng từ ${lengths[minPool - 1]} đến ${lengths[maxPool - 1]}`;
 
-
       const contexts = [];
       const grammars = [];
-
 
       if (activePools.has(1)) {
         contexts.push('miêu tả nhân vật, đồ vật, phương hướng cơ bản');
@@ -320,7 +320,6 @@ export const IoeDataEngine = {
         grammars.push('Thành ngữ sâu sắc, Tục ngữ, cấu trúc câu mang đậm âm hưởng Văn ngôn (文言文)');
       }
 
-
       rules.example = `ĐỊNH HƯỚNG SƯ PHẠM ĐA CẤP ĐỘ: BẮT BUỘC độ dài ${lengthDesc}. Ngữ cảnh trải rộng từ: [${contexts.join('; ')}]. Ngữ pháp tổng hợp, linh hoạt sử dụng: [${grammars.join('; ')}].`;
       rules.definition =
         maxPool >= 4
@@ -340,11 +339,9 @@ export const IoeDataEngine = {
           activePools.add(5);
       });
 
-
       if (activePools.size === 0) activePools.add(1);
       const minPool = Math.min(...activePools);
       const maxPool = Math.max(...activePools);
-
 
       const minLens = [3, 5, 8, 12, 15];
       const maxLens = [5, 8, 12, 15, 25];
@@ -355,10 +352,8 @@ export const IoeDataEngine = {
           ? `${minLen}-${maxLen} từ`
           : `linh hoạt, đa dạng từ ${minLen} đến ${maxLen} từ`;
 
-
       const contexts = [];
       const grammars = [];
-
 
       if (activePools.has(1)) {
         contexts.push('miêu tả đồ vật vật lý xung quanh, màu sắc, con vật, số đếm, gia đình');
@@ -391,7 +386,6 @@ export const IoeDataEngine = {
         );
       }
 
-
       rules.example = `ĐỊNH HƯỚNG SƯ PHẠM ĐA CẤP ĐỘ: BẮT BUỘC độ dài ${lengthDesc}. Ngữ cảnh trải rộng từ: [${contexts.join('; ')}]. Ngữ pháp tổng hợp, linh hoạt sử dụng các cấu trúc: [${grammars.join('; ')}].`;
       rules.definition =
         maxPool >= 4
@@ -399,22 +393,31 @@ export const IoeDataEngine = {
           : 'Dịch nghĩa đen, cơ bản nhất hoặc dịch sắc thái đời sống.';
     }
 
-
     // Vaccine chống từ điển hóa cho mọi cấp độ
     rules.definition +=
       " TUYỆT ĐỐI KHÔNG giải nghĩa kiểu từ điển bách khoa (VD: dịch 'Ngày', KHÔNG dịch 'Khoảng thời gian 24h'). Ưu tiên 1-3 từ (trừ thành ngữ).";
     return rules;
   },
 
+  // Alias chuẩn theo NewMapping.md cho ràng buộc cấp độ
+  getLevelConstraint: function (levelInput, lang = 'en') {
+    const levelArr = Array.isArray(levelInput) ? levelInput : levelInput ? [levelInput] : [];
+    const contexts = levelArr.map((lvl) => GRADE_CONTEXTS[lvl]).filter(Boolean);
+    const matrix = this.getPedagogyMatrixRule(levelArr, lang);
+    return {
+      contextText: contexts.join(' | '),
+      ...matrix
+    };
+  },
 
   // [HÀM BẢO VỆ]: Xử lý mảng và nhặt ra Level có trọng số cao nhất cho Micro-tier Rules
   _getHighestLevelKey: function (mappedKey, targetLang) {
     if (!mappedKey) return '';
     const arr = Array.isArray(mappedKey) ? mappedKey : [mappedKey];
     const str = arr.join(',').toLowerCase();
+    const normLang = normalizeTargetLang(targetLang);
 
-
-    if (targetLang === 'English' || targetLang === 'en') {
+    if (normLang === 'English') {
       if (['level_8', 'level_9', 'academic', 'expert', 'b2', 'c1', 'c2'].some((k) => str.includes(k)))
         return 'en_level_9';
       if (['level_6', 'level_7', 'pre_ielts', 'breakthrough', 'b1'].some((k) => str.includes(k)))
@@ -424,7 +427,7 @@ export const IoeDataEngine = {
       if (['level_2', 'level_3', 'junior', 'a1'].some((k) => str.includes(k)))
         return 'en_level_2';
       return 'en_level_1';
-    } else if (targetLang === 'Chinese' || targetLang === 'zh') {
+    } else if (normLang === 'Chinese') {
       if (['level_8', 'level_9', 'hsk8', 'hsk9'].some((k) => str.includes(k))) return 'zh_level_9';
       if (['level_6', 'level_7', 'hsk6', 'hsk7'].some((k) => str.includes(k))) return 'zh_level_6';
       if (['level_4', 'level_5', 'hsk4', 'hsk5'].some((k) => str.includes(k))) return 'zh_level_4';
@@ -434,11 +437,11 @@ export const IoeDataEngine = {
     return arr[arr.length - 1];
   },
 
-
   // [VẮC-XIN LỖI NGỮ PHÁP - CHỐNG ẢO GIÁC ĐỘNG TỪ/TÂN NGỮ]
   getMicroTierGrammarRule: function (lang) {
+    const normLang = normalizeTargetLang(lang);
     let rule = `- Chỉ phân loại theo đúng ngữ pháp ngôn ngữ gốc, tuyệt đối không vay mượn ngữ pháp bản dịch Tiếng Việt. Từ loại (Part of Speech): Bản chất từ vựng trong từ điển là loại từ nào gì? (Danh từ, Động từ, Đại từ...) \n`;
-    if (lang === 'zh') {
+    if (normLang === 'Chinese') {
       rule += `- Lỗi Kế Thừa (Inheritance Fallacy): TUYỆT ĐỐI KHÔNG lấy từ loại của chữ cái đầu tiên để gán mác cho toàn bộ từ (VD: CẤM gán mác "Phó từ" cho '还有', '就是' chỉ vì nó chứa chữ '还', '就'). Các từ mang tính kết nối này BẮT BUỘC chỉ được phân loại là "Liên từ" hoặc "Cụm động từ".\n`;
       rule += `- Chống bẫy ngữ nghĩa:  NGỮ NGHĨA CỦA TỪ KHÔNG THỂ DÙNG ĐỂ PHÂN LOẠI NGỮ PHÁP . (Ví dụ: Các từ chỉ trạng thái, quá trình, hoặc hành động bị danh từ hóa như "动作", "sự lựa chọn", "niềm vui" phải được phân loại chuẩn xác là Danh từ, cấm tự suy diễn thành Động từ hay Tính từ dựa trên nghĩa)..\n`;
       rule += `- Không nhầm lẫn 'Từ độc lập' và 'Hình vị' (VD: '能' là trợ động từ, không gán mác danh từ vì có trong '能力').\n`;
@@ -446,15 +449,14 @@ export const IoeDataEngine = {
     return rule;
   },
 
-
   getMicroTierDistortionRule: function (targetLang, dataMode, mappedKey, topic) {
-    const normalizedKey = this._getHighestLevelKey(mappedKey, targetLang);
+    const normLang = normalizeTargetLang(targetLang);
+    const normalizedKey = this._getHighestLevelKey(mappedKey, normLang);
     let rule = '';
     const antiLengthRule =
       'TỐI QUAN TRỌNG: BẠN PHẢI VIẾT LẠI CHÍNH XÁC CÂU VĂN NGỮ CẢNH ĐÓ. KHÔNG ĐƯỢC tự bịa ra câu mới hoặc thay đổi độ dài của câu. CHỈ ĐƯỢC PHÉP thay đổi ĐÚNG MỘT TỪ để biến nó thành câu sai. ';
 
-
-    if (targetLang === 'English' && dataMode === 'vocab') {
+    if (normLang === 'English' && dataMode === 'vocab') {
       if (['en_level_1'].includes(normalizedKey))
         rule =
           'Các đáp án bẫy PHẢI LÀ từ đơn liên quan chặt chẽ đến CHỦ ĐỀ TẬP TRUNG. Hãy tạo ĐÚNG MỘT lỗi chính tả cơ bản (VD: thiếu một chữ cái, hoặc dư một nguyên âm). KHÔNG ĐƯỢC viết câu hoàn chỉnh.';
@@ -473,7 +475,7 @@ export const IoeDataEngine = {
       else
         rule =
           "Các đáp án bẫy PHẢI LÀ từ đơn liên quan đến CHỦ ĐỀ TẬP TRUNG. Tập trung vào các cách cấu tạo từ học thuật sai nhưng trông rất hợp lý hoặc các từ 'False friends' (nhìn giống nhưng khác nghĩa). Từ sai nhìn phải giống như một thuật ngữ học thuật có thật. KHÔNG ĐƯỢC viết câu hoàn chỉnh.";
-    } else if (targetLang === 'English' && dataMode === 'sentence') {
+    } else if (normLang === 'English' && dataMode === 'sentence') {
       if (['en_level_1', 'en_level_2', 'en_level_3'].includes(normalizedKey))
         rule =
           antiLengthRule +
@@ -486,7 +488,7 @@ export const IoeDataEngine = {
         rule =
           antiLengthRule +
           "Các đáp án bẫy PHẢI LÀ những câu hoàn chỉnh xoay quanh CHỦ ĐỀ TẬP TRUNG. Tạo ĐÚNG MỘT lỗi học thuật nâng cao: CHỈ LÀ sai cấu trúc câu bị động, lỗi rút gọn mệnh đề quan hệ, hoặc lỗi liên từ logic (VD: dùng 'although' thay vì 'because'). Câu này nhìn phải có vẻ hoàn toàn đúng đối với người mới học.";
-    } else if (targetLang === 'Chinese' && dataMode === 'vocab') {
+    } else if (normLang === 'Chinese' && dataMode === 'vocab') {
       if (['zh_level_1', 'zh_level_2'].includes(normalizedKey))
         rule =
           'Các đáp án bẫy PHẢI LÀ từ vựng đơn (1-2 chữ Hán) liên quan đến CHỦ ĐỀ TẬP TRUNG. Thay thế ĐÚNG MỘT chữ Hán bằng một chữ Đồng âm (同音字) hoặc Hình cận tự (形近字) rất cơ bản. KHÔNG ĐƯỢC viết câu hoàn chỉnh.';
@@ -499,7 +501,7 @@ export const IoeDataEngine = {
       else
         rule =
           'Các đáp án bẫy PHẢI LÀ từ vựng đơn liên quan đến CHỦ ĐỀ TẬP TRUNG. Tập trung vào Thành ngữ 4 chữ (成语) hoặc thuật ngữ học thuật. Thay thế một chữ để tạo ra lỗi từ vựng tinh vi. KHÔNG ĐƯỢC viết câu hoàn chỉnh.';
-    } else if (targetLang === 'Chinese' && dataMode === 'sentence') {
+    } else if (normLang === 'Chinese' && dataMode === 'sentence') {
       if (['zh_level_1', 'zh_level_2'].includes(normalizedKey))
         rule =
           antiLengthRule +
@@ -516,10 +518,10 @@ export const IoeDataEngine = {
         rule =
           antiLengthRule +
           'Các đáp án bẫy PHẢI LÀ những câu hoàn chỉnh xoay quanh CHỦ ĐỀ TẬP TRUNG. Tạo ĐÚNG MỘT lỗi logic hoặc ngữ nghĩa bậc cao: CHỈ LÀ dùng sai Thành ngữ (成语) trong ngữ cảnh hoặc tạo ra nghịch lý logic tinh vi.';
-    } else if (targetLang === 'Vietnamese' && dataMode === 'vocab') {
+    } else if (normLang === 'Vietnamese' && dataMode === 'vocab') {
       rule =
         'Các đáp án bẫy PHẢI LÀ từ đơn liên quan đến CHỦ ĐỀ TẬP TRUNG. Thay thế một từ hoặc một âm tiết bằng một từ đồng nghĩa/gần nghĩa sai lệch. KHÔNG sử dụng lỗi chính tả. KHÔNG ĐƯỢC viết câu hoàn chỉnh.';
-    } else if (targetLang === 'Vietnamese' && dataMode === 'sentence') {
+    } else if (normLang === 'Vietnamese' && dataMode === 'sentence') {
       rule =
         antiLengthRule +
         'Các đáp án bẫy PHẢI LÀ những câu hoàn chỉnh xoay quanh CHỦ ĐỀ TẬP TRUNG. Tạo ĐÚNG MỘT lỗi ngữ pháp hoặc ngữ nghĩa (VD: sai trật tự từ, dùng sai từ thông dụng).';
@@ -527,15 +529,14 @@ export const IoeDataEngine = {
     return rule;
   },
 
-
   getMicroTierOptionsRule: function (targetLang, dataMode, mappedKey, topic) {
-    const normalizedKey = this._getHighestLevelKey(mappedKey, targetLang);
+    const normLang = normalizeTargetLang(targetLang);
+    const normalizedKey = this._getHighestLevelKey(mappedKey, normLang);
     let optionsRule = '';
     const antiFragmentRule =
       'QUY TẮC ĐỊNH DẠNG TỐI QUAN TRỌNG: BẠN PHẢI TRẢ VỀ CÁC CÂU VĂN HOÀN CHỈNH. KHÔNG ĐƯỢC trả về các cụm từ ngắn, mảnh vụn hoặc từ đơn lẻ. Các đáp án nhiễu (distractors) PHẢI CÓ độ dài và cấu trúc tổng thể GIỐNG HỆT như câu gốc. ';
 
-
-    if (targetLang === 'English' && dataMode === 'vocab') {
+    if (normLang === 'English' && dataMode === 'vocab') {
       if (['en_level_1', 'en_level_2', 'en_level_3'].includes(normalizedKey))
         optionsRule =
           '3 đáp án nhiễu PHẢI LÀ các từ hoàn toàn khác biệt (về nghĩa và cách viết) để người mới học dễ dàng phân biệt.';
@@ -545,7 +546,7 @@ export const IoeDataEngine = {
       else
         optionsRule =
           '3 đáp án nhiễu PHẢI LÀ các từ False Friends (từ nhìn giống nhưng khác nghĩa), các từ có cùng tiền tố/hậu tố, hoặc các từ đồng nghĩa rất tinh vi nhưng không phù hợp ngữ cảnh. Chúng phải trông cực kỳ hợp lý đối với người học học thuật.';
-    } else if (targetLang === 'English' && dataMode === 'sentence') {
+    } else if (normLang === 'English' && dataMode === 'sentence') {
       if (['en_level_1', 'en_level_2', 'en_level_3'].includes(normalizedKey))
         optionsRule =
           antiFragmentRule +
@@ -558,7 +559,7 @@ export const IoeDataEngine = {
         optionsRule =
           antiFragmentRule +
           '3 đáp án nhiễu PHẢI TRÔNG hoàn hảo về mặt ngữ pháp nhưng chứa các khiếm khuyết ngữ nghĩa bậc cao (VD: sai đại từ quan hệ mang sắc thái tinh vi, sai cụm từ đi kèm (collocation) trang trọng, hoặc lỗi cú pháp đảo ngữ).';
-    } else if (targetLang === 'Chinese' && dataMode === 'vocab') {
+    } else if (normLang === 'Chinese' && dataMode === 'vocab') {
       if (['zh_level_1', 'zh_level_2', 'zh_level_3'].includes(normalizedKey))
         optionsRule =
           '3 đáp án nhiễu PHẢI LÀ các chữ Hán có hình dáng hoàn toàn khác biệt hoặc là từ trái nghĩa cơ bản. Tránh dùng các từ đồng âm phức tạp.';
@@ -568,7 +569,7 @@ export const IoeDataEngine = {
       else
         optionsRule =
           '3 đáp án nhiễu PHẢI LÀ các từ vựng văn viết cực kỳ trang trọng (书面语) hoặc Thành ngữ (成语) rất giống nhau chỉ khác 1 chữ.';
-    } else if (targetLang === 'Chinese' && dataMode === 'sentence') {
+    } else if (normLang === 'Chinese' && dataMode === 'sentence') {
       if (['zh_level_1', 'zh_level_2', 'zh_level_3'].includes(normalizedKey))
         optionsRule =
           antiFragmentRule +
@@ -581,10 +582,10 @@ export const IoeDataEngine = {
         optionsRule =
           antiFragmentRule +
           '3 đáp án nhiễu PHẢI LÀ những câu hoàn hảo về mặt cấu trúc nhưng sai về mặt ngữ nghĩa (VD: dùng Thành ngữ sai trong ngữ cảnh).';
-    } else if (targetLang === 'Vietnamese' && dataMode === 'vocab') {
+    } else if (normLang === 'Vietnamese' && dataMode === 'vocab') {
       optionsRule =
         '3 đáp án nhiễu PHẢI LÀ các từ Tiếng Việt có vẻ hợp lý liên quan đến chủ đề, nhưng mang ý nghĩa hoàn toàn khác. KHÔNG sử dụng lỗi chính tả.';
-    } else if (targetLang === 'Vietnamese' && dataMode === 'sentence') {
+    } else if (normLang === 'Vietnamese' && dataMode === 'sentence') {
       optionsRule =
         antiFragmentRule +
         '3 đáp án nhiễu PHẢI LÀ những câu Tiếng Việt rất tự nhiên nhưng mang ý nghĩa logic sai lệch (VD: tính từ trái nghĩa, đảo ngược chủ thể/tân ngữ).';
@@ -592,13 +593,12 @@ export const IoeDataEngine = {
     return optionsRule;
   },
 
-
   getMicroTierNoiseRule: function (targetLang, dataMode, mappedKey, topic) {
-    const normalizedKey = this._getHighestLevelKey(mappedKey, targetLang);
+    const normLang = normalizeTargetLang(targetLang);
+    const normalizedKey = this._getHighestLevelKey(mappedKey, normLang);
     let noiseRule = '';
 
-
-    if (targetLang === 'English') {
+    if (normLang === 'English') {
       if (dataMode === 'vocab') {
         noiseRule =
           'Tạo chính xác từ 2 đến 4 chữ cái thường (a-z) làm bẫy chính tả. Tập trung vào các nguyên âm hoặc phụ âm dễ nhầm lẫn. KHÔNG ĐƯỢC tạo từ hoàn chỉnh.';
@@ -613,7 +613,7 @@ export const IoeDataEngine = {
           noiseRule =
             'Tạo các từ bẫy (noise) là các phó từ nâng cao gây hiểu lầm (nevertheless, thereby) hoặc đại từ quan hệ dễ nhầm lẫn (which vs where). CHÚNG KHÔNG ĐƯỢC PHÉP khớp đúng ngữ pháp ở bất kỳ vị trí nào trong câu.';
       }
-    } else if (targetLang === 'Chinese') {
+    } else if (normLang === 'Chinese') {
       if (dataMode === 'vocab') {
         noiseRule =
           'Tạo chính xác từ 1 đến 2 chữ Hán (汉字) đơn lẻ có hình dáng tương tự (形近字) hoặc cùng âm đọc (同音字) với các chữ trong từ mục tiêu. KHÔNG ĐƯỢC tạo từ có nhiều chữ Hán.';
@@ -628,7 +628,7 @@ export const IoeDataEngine = {
           noiseRule =
             'Tạo các chữ Hán bẫy (noise) là các liên từ trang trọng (尽管, 既然) hoặc hư từ văn ngôn (之, 乎, 者, 也) làm phá vỡ cú pháp nâng cao.';
       }
-    } else if (targetLang === 'Vietnamese') {
+    } else if (normLang === 'Vietnamese') {
       if (dataMode === 'vocab') {
         noiseRule =
           'Tạo chính xác từ 2 đến 4 chữ cái Tiếng Việt thường (a-y, ă, â, đ, ê, ô, ơ, ư) hoặc chữ cái có dấu thanh làm bẫy chính tả. Tập trung vào các nguyên âm hoặc phụ âm dễ nhầm lẫn. KHÔNG ĐƯỢC tạo từ hoàn chỉnh.';
@@ -640,13 +640,12 @@ export const IoeDataEngine = {
     return noiseRule;
   },
 
-
   getMicroTierClozeRule: function (targetLang, dataMode, mappedKey, topic) {
-    const normalizedKey = this._getHighestLevelKey(mappedKey, targetLang);
+    const normLang = normalizeTargetLang(targetLang);
+    const normalizedKey = this._getHighestLevelKey(mappedKey, normLang);
     let clozeRule = '';
 
-
-    if (targetLang === 'English') {
+    if (normLang === 'English') {
       if (['en_level_1', 'en_level_2', 'en_level_3'].includes(normalizedKey))
         clozeRule =
           "Chọn một Danh từ Chủ ngữ cơ bản hoặc một Động từ Hành động đơn giản để thay thế bằng '[__________]'. Đó phải là một từ dễ đoán.";
@@ -656,7 +655,7 @@ export const IoeDataEngine = {
       else
         clozeRule =
           "Chọn một Liên từ phức tạp, một phần của Cụm từ cố định (Collocation) nâng cao, hoặc một Cụm động từ (Phrasal Verb) khó để thay thế bằng '[__________]'. Nó phải thử thách được kỹ năng đọc hiểu học thuật.";
-    } else if (targetLang === 'Chinese') {
+    } else if (normLang === 'Chinese') {
       if (['zh_level_1', 'zh_level_2', 'zh_level_3'].includes(normalizedKey))
         clozeRule =
           "Chọn một Danh từ chính hoặc một Động từ Hành động đơn giản để thay thế bằng '[__________]'.";
@@ -666,21 +665,20 @@ export const IoeDataEngine = {
       else
         clozeRule =
           "Chọn một chữ Hán quan trọng nằm bên trong một Thành ngữ (成语), một liên từ trang trọng, hoặc một động từ trừu tượng để thay thế bằng '[__________]'.";
-    } else if (targetLang === 'Vietnamese') {
+    } else if (normLang === 'Vietnamese') {
       clozeRule =
         "Chọn một Danh từ Chủ ngữ quan trọng, một Động từ Hành động chính, hoặc một Tính từ miêu tả để thay thế bằng '[__________]'.";
     }
     return clozeRule;
   },
 
-
   getMicroTierOddRule: function (targetLang, dataMode, mappedKey, topic) {
-    const normalizedKey = this._getHighestLevelKey(mappedKey, targetLang);
+    const normLang = normalizeTargetLang(targetLang);
+    const normalizedKey = this._getHighestLevelKey(mappedKey, normLang);
     let oddRule = '';
 
-
     if (dataMode === 'sentence') {
-      if (targetLang === 'English') {
+      if (normLang === 'English') {
         if (['en_level_1', 'en_level_2', 'en_level_3'].includes(normalizedKey))
           oddRule =
             'Cung cấp 4 câu hoàn chỉnh. 3 câu PHẢI chung một thì ngữ pháp cơ bản (VD: Hiện tại Đơn) hoặc chung chủ đề ngữ nghĩa, và 1 câu PHẢI dùng thì khác hoặc mang nghĩa trái ngược.';
@@ -690,7 +688,7 @@ export const IoeDataEngine = {
         else
           oddRule =
             'Cung cấp 4 câu hoàn chỉnh. 3 câu PHẢI chung một sắc thái học thuật tinh vi, các từ nối liên kết, hoặc cấu trúc đảo ngữ nâng cao, và 1 câu PHẢI KHÁC BIỆT.';
-      } else if (targetLang === 'Chinese') {
+      } else if (normLang === 'Chinese') {
         if (['zh_level_1', 'zh_level_2', 'zh_level_3'].includes(normalizedKey))
           oddRule =
             "Cung cấp 4 câu hoàn chỉnh. 3 câu PHẢI chung một mẫu câu cơ bản (VD: Câu chữ 'Shi') hoặc chung chủ đề, và 1 câu PHẢI KHÁC BIỆT.";
@@ -705,7 +703,7 @@ export const IoeDataEngine = {
           'Cung cấp 4 câu hoàn chỉnh. 3 câu PHẢI chung cấu trúc ngữ pháp hoặc chủ đề ngữ nghĩa, và 1 câu PHẢI LÀ câu khác loại.';
       }
     } else {
-      if (targetLang === 'English') {
+      if (normLang === 'English') {
         if (['en_level_1', 'en_level_2', 'en_level_3'].includes(normalizedKey))
           oddRule =
             'Phân loại dựa trên Ngữ nghĩa đơn giản (VD: 3 loại trái cây vs 1 con vật, hoặc 3 màu sắc vs 1 phương tiện).';
@@ -715,7 +713,7 @@ export const IoeDataEngine = {
         else
           oddRule =
             'Phân loại dựa trên Sắc thái nghĩa tinh vi (VD: 3 từ học thuật mang nghĩa tích cực vs 1 từ tiêu cực), hoặc các trường ngữ nghĩa trừu tượng.';
-      } else if (targetLang === 'Chinese') {
+      } else if (normLang === 'Chinese') {
         if (['zh_level_1', 'zh_level_2', 'zh_level_3'].includes(normalizedKey))
           oddRule = 'Phân loại dựa trên Ngữ nghĩa đơn giản (VD: 3 món ăn vs 1 món đồ quần áo).';
         else if (['zh_level_4', 'zh_level_5', 'zh_level_6'].includes(normalizedKey))
@@ -724,18 +722,16 @@ export const IoeDataEngine = {
         else
           oddRule =
             'Phân loại dựa trên Cấu trúc Thành ngữ (Mẫu Chengyu), hoặc sắc thái cảm xúc (褒义词 - từ bao nghĩa vs 贬义词 - từ biếm nghĩa).';
-      } else if (targetLang === 'Vietnamese') {
+      } else if (normLang === 'Vietnamese') {
         oddRule =
           'Phân loại dựa trên Ngữ nghĩa rõ ràng hoặc Từ loại cơ bản (VD: 3 danh từ vs 1 động từ) trong Tiếng Việt.';
       }
     }
 
-
     const fewShot =
       "\n[CRITICAL FEW-SHOT EXAMPLES]\nĐể tránh ảo giác logic, BẮT BUỘC tuân thủ chặt chẽ các ví dụ định dạng JSON sau:\nEnglish: words: ['apple', 'banana', 'orange', 'cat'], oddWord: 'cat', explanation: 'Cat is an animal, the others are fruits.'\nVietnamese: words: ['chạy', 'nhảy', 'đi', 'đẹp'], oddWord: 'đẹp', explanation: 'Đẹp là tính từ, các từ còn lại là động từ.'\nChinese: words: ['苹果', '香蕉', '橘子', '猫'], oddWord: '猫', explanation: '猫是动物，其他都是水果。'";
     return oddRule + fewShot;
   },
-
 
   getMicroTierVocabTypeRule: function (mappedKey) {
     const normalizedKey = this._getHighestLevelKey(mappedKey, 'English');
@@ -753,7 +749,6 @@ export const IoeDataEngine = {
     return 'QUY TẮC CẤP ĐỘ QUAN TRỌNG: Mục từ vựng phải phù hợp với cấp độ. Nó có thể là một từ đơn hoặc cụm từ ngắn (tối đa 4 từ).';
   },
 
-
   getMicroTierListeningRule: function (mappedKey) {
     const normalizedKey = this._getHighestLevelKey(mappedKey, 'English');
     if (['en_level_1', 'zh_level_1', 'level_1_kiddie'].includes(normalizedKey)) {
@@ -769,7 +764,6 @@ export const IoeDataEngine = {
     }
   },
 
-
   getMicroTierReadingRule: function (mappedKey) {
     const normalizedKey = this._getHighestLevelKey(mappedKey, 'English');
     if (['en_level_1', 'zh_level_1', 'level_1_kiddie'].includes(normalizedKey)) {
@@ -783,7 +777,6 @@ export const IoeDataEngine = {
     }
   },
 
-
   // ==================================================================================
   // HÀM _buildSystemPrompt CỦA BỘ NÃO AI (BỌC LẠI CHO KHẢO THÍ)
   // ==================================================================================
@@ -796,7 +789,6 @@ export const IoeDataEngine = {
         ? window.ExamProfiles.getCefrLevel(representativeLevel)
         : INTERNAL_CEFR_MAP[representativeLevel] || 'Intermediate';
 
-
     // Lấy luật Sư phạm động từ Ma trận
     const pedagogyRules = this.getPedagogyMatrixRule
       ? this.getPedagogyMatrixRule(level, lang)
@@ -807,10 +799,8 @@ export const IoeDataEngine = {
             'Bản dịch Tiếng Việt trực tiếp, chuẩn xác. TUYỆT ĐỐI KHÔNG giải nghĩa kiểu từ điển bách khoa.'
         };
 
-
     let prompt = `Bạn là một gia sư ${targetLang} chuyên nghiệp và tận tâm, đang tạo nội dung cho một ứng dụng giáo dục.\n`;
     prompt += `CẤP ĐỘ MỤC TIÊU: ${Array.isArray(level) ? level.join(', ') : level} (Tiêu chuẩn tương đương: ${cefrLevel}).\n`;
-
 
     if (level) {
       const levelArr = Array.isArray(level) ? level : [level];
@@ -822,13 +812,11 @@ export const IoeDataEngine = {
       }
     }
 
-
     if (lang === 'zh') {
       prompt += `QUY TẮC TỪ VỰNG: Vui lòng sử dụng từ vựng phù hợp với tiêu chuẩn ${Array.isArray(level) ? level.join(', ') : level}. Đối với cấp độ cơ bản, chỉ dùng các từ giao tiếp hàng ngày cơ bản. Với cấp độ cao hơn, dùng từ vựng nâng cao phù hợp nhưng không quá hiếm gặp hoặc tối nghĩa.\n`;
     } else {
       prompt += `QUY TẮC TỪ VỰNG: Vui lòng sử dụng từ vựng bám sát tiêu chuẩn ${cefrLevel}. Đảm bảo độ khó hoàn toàn phù hợp với học viên mục tiêu.\n`;
     }
-
 
     if (dataMode === 'sentence') {
       prompt += `QUY TẮC ĐỊNH DẠNG: Trường 'displaySentence' và tất cả các đáp án (options) đều phải là các câu văn hoàn chỉnh, nghe tự nhiên. KHÔNG trả về các mảnh vụn ngắn.\n`;
@@ -840,10 +828,8 @@ export const IoeDataEngine = {
       }
     }
 
-
     prompt += `GẮN NHÃN CẤP ĐỘ: Vui lòng khai báo đúng cấp độ CEFR/HSK vào trường 'cefr_level'. Khai báo sai cấp độ là một lỗi nghiêm trọng.\n`;
     prompt += `[QUY TẮC BẮT BUỘC VỀ CHỦ ĐỀ]: Trường 'topic' trong JSON kết quả CHỈ ĐƯỢC PHÉP nhận 1 trong 9 giá trị chính xác sau: ['Self & Body', 'Social Connections', 'Living Spaces', 'The Natural World', 'Food & Health', 'Daily Life & Leisure', 'School & Career', 'Travel & Exploration', 'Other']. TUYỆT ĐỐI KHÔNG TỰ BỊA CHỦ ĐỀ KHÁC. Nếu không thuộc 8 nhóm đầu, gán 'Other'.\n`;
-
 
     const isTopicFree =
       topic === 'ANY' ||
@@ -851,13 +837,11 @@ export const IoeDataEngine = {
       subType === 'odd_one_out' ||
       subType === 'spot_mistake';
 
-
     if (isTopicFree) {
       prompt += `TỰ DO CHỦ ĐỀ: Bạn có quyền tự do tuyệt đối sử dụng từ vựng từ mọi lĩnh vực đời sống. Tập trung hoàn toàn vào kỹ thuật của câu hỏi (Chính tả, Ngữ pháp, hoặc Logic Tìm từ khác loại).\n`;
     } else if (topic) {
       prompt += `TẬP TRUNG CHỦ ĐỀ NỘI DUNG: Liên quan chặt chẽ đến "${topic}".\n`;
     }
-
 
     if (forgeType === 'base_card') {
       prompt += `NHIỆM VỤ: Tạo một ${dataMode === 'sentence' ? 'câu văn' : 'từ vựng'} phù hợp chính xác với cấp độ tiêu chuẩn (${cefrLevel}) và chủ đề.\n`;
@@ -975,12 +959,19 @@ export const IoeDataEngine = {
       }
     }
 
-
     const randomSeed = Math.random().toString(36).substring(2, 10).toUpperCase();
     prompt += `\n[MÃ HẠT GIỐNG - SEED: ${randomSeed}] SỰ SÁNG TẠO: Vui lòng giữ cho nội dung luôn phong phú, đa dạng và thú vị.\n`;
     return prompt;
   }
 };
 
+export const PedagogyEngine = IoeDataEngine;
+export const getPedagogyMatrixRule = IoeDataEngine.getPedagogyMatrixRule.bind(IoeDataEngine);
+export const getLevelConstraint = IoeDataEngine.getLevelConstraint.bind(IoeDataEngine);
+
+if (typeof window !== 'undefined') {
+  window.IoeDataEngine = IoeDataEngine;
+  window.PedagogyEngine = IoeDataEngine;
+}
 
 export default IoeDataEngine;

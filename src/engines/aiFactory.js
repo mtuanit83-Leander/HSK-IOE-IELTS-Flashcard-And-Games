@@ -1,44 +1,61 @@
-import { STORAGE_KEYS } from '../config/constants.js';
-import { parseAiJson, shuffleArray } from '../utils/helpers.js';
+// ============================================================================
+// FILE 21/85: src/engines/aiFactory.js
+// NGUỒN GỐC: Tầng 2 - Block 2.6 (AI Factory Engine V1.55)
+// NHIỆM VỤ: Nhà máy 3 Lò đúc AI 1-Shot (Đúc thẻ cơ sở, Đúc ma trận 4 lựa chọn, Đúc ngữ cảnh Nghe/Đọc) và Làm giàu hàng loạt (Batch Enrich).
+// ============================================================================
+
+import { STORAGE_KEYS, IoeEnumRegistry } from '../config/constants.js';
+import { safeJsonParse, parseAiJson, shuffleArray } from '../utils/helpers.js';
 import { callGeminiApi } from '../services/geminiApi.js';
 import { IoeDataEngine } from './pedagogyEngine.js';
 
 const DEFAULT_CEFR_MAP = {
-  en_level_1: "Pre-A1 (Starters/Beginner)",
-  en_level_2: "A1 (Movers/Elementary)",
-  en_level_3: "A2 (Flyers/Pre-Intermediate)",
-  en_level_4: "B1 (PET/Intermediate)",
-  en_level_5: "B2 (FCE/Upper-Intermediate)",
-  en_level_6: "B2+ (IELTS 5.5 - 6.0)",
-  en_level_7: "C1 (IELTS 6.5 - 7.0/Advanced)",
-  en_level_8: "C1+ (IELTS 7.5)",
-  en_level_9: "C2 (IELTS 8.0+/Proficiency)",
-  zh_level_1: "HSK 1 (A1 - Beginner)",
-  zh_level_2: "HSK 2 (A2 - Elementary)",
-  zh_level_3: "HSK 3 (B1 - Intermediate)",
-  zh_level_4: "HSK 4 (B2 - Upper-Intermediate)",
-  zh_level_5: "HSK 5 (C1 - Advanced)",
-  zh_level_6: "HSK 6 (C2 - Proficiency)",
-  zh_level_7: "HSK 7 (Expert/Academic)",
-  zh_level_8: "HSK 8 (Mastery/Academic)",
-  zh_level_9: "HSK 9 (Native-like/Academic)",
-  level_1_kiddie: "Pre-A1 (Starters)",
-  level_2_junior_basic: "A1 (Movers)",
-  level_3_junior_advanced: "A2 (Flyers)",
-  level_4_discovery_basic: "B1 (PET)",
-  level_5_discovery_advanced: "B2 (FCE)",
-  level_6_pre_ielts: "B2+ (IELTS 5.5 - 6.0)",
-  level_7_breakthrough: "C1 (IELTS 6.5 - 7.0)",
-  level_8_academic: "C1+ (IELTS 7.5)",
-  level_9_expert: "C2 (IELTS 8.0+)"
+  en_level_1: 'Pre-A1 (Starters/Beginner)',
+  en_level_2: 'A1 (Movers/Elementary)',
+  en_level_3: 'A2 (Flyers/Pre-Intermediate)',
+  en_level_4: 'B1 (PET/Intermediate)',
+  en_level_5: 'B2 (FCE/Upper-Intermediate)',
+  en_level_6: 'B2+ (IELTS 5.5 - 6.0)',
+  en_level_7: 'C1 (IELTS 6.5 - 7.0/Advanced)',
+  en_level_8: 'C1+ (IELTS 7.5)',
+  en_level_9: 'C2 (IELTS 8.0+/Proficiency)',
+  zh_level_1: 'HSK 1 (A1 - Beginner)',
+  zh_level_2: 'HSK 2 (A2 - Elementary)',
+  zh_level_3: 'HSK 3 (B1 - Intermediate)',
+  zh_level_4: 'HSK 4 (B2 - Upper-Intermediate)',
+  zh_level_5: 'HSK 5 (C1 - Advanced)',
+  zh_level_6: 'HSK 6 (C2 - Proficiency)',
+  zh_level_7: 'HSK 7 (Expert/Academic)',
+  zh_level_8: 'HSK 8 (Mastery/Academic)',
+  zh_level_9: 'HSK 9 (Native-like/Academic)',
+  level_1_kiddie: 'Pre-A1 (Starters)',
+  level_2_junior_basic: 'A1 (Movers)',
+  level_3_junior_advanced: 'A2 (Flyers)',
+  level_4_discovery_basic: 'B1 (PET)',
+  level_5_discovery_advanced: 'B2 (FCE)',
+  level_6_pre_ielts: 'B2+ (IELTS 5.5 - 6.0)',
+  level_7_breakthrough: 'C1 (IELTS 6.5 - 7.0)',
+  level_8_academic: 'C1+ (IELTS 7.5)',
+  level_9_expert: 'C2 (IELTS 8.0+)'
 };
 
 const resolveCefrLevel = (level) => {
-  const repLevel = Array.isArray(level) ? level[0] : level;
-  if (typeof window !== 'undefined' && window.ExamProfiles && typeof window.ExamProfiles.getCefrLevel === 'function') {
-    return window.ExamProfiles.getCefrLevel(repLevel);
+  const resolveSingle = (lvlKey) => {
+    if (
+      typeof window !== 'undefined' &&
+      window.ExamProfiles &&
+      typeof window.ExamProfiles.getCefrLevel === 'function'
+    ) {
+      return window.ExamProfiles.getCefrLevel(lvlKey);
+    }
+    return DEFAULT_CEFR_MAP[lvlKey] || 'B1 (Intermediate)';
+  };
+
+  if (Array.isArray(level) && level.length > 0) {
+    const mapped = [...new Set(level.map((lvl) => resolveSingle(lvl)).filter(Boolean))];
+    return mapped.length > 0 ? mapped.join(' / ') : 'B1 (Intermediate)';
   }
-  return DEFAULT_CEFR_MAP[repLevel] || "B1 (Intermediate)";
+  return resolveSingle(level);
 };
 
 export const AiFactoryEngine = {
@@ -50,7 +67,7 @@ export const AiFactoryEngine = {
       return { updatedCards: cards, hasUpdates: false };
     }
 
-    let updatedCards = [...cards];
+    const updatedCards = [...cards];
     let hasUpdates = false;
     const batchTargets = [];
 
@@ -66,36 +83,38 @@ export const AiFactoryEngine = {
     if (batchTargets.length > 0) {
       let timeoutId;
       try {
-        const targetLangName = lang === 'zh' ? 'Tiếng Trung' : (lang === 'en' ? 'Tiếng Anh' : 'Tiếng Việt');
+        const targetLangName =
+          lang === 'zh' ? 'Tiếng Trung' : lang === 'en' ? 'Tiếng Anh' : 'Tiếng Việt';
         // [V1.50] Anti-Encyclopedic Prompt for Batch Enrich
         let prompt =
-          "Cung cấp bản dịch Tiếng Việt trực tiếp và chuẩn xác nhất cho " +
+          'Cung cấp bản dịch Tiếng Việt trực tiếp và chuẩn xác nhất cho ' +
           batchTargets.length +
-          " từ/cụm từ " +
+          ' từ/cụm từ ' +
           targetLangName +
           " sau. TUYỆT ĐỐI KHÔNG giải nghĩa kiểu từ điển bách khoa (VD: 'Day' dịch là 'Ngày', KHÔNG dịch là 'Khoảng thời gian 24 giờ'; 'Music' là 'Âm nhạc', KHÔNG dịch là 'Nghệ thuật âm thanh'). Ưu tiên bản dịch cực ngắn (1-3 từ, trừ thành ngữ).\nDanh sách:\n";
-        prompt += batchTargets.map((b, i) => (i + 1) + ". " + b.term).join('\n');
-        prompt += "\n\nBẮT BUỘC trả về chính xác một JSON object chứa mảng 'translations'.\nĐịnh dạng: {\"translations\": [\"nghĩa 1\", \"nghĩa 2\", ...]}";
+        prompt += batchTargets.map((b, i) => i + 1 + '. ' + b.term).join('\n');
+        prompt +=
+          "\n\nBẮT BUỘC trả về chính xác một JSON object chứa mảng 'translations'.\nĐịnh dạng: {\"translations\": [\"nghĩa 1\", \"nghĩa 2\", ...]}";
 
         const schema = {
-          type: "OBJECT",
+          type: 'OBJECT',
           properties: {
-            translations: { type: "ARRAY", items: { type: "STRING" } }
+            translations: { type: 'ARRAY', items: { type: 'STRING' } }
           },
-          required: ["translations"]
+          required: ['translations']
         };
 
         const aiPromise = callGeminiApi(prompt, schema, apiKey);
         let dynamicTimeout = 20000;
         try {
-          const aiCfg = JSON.parse(localStorage.getItem('fc_ai_config'));
+          const aiCfg = safeJsonParse('fc_ai_config', null);
           if (aiCfg && aiCfg.loadingTime) {
             dynamicTimeout = parseInt(aiCfg.loadingTime, 10) * 1000 + 5000;
           }
         } catch (e) {}
 
         const timeoutPromise = new Promise((_, r) => {
-          timeoutId = setTimeout(() => r(new Error("Timeout")), dynamicTimeout);
+          timeoutId = setTimeout(() => r(new Error('Timeout')), dynamicTimeout);
         });
 
         const res = await Promise.race([aiPromise, timeoutPromise]);
@@ -113,14 +132,14 @@ export const AiFactoryEngine = {
           if (res.tokenMetadata) {
             const used = res.tokenMetadata.totalTokenCount || 0;
             const currentTotal = parseInt(localStorage.getItem('fc_total_tokens') || '0', 10);
-            localStorage.setItem('fc_total_tokens', currentTotal + used);
+            localStorage.setItem('fc_total_tokens', String(currentTotal + used));
           }
         }
       } catch (e) {
         if (timeoutId) clearTimeout(timeoutId);
-        console.warn("Pre-flight Batch enrich error:", e);
+        console.warn('Pre-flight Batch enrich error:', e);
         if (typeof window !== 'undefined' && window.logSystemEvent) {
-          window.logSystemEvent("Lỗi tự động điền từ (Batch Enrich) sập", e);
+          window.logSystemEvent('Lỗi tự động điền từ (Batch Enrich) sập', e);
         }
       }
     }
@@ -129,18 +148,21 @@ export const AiFactoryEngine = {
   },
 
   getHistoryPrompt: function (historyArray) {
-    if (!historyArray || historyArray.length === 0) return "";
+    if (!historyArray || historyArray.length === 0) return '';
     const stopWords = [
       'the', 'and', 'are', 'was', 'were', 'that', 'this', 'have', 'has', 'had',
       'what', 'when', 'where', 'who', 'how', 'why', 'then', 'there', 'their',
       'they', 'them', 'with', 'from', 'about'
     ];
-    let processedHistory = [];
+    const processedHistory = [];
 
     historyArray.slice(-80).forEach((item) => {
       if (typeof item !== 'string') return;
       if (item.length > 30) {
-        const words = item.toLowerCase().replace(/[^\p{L}\p{N}]/gu, " ").split(/\s+/);
+        const words = item
+          .toLowerCase()
+          .replace(/[^\p{L}\p{N}]/gu, ' ')
+          .split(/\s+/);
         const validWords = words.filter((w) => w.length > 1 && !stopWords.includes(w));
         const keywords = [...new Set(validWords)].slice(0, 5).join(' ');
         if (keywords) processedHistory.push(keywords);
@@ -149,13 +171,25 @@ export const AiFactoryEngine = {
       }
     });
 
-    return "\n\nHISTORY (LỊCH SỬ): Vui lòng cố gắng tránh lặp lại các khái niệm gần đây sau đây để nội dung luôn mới mẻ: [" + processedHistory.join(' | ') + "].\n";
+    return (
+      '\n\nHISTORY (LỊCH SỬ): Vui lòng cố gắng tránh lặp lại các khái niệm gần đây sau đây để nội dung luôn mới mẻ: [' +
+      processedHistory.join(' | ') +
+      '].\n'
+    );
   },
 
   // ============================================================================
   // 2. MASTER PROMPT BUILDER & SCHEMAS (Internal Lõi Bọc Thép)
   // ============================================================================
-  _buildSystemPrompt: function (forgeType, subType, level, lang, topic, dataMode = 'vocab', isReverse = false) {
+  _buildSystemPrompt: function (
+    forgeType,
+    subType,
+    level,
+    lang,
+    topic,
+    dataMode = 'vocab',
+    isReverse = false
+  ) {
     let actualIsReverse = isReverse;
     try {
       const settingsStr = localStorage.getItem(STORAGE_KEYS?.SETTINGS || 'fc_settings');
@@ -176,33 +210,46 @@ export const AiFactoryEngine = {
       }
     } catch (e) {}
 
-    const targetLangName = lang === 'zh' ? 'Tiếng Trung' : (lang === 'vi' ? 'Tiếng Việt' : 'Tiếng Anh');
+    const activePedagogyEngine =
+      IoeDataEngine || (typeof window !== 'undefined' ? window.IoeDataEngine : null);
+    const targetLangName =
+      lang === 'zh' ? 'Tiếng Trung' : lang === 'vi' ? 'Tiếng Việt' : 'Tiếng Anh';
     const cefrLevel = resolveCefrLevel(level);
     const levelDisplay = Array.isArray(level) ? level.join(', ') : level;
 
     // Tính toán Ngưỡng Từ loại Động (Dynamic POS Threshold)
     let isAdvancedLevel = false;
-    const levelCheckStr = Array.isArray(level) ? level.join(',').toLowerCase() : String(level || '').toLowerCase();
+    const levelCheckStr = Array.isArray(level)
+      ? level.join(',').toLowerCase()
+      : String(level || '').toLowerCase();
     if (levelCheckStr) {
       const advKeywords = ['level_5', 'level_6', 'hsk5', 'hsk6', 'hsk 5', 'hsk 6', 'c1', 'c2'];
       isAdvancedLevel = advKeywords.some((kw) => levelCheckStr.includes(kw));
     }
-    const posThresholdStr = isAdvancedLevel ? "10%" : "20%";
+    const posThresholdStr = isAdvancedLevel ? '10%' : '20%';
 
-    // Lấy luật Sư phạm động từ Ma trận (Pedagogy Routing Matrix V1.14)
-    const pedagogyRules = IoeDataEngine?.getPedagogyMatrixRule
-      ? IoeDataEngine.getPedagogyMatrixRule(level, lang)
+    // Lấy luật Sư phạm động từ Ma trận (Pedagogy Routing Matrix)
+    const pedagogyRules = activePedagogyEngine?.getPedagogyMatrixRule
+      ? activePedagogyEngine.getPedagogyMatrixRule(level, lang)
       : {
-          example: "Tự nhiên, chuẩn ngữ pháp, có ngữ cảnh thực tế rõ ràng.",
-          definition: "Bản dịch Tiếng Việt trực tiếp, chuẩn xác. TUYỆT ĐỐI KHÔNG giải nghĩa kiểu từ điển bách khoa."
+          example: 'Tự nhiên, chuẩn ngữ pháp, có ngữ cảnh thực tế rõ ràng.',
+          definition:
+            'Bản dịch Tiếng Việt trực tiếp, chuẩn xác. TUYỆT ĐỐI KHÔNG giải nghĩa kiểu từ điển bách khoa.'
         };
 
     let prompt = `Bạn là một gia sư ${targetLangName} chuyên nghiệp và tận tâm, đang tạo nội dung cho một ứng dụng giáo dục.\n`;
     prompt += `CẤP ĐỘ MỤC TIÊU: ${levelDisplay} (Tiêu chuẩn tương đương: ${cefrLevel}).\n`;
 
-    const repLevelKey = Array.isArray(level) ? level[0] : level;
-    const levelContext = IoeDataEngine?.GRADE_CONTEXTS?.[repLevelKey] || "";
-    if (levelContext) prompt += `NGỮ CẢNH (CONTEXT): ${levelContext}\n`;
+    // Hợp nhất ngữ cảnh đa cấp độ (Multi-select Level Contexts)
+    if (level) {
+      const levelArr = Array.isArray(level) ? level : [level];
+      const contexts = levelArr
+        .map((lvl) => activePedagogyEngine?.GRADE_CONTEXTS?.[lvl])
+        .filter(Boolean);
+      if (contexts.length > 0) {
+        prompt += `NGỮ CẢNH (CONTEXT): ${contexts.join(' | ')}\n`;
+      }
+    }
 
     if (lang === 'zh') {
       prompt += `QUY TẮC TỪ VỰNG: Vui lòng sử dụng từ vựng phù hợp với tiêu chuẩn ${levelDisplay}. Đối với cấp độ cơ bản (HSK 1-2), chỉ dùng các từ giao tiếp hàng ngày cơ bản. Với cấp độ cao hơn, dùng từ vựng nâng cao phù hợp nhưng không quá hiếm gặp hoặc tối nghĩa.\n`;
@@ -226,7 +273,11 @@ export const AiFactoryEngine = {
       prompt += `GẮN NHÃN CẤP ĐỘ: Vui lòng khai báo đúng cấp độ CEFR vào trường 'cefr_level' (ví dụ: 'B1').\n`;
     }
 
-    const isTopicFree = topic === 'ANY' || subType === 'pronunciation' || subType === 'odd_one_out' || subType === 'spot_mistake';
+    const isTopicFree =
+      topic === 'ANY' ||
+      subType === 'pronunciation' ||
+      subType === 'odd_one_out' ||
+      subType === 'spot_mistake';
     if (isTopicFree) {
       prompt += `TỰ DO CHỦ ĐỀ: Bạn có thể tùy ý chọn từ các chủ đề ${lang === 'zh' ? 'đời sống hàng ngày' : 'Cambridge'} phổ biến.\n`;
     } else if (topic) {
@@ -235,22 +286,39 @@ export const AiFactoryEngine = {
 
     if (forgeType === 'base_card') {
       prompt += `NHIỆM VỤ: Tạo một ${dataMode === 'sentence' ? 'câu văn' : 'từ vựng'} phù hợp với cấp độ và chủ đề đã giao.\n`;
-      const typeRule = IoeDataEngine?.getMicroTierVocabTypeRule ? IoeDataEngine.getMicroTierVocabTypeRule(level) : "";
+      const typeRule = activePedagogyEngine?.getMicroTierVocabTypeRule
+        ? activePedagogyEngine.getMicroTierVocabTypeRule(level)
+        : '';
       if (typeRule && dataMode === 'vocab') {
-        prompt += typeRule + "\n";
+        prompt += typeRule + '\n';
         prompt += `TÍNH TRỰC QUAN: Đối với từ vựng, ưu tiên chọn các danh từ cụ thể, có hình khối rõ ràng nếu có thể.\n`;
       }
       // [V1.53] Áp dụng luật dịch nghĩa từ Ma trận Định tuyến
-      prompt += `QUY TẮC ĐỊNH NGHĨA: Trường 'definition' BẮT BUỘC tuân thủ: ${pedagogyRules.definition} Ngoài ra, cung cấp thêm một 'image_keyword' bằng Tiếng Anh đơn giản.\n`;
+      if (dataMode === 'sentence') {
+        prompt += `QUY TẮC CÂU VĂN & ĐỊNH NGHĨA: Trường 'term' là câu văn hoàn chỉnh tuân thủ: ${pedagogyRules.example}\n`;
+        prompt += `Trường 'definition' là bản dịch Tiếng Việt tự nhiên, chuẩn xác của toàn bộ câu 'term'. Ngoài ra, cung cấp thêm một 'image_keyword' bằng Tiếng Anh đơn giản.\n`;
 
-      // PRE-COMPUTATION CONSTRAINT: Dời luật Ngữ pháp lên trước luật JSON và thêm Pedagogical Prompt
-      if (dataMode === 'vocab') {
+        if (IoeEnumRegistry && IoeEnumRegistry.LEVEL_TO_TRAPS) {
+          const tagsArr = [];
+          const prefix = lang === 'zh' ? 'zh' : 'en';
+          for (const [lvl, traps] of Object.entries(IoeEnumRegistry.LEVEL_TO_TRAPS)) {
+            if (lvl.startsWith(prefix)) tagsArr.push(...traps);
+          }
+          const uniqueTags = [...new Set(tagsArr)];
+          if (uniqueTags.length > 0) {
+            prompt += `QUY TẮC NHÃN NGỮ PHÁP ('grammar_type'): Nếu câu mang cấu trúc giao tiếp bình thường, trả về mảng rỗng []. Nếu có cấu trúc đặc trưng, chỉ chọn 1-2 mã cốt lõi từ: [${uniqueTags.join(', ')}].\n`;
+          }
+        }
+      } else {
+        prompt += `QUY TẮC ĐỊNH NGHĨA: Trường 'definition' BẮT BUỘC tuân thủ: ${pedagogyRules.definition} Ngoài ra, cung cấp thêm một 'image_keyword' bằng Tiếng Anh đơn giản.\n`;
+
+        // PRE-COMPUTATION CONSTRAINT: Dời luật Ngữ pháp lên trước luật JSON và thêm Pedagogical Prompt
         prompt += `\n[CÁC LỖI NGỮ PHÁP NGHIÊM CẤM]:\n`;
         // [V1.54] LOGIC CENTRALIZATION: Tích hợp Vắc-xin Ngữ pháp từ Block 2.2
-        const grammarRule = IoeDataEngine?.getMicroTierGrammarRule
-          ? IoeDataEngine.getMicroTierGrammarRule(lang)
+        const grammarRule = activePedagogyEngine?.getMicroTierGrammarRule
+          ? activePedagogyEngine.getMicroTierGrammarRule(lang)
           : `- Chỉ phân loại theo đúng ngữ pháp ngôn ngữ gốc, tuyệt đối không vay mượn ngữ pháp bản dịch Tiếng Việt.\n`;
-        prompt += grammarRule + "\n";
+        prompt += grammarRule + '\n';
 
         // [V1.52] PROMPT RESTRUCTURING: Tái cấu trúc Prompt trường 'example'
         prompt += `\n[QUY TẮC ĐỊNH DẠNG JSON (TỪ VỰNG)]:\n`;
@@ -274,18 +342,20 @@ export const AiFactoryEngine = {
         }
       } else if (subType === 'odd_one_out') {
         const allTopics = [
-          "Animals", "Food", "Colors", "Numbers", "Body parts", "Clothes",
-          "House", "School", "Jobs", "Weather", "Sports", "Vehicles",
-          "Nature", "Emotions", "Technology", "Space", "Art", "Music",
-          "Medicine", "Business"
+          'Animals', 'Food', 'Colors', 'Numbers', 'Body parts', 'Clothes',
+          'House', 'School', 'Jobs', 'Weather', 'Sports', 'Vehicles',
+          'Nature', 'Emotions', 'Technology', 'Space', 'Art', 'Music',
+          'Medicine', 'Business'
         ];
-        const shuffledTopics = shuffleArray ? shuffleArray([...allTopics]) : allTopics.sort(() => Math.random() - 0.5);
+        const shuffledTopics = shuffleArray
+          ? shuffleArray([...allTopics])
+          : allTopics.sort(() => Math.random() - 0.5);
         prompt += `NHIỆM VỤ: Tạo một câu hỏi 'Tìm Từ Khác Loại' gồm 4 từ ${targetLangName} ở cấp độ ${cefrLevel}.\n`;
         prompt += `MỒI NGỮ NGHĨA: Hãy chọn 3 từ thuộc nhóm [${shuffledTopics[0]}] và 1 từ khác loại thuộc nhóm [${shuffledTopics[1]}].\n`;
-        const oddRule = IoeDataEngine?.getMicroTierOddRule
-          ? IoeDataEngine.getMicroTierOddRule(targetLangName, dataMode, level, topic)
-          : "";
-        if (oddRule) prompt += oddRule + "\n";
+        const oddRule = activePedagogyEngine?.getMicroTierOddRule
+          ? activePedagogyEngine.getMicroTierOddRule(lang, dataMode, level, topic)
+          : '';
+        if (oddRule) prompt += oddRule + '\n';
         prompt += `QUY TẮC BẮT BUỘC: Trường 'explanation' PHẢI BẰNG TIẾNG VIỆT.\n`;
       } else if (subType === 'pronunciation') {
         prompt += `NHIỆM VỤ: Tạo một câu hỏi Ngữ âm/Phát âm gồm 4 từ ${targetLangName} ở cấp độ ${cefrLevel}.\n`;
@@ -295,6 +365,10 @@ export const AiFactoryEngine = {
       if (subType === 'fill_blank') {
         prompt += `NHIỆM VỤ: Tạo một câu văn ${targetLangName} ở cấp độ ${cefrLevel}. Chọn MỘT từ vựng quan trọng làm 'targetWord'.\n`;
         prompt += `TỐI QUAN TRỌNG: KHÔNG ĐƯỢC chèn '[__________]' vào trong câu. Trường 'displaySentence' BẮT BUỘC phải chứa nguyên văn toàn bộ câu không bị chỉnh sửa.\n`;
+        const clozeRule = activePedagogyEngine?.getMicroTierClozeRule
+          ? activePedagogyEngine.getMicroTierClozeRule(lang, dataMode, level, topic)
+          : '';
+        if (clozeRule) prompt += clozeRule + '\n';
         prompt += `QUY TẮC: Trường 'hint' chính là bản dịch Tiếng Việt của toàn bộ câu văn đó.\n`;
       } else if (subType === 'vocab_mcq' || subType === 'grammar_mcq') {
         const isSentenceTask = dataMode === 'sentence' || subType === 'grammar_mcq';
@@ -326,11 +400,21 @@ export const AiFactoryEngine = {
         prompt += `QUY TẮC BẮT BUỘC: Trường 'explanation' PHẢI BẰNG TIẾNG VIỆT, giải thích lý do tại sao đáp án đúng lại phù hợp và tại sao các đáp án khác lại sai.\n`;
       } else if (subType === 'spot_mistake') {
         prompt += `NHIỆM VỤ: Tạo một câu ${targetLangName} ở cấp độ ${cefrLevel} chứa DUY NHẤT MỘT lỗi sai nhỏ (về ngữ pháp hoặc từ vựng).\n`;
+        prompt += `QUY TẮC SƯ PHẠM: Câu văn BẮT BUỘC tuân thủ: ${pedagogyRules.example}\n`;
+        prompt += `VẮC-XIN CHỐNG LỖI TỪ ĐỒNG DẠNG (SUBSTRING FALLACY): Từ bị sai PHẢI là một từ độc lập trong câu. TUYỆT ĐỐI CẤM chọn một từ nằm bên trong một từ ghép khác để làm lỗi.\n`;
         prompt += `QUY TẮC: Cung cấp câu sai, từ bị sai, từ sửa lại cho đúng, và phần giải thích bằng TIẾNG VIỆT.\n`;
       } else if (subType === 'listening') {
         prompt += `NHIỆM VỤ: Tạo một kịch bản bài nghe hiểu và 1 câu hỏi trắc nghiệm 4 đáp án ở cấp độ ${cefrLevel}. Phần giải thích PHẢI BẰNG TIẾNG VIỆT.\n`;
+        const listenRule = activePedagogyEngine?.getMicroTierListeningRule
+          ? activePedagogyEngine.getMicroTierListeningRule(level)
+          : '';
+        if (listenRule) prompt += listenRule + '\n';
       } else if (subType === 'reading_passage') {
         prompt += `NHIỆM VỤ: Tạo một đoạn văn đọc hiểu và các câu hỏi kèm theo ở cấp độ ${cefrLevel}.\n`;
+        const readRule = activePedagogyEngine?.getMicroTierReadingRule
+          ? activePedagogyEngine.getMicroTierReadingRule(level)
+          : '';
+        if (readRule) prompt += readRule + '\n';
         prompt += `CÂU HỎI: Kết hợp giữa Trắc nghiệm, True/False/Not Given hoặc Điền Khuyết. Phần giải thích cho mỗi câu PHẢI BẰNG TIẾNG VIỆT.\n`;
       }
     }
@@ -340,138 +424,156 @@ export const AiFactoryEngine = {
     return prompt;
   },
 
-  _getMasterSchema: function (forgeType, subType, dataMode = 'vocab', level = "") {
-    const commonProps = { cefr_level: { type: "STRING" } };
-    const commonRequired = ["cefr_level"];
+  _getMasterSchema: function (forgeType, subType, dataMode = 'vocab', level = '') {
+    const commonProps = { cefr_level: { type: 'STRING' } };
+    const commonRequired = ['cefr_level'];
 
     // Tính toán Ngưỡng Từ loại Động (Dynamic POS Threshold)
     let isAdvancedLevel = false;
-    const levelCheckStr = Array.isArray(level) ? level.join(',').toLowerCase() : String(level || '').toLowerCase();
+    const levelCheckStr = Array.isArray(level)
+      ? level.join(',').toLowerCase()
+      : String(level || '').toLowerCase();
     if (levelCheckStr) {
       const advKeywords = ['level_5', 'level_6', 'hsk5', 'hsk6', 'hsk 5', 'hsk 6', 'c1', 'c2'];
       isAdvancedLevel = advKeywords.some((kw) => levelCheckStr.includes(kw));
     }
-    const posThresholdStr = isAdvancedLevel ? "10%" : "20%";
+    const posThresholdStr = isAdvancedLevel ? '10%' : '20%';
 
     if (forgeType === 'base_card') {
-      const baseRequired = ["term", "definition", "image_keyword"];
       if (dataMode === 'sentence') {
-        baseRequired.push("grammar_type");
-      } else {
-        baseRequired.push("posAnalysis", "partOfSpeech", "example");
+        return {
+          type: 'OBJECT',
+          properties: {
+            term: { type: 'STRING' },
+            definition: { type: 'STRING' },
+            image_keyword: { type: 'STRING' },
+            grammar_type: { type: 'ARRAY', items: { type: 'STRING' } },
+            ...commonProps
+          },
+          required: ['term', 'definition', 'image_keyword', 'grammar_type', ...commonRequired]
+        };
       }
+
       return {
-        type: "OBJECT",
+        type: 'OBJECT',
         properties: {
-          term: { type: "STRING" },
-          definition: { type: "STRING" },
-          image_keyword: { type: "STRING" },
-          grammar_type: { type: "ARRAY", items: { type: "STRING" } },
           posAnalysis: {
-            type: "STRING",
+            type: 'STRING',
             description: `Tờ giấy nháp: Tư duy theo chuỗi. BẮT BUỘC viết phân tích chức năng ngữ pháp TRƯỚC, sau đó mới chốt lại tỉ lệ % ở cuối cùng. Ép 0% nếu vi phạm luật cấm. Quyết định loại bỏ các từ loại có tỉ lệ <${posThresholdStr}.`
           },
           partOfSpeech: {
-            type: "STRING",
+            type: 'STRING',
             description: `Từ loại của từ (BẰNG TIẾNG VIỆT). Xuất kết quả cuối cùng từ posAnalysis (chỉ lấy >${posThresholdStr}), cách nhau bằng dấu '|'.`
           },
           // [V1.51] Đánh dấu neo "- " cho thuật toán bẻ dòng
           example: {
-            type: "STRING",
-            description: "Multiline string containing examples. MUST generate exactly ONE example sentence for EACH part of speech listed in 'partOfSpeech' AND KEEP THE EXACT ORDER. Format each line exactly as: - Foreign Sentence | Vietnamese Translation"
+            type: 'STRING',
+            description:
+              "Multiline string containing examples. MUST generate exactly ONE example sentence for EACH part of speech listed in 'partOfSpeech' AND KEEP THE EXACT ORDER. Format each line exactly as: - Foreign Sentence | Vietnamese Translation"
           },
+          term: { type: 'STRING' },
+          definition: { type: 'STRING' },
+          image_keyword: { type: 'STRING' },
           ...commonProps
         },
-        required: [...baseRequired, ...commonRequired]
+        required: [
+          'posAnalysis',
+          'partOfSpeech',
+          'example',
+          'term',
+          'definition',
+          'image_keyword',
+          ...commonRequired
+        ]
       };
     }
 
     if (forgeType === 'matrix') {
       if (subType === 'match') {
         return {
-          type: "OBJECT",
+          type: 'OBJECT',
           properties: {
             items: {
-              type: "ARRAY",
+              type: 'ARRAY',
               items: {
-                type: "OBJECT",
+                type: 'OBJECT',
                 properties: {
-                  term: { type: "STRING" },
-                  definition: { type: "STRING" }
+                  term: { type: 'STRING' },
+                  definition: { type: 'STRING' }
                 },
-                required: ["term", "definition"]
+                required: ['term', 'definition']
               }
             },
             ...commonProps
           },
-          required: ["items", ...commonRequired]
+          required: ['items', ...commonRequired]
         };
       }
       if (subType === 'match_hard') {
         return {
-          type: "OBJECT",
+          type: 'OBJECT',
           properties: {
             correctPairs: {
-              type: "ARRAY",
+              type: 'ARRAY',
               items: {
-                type: "OBJECT",
+                type: 'OBJECT',
                 properties: {
-                  term: { type: "STRING" },
-                  definition: { type: "STRING" }
+                  term: { type: 'STRING' },
+                  definition: { type: 'STRING' }
                 },
-                required: ["term", "definition"]
+                required: ['term', 'definition']
               }
             },
             trapPairs: {
-              type: "ARRAY",
+              type: 'ARRAY',
               items: {
-                type: "OBJECT",
+                type: 'OBJECT',
                 properties: {
-                  wrongWord: { type: "STRING" },
-                  correction: { type: "STRING" },
-                  definition: { type: "STRING" },
-                  explanation: { type: "STRING" }
+                  wrongWord: { type: 'STRING' },
+                  correction: { type: 'STRING' },
+                  definition: { type: 'STRING' },
+                  explanation: { type: 'STRING' }
                 },
-                required: ["wrongWord", "correction", "definition", "explanation"]
+                required: ['wrongWord', 'correction', 'definition', 'explanation']
               }
             },
             ...commonProps
           },
-          required: ["correctPairs", "trapPairs", ...commonRequired]
+          required: ['correctPairs', 'trapPairs', ...commonRequired]
         };
       }
       if (subType === 'odd_one_out') {
         return {
-          type: "OBJECT",
+          type: 'OBJECT',
           properties: {
-            words: { type: "ARRAY", items: { type: "STRING" } },
-            oddWord: { type: "STRING" },
-            explanation: { type: "STRING" },
+            words: { type: 'ARRAY', items: { type: 'STRING' } },
+            oddWord: { type: 'STRING' },
+            explanation: { type: 'STRING' },
             ...commonProps
           },
-          required: ["words", "oddWord", "explanation", ...commonRequired]
+          required: ['words', 'oddWord', 'explanation', ...commonRequired]
         };
       }
       if (subType === 'pronunciation') {
         return {
-          type: "OBJECT",
+          type: 'OBJECT',
           properties: {
-            term: { type: "STRING" },
-            definition: { type: "STRING" },
+            term: { type: 'STRING' },
+            definition: { type: 'STRING' },
             options: {
-              type: "ARRAY",
+              type: 'ARRAY',
               items: {
-                type: "OBJECT",
+                type: 'OBJECT',
                 properties: {
-                  text: { type: "STRING" },
-                  isCorrect: { type: "BOOLEAN" }
+                  text: { type: 'STRING' },
+                  isCorrect: { type: 'BOOLEAN' }
                 },
-                required: ["text", "isCorrect"]
+                required: ['text', 'isCorrect']
               }
             },
             ...commonProps
           },
-          required: ["term", "definition", "options", ...commonRequired]
+          required: ['term', 'definition', 'options', ...commonRequired]
         };
       }
     }
@@ -479,100 +581,108 @@ export const AiFactoryEngine = {
     if (forgeType === 'context') {
       if (subType === 'fill_blank') {
         return {
-          type: "OBJECT",
+          type: 'OBJECT',
           properties: {
-            displaySentence: { type: "STRING" },
-            targetWord: { type: "STRING" },
-            hint: { type: "STRING" },
-            distractors: { type: "ARRAY", items: { type: "STRING" } },
+            displaySentence: { type: 'STRING' },
+            targetWord: { type: 'STRING' },
+            hint: { type: 'STRING' },
+            distractors: { type: 'ARRAY', items: { type: 'STRING' } },
             ...commonProps
           },
-          required: ["displaySentence", "targetWord", "hint", ...commonRequired]
+          required: ['displaySentence', 'targetWord', 'hint', ...commonRequired]
         };
       }
       if (subType === 'vocab_mcq' || subType === 'grammar_mcq') {
         return {
-          type: "OBJECT",
+          type: 'OBJECT',
           properties: {
-            term: { type: "STRING" },
-            definition: { type: "STRING" },
-            displaySentence: { type: "STRING" },
+            term: { type: 'STRING' },
+            definition: { type: 'STRING' },
+            displaySentence: { type: 'STRING' },
             options: {
-              type: "ARRAY",
+              type: 'ARRAY',
               items: {
-                type: "OBJECT",
+                type: 'OBJECT',
                 properties: {
-                  text: { type: "STRING" },
-                  isCorrect: { type: "BOOLEAN" }
+                  text: { type: 'STRING' },
+                  isCorrect: { type: 'BOOLEAN' }
                 },
-                required: ["text", "isCorrect"]
+                required: ['text', 'isCorrect']
               }
             },
-            image_keyword: { type: "STRING" },
-            explanation: { type: "STRING" },
+            image_keyword: { type: 'STRING' },
+            explanation: { type: 'STRING' },
             ...commonProps
           },
-          required: ["term", "definition", "displaySentence", "options", "image_keyword", "explanation", ...commonRequired]
+          required: [
+            'term',
+            'definition',
+            'displaySentence',
+            'options',
+            'image_keyword',
+            'explanation',
+            ...commonRequired
+          ]
         };
       }
       if (subType === 'spot_mistake') {
         return {
-          type: "OBJECT",
+          type: 'OBJECT',
           properties: {
-            wrongSentence: { type: "STRING" },
-            wrongWord: { type: "STRING" },
-            correction: { type: "STRING" },
-            explanation: { type: "STRING" },
+            wrongSentence: { type: 'STRING' },
+            wrongWord: { type: 'STRING' },
+            correction: { type: 'STRING' },
+            explanation: { type: 'STRING' },
             ...commonProps
           },
-          required: ["wrongSentence", "wrongWord", "correction", "explanation", ...commonRequired]
+          required: ['wrongSentence', 'wrongWord', 'correction', 'explanation', ...commonRequired]
         };
       }
       if (subType === 'listening') {
         return {
-          type: "OBJECT",
+          type: 'OBJECT',
           properties: {
-            audioScript: { type: "STRING" },
-            question: { type: "STRING" },
+            audioScript: { type: 'STRING' },
+            question: { type: 'STRING' },
             options: {
-              type: "ARRAY",
+              type: 'ARRAY',
               items: {
-                type: "OBJECT",
+                type: 'OBJECT',
                 properties: {
-                  text: { type: "STRING" },
-                  isCorrect: { type: "BOOLEAN" }
+                  text: { type: 'STRING' },
+                  isCorrect: { type: 'BOOLEAN' }
                 },
-                required: ["text", "isCorrect"]
+                required: ['text', 'isCorrect']
               }
             },
-            explanation: { type: "STRING" },
+            explanation: { type: 'STRING' },
             ...commonProps
           },
-          required: ["audioScript", "question", "options", "explanation", ...commonRequired]
+          required: ['audioScript', 'question', 'options', 'explanation', ...commonRequired]
         };
       }
       if (subType === 'reading_passage') {
         return {
-          type: "OBJECT",
+          type: 'OBJECT',
           properties: {
-            passage: { type: "STRING" },
+            passage: { type: 'STRING' },
             questions: {
-              type: "ARRAY",
+              type: 'ARRAY',
               items: {
-                type: "OBJECT",
+                type: 'OBJECT',
                 properties: {
-                  type: { type: "STRING" },
-                  questionText: { type: "STRING" },
-                  options: { type: "ARRAY", items: { type: "STRING" } },
-                  correctAnswer: { type: "STRING" },
-                  explanation: { type: "STRING" }
+                  type: { type: 'STRING' },
+                  questionText: { type: 'STRING' },
+                  options: { type: 'ARRAY', items: { type: 'STRING' } },
+                  correctAnswer: { type: 'STRING' },
+                  explanation: { type: 'STRING' }
                 },
-                required: ["type", "questionText", "correctAnswer", "explanation"]
+                required: ['type', 'questionText', 'correctAnswer', 'explanation']
               }
             },
             ...commonProps
           },
-          required: ["passage", "questions", ...commonRequired]
+          required: ['passage', 'questions', ...commonRequired]
         };
       }
     }
@@ -583,24 +693,40 @@ export const AiFactoryEngine = {
   // ============================================================================
   // 3. LÒ ĐÚC 1: LÒ ĐÚC CƠ SỞ (FORGE BASE CARD)
   // ============================================================================
-  forgeBaseCard: async function (level, lang, apiKey, topic = "", historyPrompt = "", dataMode = 'vocab', isReverse = false) {
+  forgeBaseCard: async function (
+    level,
+    lang,
+    apiKey,
+    topic = '',
+    historyPrompt = '',
+    dataMode = 'vocab',
+    isReverse = false
+  ) {
     let timeoutId;
     try {
-      let prompt = this._buildSystemPrompt('base_card', null, level, lang, topic, dataMode, isReverse);
+      let prompt = AiFactoryEngine._buildSystemPrompt(
+        'base_card',
+        null,
+        level,
+        lang,
+        topic,
+        dataMode,
+        isReverse
+      );
       if (historyPrompt) prompt += historyPrompt;
-      const schema = this._getMasterSchema('base_card', null, dataMode, level);
+      const schema = AiFactoryEngine._getMasterSchema('base_card', null, dataMode, level);
 
       const aiPromise = callGeminiApi(prompt, schema, apiKey);
       let dynamicTimeout = 20000;
       try {
-        const aiCfg = JSON.parse(localStorage.getItem('fc_ai_config'));
+        const aiCfg = safeJsonParse('fc_ai_config', null);
         if (aiCfg && aiCfg.loadingTime) {
           dynamicTimeout = parseInt(aiCfg.loadingTime, 10) * 1000 + 5000;
         }
       } catch (e) {}
 
       const timeoutPromise = new Promise((_, r) => {
-        timeoutId = setTimeout(() => r(new Error("AI Base Card Timeout")), dynamicTimeout);
+        timeoutId = setTimeout(() => r(new Error('AI Base Card Timeout')), dynamicTimeout);
       });
 
       const res = await Promise.race([aiPromise, timeoutPromise]);
@@ -611,18 +737,18 @@ export const AiFactoryEngine = {
         term: parsed.term,
         definition: parsed.definition,
         image_keyword: parsed.image_keyword || parsed.term,
-        cefr_level: parsed.cefr_level || "",
+        cefr_level: parsed.cefr_level || '',
         grammar_type: parsed.grammar_type || [],
-        partOfSpeech: parsed.partOfSpeech || "",
-        example: parsed.example || "",
+        partOfSpeech: parsed.partOfSpeech || (dataMode === 'sentence' ? 'Câu văn' : ''),
+        example: parsed.example || '',
         isAiGenerated: true,
         _tokenUsage: res.tokenMetadata
       };
     } catch (e) {
       if (timeoutId) clearTimeout(timeoutId);
-      console.error("forgeBaseCard Error:", e);
+      console.error('forgeBaseCard Error:', e);
       if (typeof window !== 'undefined' && window.logSystemEvent) {
-        window.logSystemEvent("Lò Đúc Cơ Sở (Base Card) sập", e);
+        window.logSystemEvent('Lò Đúc Cơ Sở (Base Card) sập', e);
       }
       throw e;
     }
@@ -631,30 +757,52 @@ export const AiFactoryEngine = {
   // ============================================================================
   // 4. LÒ ĐÚC 2: LÒ ĐÚC MA TRẬN (FORGE MATRIX)
   // ============================================================================
-  forgeMatrix: async function (subType, level, lang, apiKey, topic = "", historyPrompt = "", dataMode = 'vocab', isReverse = false) {
+  forgeMatrix: async function (
+    subType,
+    level,
+    lang,
+    apiKey,
+    topic = '',
+    historyPrompt = '',
+    dataMode = 'vocab',
+    isReverse = false
+  ) {
     let timeoutId;
     try {
-      let prompt = this._buildSystemPrompt('matrix', subType, level, lang, topic, dataMode, isReverse);
+      let prompt = AiFactoryEngine._buildSystemPrompt(
+        'matrix',
+        subType,
+        level,
+        lang,
+        topic,
+        dataMode,
+        isReverse
+      );
       if (historyPrompt) prompt += historyPrompt;
-      const schema = this._getMasterSchema('matrix', subType, dataMode, level);
+      const schema = AiFactoryEngine._getMasterSchema('matrix', subType, dataMode, level);
 
       const aiPromise = callGeminiApi(prompt, schema, apiKey);
       let dynamicTimeout = 25000;
       try {
-        const aiCfg = JSON.parse(localStorage.getItem('fc_ai_config'));
+        const aiCfg = safeJsonParse('fc_ai_config', null);
         if (aiCfg && aiCfg.loadingTime) {
           dynamicTimeout = parseInt(aiCfg.loadingTime, 10) * 1000 + 5000;
         }
       } catch (e) {}
 
       const timeoutPromise = new Promise((_, r) => {
-        timeoutId = setTimeout(() => r(new Error("AI Matrix Timeout")), dynamicTimeout);
+        timeoutId = setTimeout(() => r(new Error('AI Matrix Timeout')), dynamicTimeout);
       });
 
       const res = await Promise.race([aiPromise, timeoutPromise]);
       clearTimeout(timeoutId);
       const parsed = parseAiJson(res.text);
-      const result = { ...parsed, isAiGenerated: true, type: subType, _tokenUsage: res.tokenMetadata };
+      const result = {
+        ...parsed,
+        isAiGenerated: true,
+        type: subType,
+        _tokenUsage: res.tokenMetadata
+      };
 
       if (subType === 'odd_one_out' && result.words && Array.isArray(result.words)) {
         result.words = shuffleArray(result.words);
@@ -680,17 +828,34 @@ export const AiFactoryEngine = {
   // ============================================================================
   // 5. LÒ ĐÚC 3: LÒ ĐÚC NGỮ CẢNH (FORGE CONTEXT)
   // ============================================================================
-  forgeContext: async function (subType, level, lang, apiKey, topic = "", historyPrompt = "", dataMode = 'vocab', isReverse = false) {
+  forgeContext: async function (
+    subType,
+    level,
+    lang,
+    apiKey,
+    topic = '',
+    historyPrompt = '',
+    dataMode = 'vocab',
+    isReverse = false
+  ) {
     let timeoutId;
     try {
-      let prompt = this._buildSystemPrompt('context', subType, level, lang, topic, dataMode, isReverse);
+      let prompt = AiFactoryEngine._buildSystemPrompt(
+        'context',
+        subType,
+        level,
+        lang,
+        topic,
+        dataMode,
+        isReverse
+      );
       if (historyPrompt) prompt += historyPrompt;
-      const schema = this._getMasterSchema('context', subType, dataMode, level);
+      const schema = AiFactoryEngine._getMasterSchema('context', subType, dataMode, level);
 
       const aiPromise = callGeminiApi(prompt, schema, apiKey);
       let dynamicTimeout = subType === 'reading_passage' ? 35000 : 25000;
       try {
-        const aiCfg = JSON.parse(localStorage.getItem('fc_ai_config'));
+        const aiCfg = safeJsonParse('fc_ai_config', null);
         if (aiCfg && aiCfg.loadingTime) {
           const baseTime = parseInt(aiCfg.loadingTime, 10);
           dynamicTimeout = baseTime * 1000 + 5000;
@@ -701,13 +866,21 @@ export const AiFactoryEngine = {
       } catch (e) {}
 
       const timeoutPromise = new Promise((_, r) => {
-        timeoutId = setTimeout(() => r(new Error(`AI Context Timeout (${subType})`)), dynamicTimeout);
+        timeoutId = setTimeout(
+          () => r(new Error(`AI Context Timeout (${subType})`)),
+          dynamicTimeout
+        );
       });
 
       const res = await Promise.race([aiPromise, timeoutPromise]);
       clearTimeout(timeoutId);
       const parsed = parseAiJson(res.text);
-      const result = { ...parsed, isAiGenerated: true, type: subType, _tokenUsage: res.tokenMetadata };
+      const result = {
+        ...parsed,
+        isAiGenerated: true,
+        type: subType,
+        _tokenUsage: res.tokenMetadata
+      };
 
       if (subType === 'listening' || subType === 'grammar_mcq' || subType === 'vocab_mcq') {
         if (result.options && Array.isArray(result.options)) {
@@ -726,6 +899,13 @@ export const AiFactoryEngine = {
     }
   }
 };
+
+// Named Exports tương thích trực tiếp với NewMapping.md
+export const batchEnrich = (...args) => AiFactoryEngine.batchEnrich(...args);
+export const getHistoryPrompt = (...args) => AiFactoryEngine.getHistoryPrompt(...args);
+export const forgeBaseCard = (...args) => AiFactoryEngine.forgeBaseCard(...args);
+export const forgeMatrix = (...args) => AiFactoryEngine.forgeMatrix(...args);
+export const forgeContext = (...args) => AiFactoryEngine.forgeContext(...args);
 
 if (typeof window !== 'undefined') {
   window.AiFactoryEngine = AiFactoryEngine;
