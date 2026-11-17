@@ -291,6 +291,76 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
   };
 
   // ==================================================================================
+  // 3.5. BỘ ĐỒNG BỘ DỮ LIỆU VỚI ĐỘNG CƠ "VÒI NƯỚC" (WATER FAUCET SYNC)
+  // ==================================================================================
+  const syncMasterDataToActiveView = (masterData, sourceType) => {
+    const storageKey = `fc_master_data_${lang}_${sourceType}`;
+    Utils.safeLocalStorageSet(storageKey, masterData);
+
+    // Nếu loại dữ liệu vừa nạp khớp với chế độ đang xem (vocab/sentence) và không ở chế độ học Sổ tay
+    const activeDataMode = core.dataMode || 'vocab';
+    if (sourceType === activeDataMode && !core.isStudyingNotebook && !core.studySourceName) {
+      const levelsArr = Array.isArray(core.currentLevel)
+        ? core.currentLevel
+        : core.currentLevel
+        ? [core.currentLevel]
+        : [];
+      const topicsArr = Array.isArray(core.currentTopic)
+        ? core.currentTopic
+        : core.currentTopic
+        ? [core.currentTopic]
+        : [];
+
+      let targetCards = [];
+      if (levelsArr.length === 0) {
+        Object.values(masterData).forEach((arr) => {
+          if (Array.isArray(arr)) targetCards = targetCards.concat(arr);
+        });
+      } else {
+        levelsArr.forEach((lv) => {
+          if (masterData[lv] && Array.isArray(masterData[lv])) {
+            targetCards = targetCards.concat(masterData[lv]);
+          }
+        });
+      }
+
+      // Nếu Level đang chọn không có trong file vừa nạp, tự động chuyển về Level đầu tiên có dữ liệu
+      if (targetCards.length === 0) {
+        const availableLevels = Object.keys(masterData).filter(
+          (k) => Array.isArray(masterData[k]) && masterData[k].length > 0
+        );
+        if (availableLevels.length > 0) {
+          const fallbackLvl = availableLevels[0];
+          targetCards = [...masterData[fallbackLvl]];
+          if (typeof core.setCurrentLevel === 'function') {
+            core.setCurrentLevel([fallbackLvl]);
+          }
+        }
+      } else if (typeof core.setCurrentLevel === 'function') {
+        // Kích hoạt làm tươi tham chiếu mảng để Động cơ Vòi nước ở useCoreState đồng bộ 100%
+        core.setCurrentLevel((prev) => (Array.isArray(prev) ? [...prev] : [prev]));
+      }
+
+      // Lọc theo Topic đang chọn (nếu có)
+      if (topicsArr.length > 0 && targetCards.length > 0) {
+        const topicFiltered = targetCards.filter((c) => topicsArr.includes(c.topic));
+        if (topicFiltered.length > 0) {
+          targetCards = topicFiltered;
+        } else if (typeof core.setCurrentTopic === 'function') {
+          // Nếu file mới không chứa topic cũ đang chọn, tự động mở khóa bộ lọc Topic
+          core.setCurrentTopic([]);
+        }
+      }
+
+      core.setCards(targetCards);
+      Utils.safeLocalStorageSet('fc_data_' + lang, targetCards);
+      if (typeof core.setCurrentCardIndex === 'function') {
+        core.setCurrentCardIndex(0);
+      }
+    }
+  };
+
+  // ==================================================================================
   // 4. IMPORT / EXPORT ĐA TẦNG (MULTI-DIMENSIONAL DATA SYNC)
   // ==================================================================================
   const handleImport = async (url, sourceType = 'vocab') => {
@@ -379,12 +449,7 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
       }
 
       if (totalCards > 0) {
-        const storageKey = `fc_master_data_${lang}_${sourceType}`;
-        Utils.safeLocalStorageSet(storageKey, masterData);
-        const firstLevelKey = `${levelPrefix}1`;
-        if (masterData[firstLevelKey]) {
-          core.setCards(masterData[firstLevelKey]);
-        }
+        syncMasterDataToActiveView(masterData, sourceType);
         if (typeof showToast === 'function') {
           showToast(`Đã nạp thành công ${totalCards} thẻ!`, 'success');
         }
@@ -517,12 +582,7 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
         }
 
         if (totalCards > 0) {
-          const storageKey = `fc_master_data_${lang}_${sourceType}`;
-          Utils.safeLocalStorageSet(storageKey, masterData);
-          const firstLevelKey = `${levelPrefix}1`;
-          if (masterData[firstLevelKey]) {
-            core.setCards(masterData[firstLevelKey]);
-          }
+          syncMasterDataToActiveView(masterData, sourceType);
           if (typeof showToast === 'function') {
             showToast(
               `Đã tải lên thành công ${totalCards} thẻ từ ${numTabs} Tabs (.xlsx)!`,
@@ -720,6 +780,8 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
         const dbKeys = [
           'fc_ai_harvest_pool',
           'fc_global_retry_bag',
+          'fc_global_retry_bag_en',
+          'fc_global_retry_bag_zh',
           'fc_notebook_en',
           'fc_notebook_zh',
           'fc_mastered_en',
@@ -829,10 +891,14 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
   };
 };
 
+export const useDataLogic = useDataIO;
+export const Block6_3_useDataIO = useDataIO;
+
 if (typeof window !== 'undefined') {
   window.Block6_3_useDataIO = useDataIO;
   window.Block15_useDataLogic = useDataIO;
   window.useDataLogic = useDataIO;
+  window.useDataIO = useDataIO;
 }
 
 export default useDataIO;
