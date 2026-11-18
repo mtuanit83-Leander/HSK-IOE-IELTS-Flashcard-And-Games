@@ -4,10 +4,12 @@
 // NHIỆM VỤ: Nhà máy 3 Lò đúc AI 1-Shot (Đúc thẻ cơ sở, Đúc ma trận 4 lựa chọn, Đúc ngữ cảnh Nghe/Đọc) và Làm giàu hàng loạt (Batch Enrich).
 // ============================================================================
 
+
 import { STORAGE_KEYS, IoeEnumRegistry } from '../config/constants.js';
 import { safeJsonParse, parseAiJson, shuffleArray } from '../utils/helpers.js';
 import { callGeminiApi } from '../services/geminiApi.js';
 import { IoeDataEngine } from './pedagogyEngine.js';
+
 
 const DEFAULT_CEFR_MAP = {
   en_level_1: 'Pre-A1 (Starters/Beginner)',
@@ -39,6 +41,7 @@ const DEFAULT_CEFR_MAP = {
   level_9_expert: 'C2 (IELTS 8.0+)'
 };
 
+
 const resolveCefrLevel = (level) => {
   const resolveSingle = (lvlKey) => {
     if (
@@ -51,12 +54,14 @@ const resolveCefrLevel = (level) => {
     return DEFAULT_CEFR_MAP[lvlKey] || 'B1 (Intermediate)';
   };
 
+
   if (Array.isArray(level) && level.length > 0) {
     const mapped = [...new Set(level.map((lvl) => resolveSingle(lvl)).filter(Boolean))];
     return mapped.length > 0 ? mapped.join(' / ') : 'B1 (Intermediate)';
   }
   return resolveSingle(level);
 };
+
 
 export const AiFactoryEngine = {
   // ============================================================================
@@ -67,9 +72,11 @@ export const AiFactoryEngine = {
       return { updatedCards: cards, hasUpdates: false };
     }
 
+
     const updatedCards = [...cards];
     let hasUpdates = false;
     const batchTargets = [];
+
 
     for (let i = 0; i < queueIndices.length; i++) {
       if (batchTargets.length >= maxCount) break;
@@ -79,6 +86,7 @@ export const AiFactoryEngine = {
         batchTargets.push({ idx: cardIdx, term: c.term });
       }
     }
+
 
     if (batchTargets.length > 0) {
       let timeoutId;
@@ -96,6 +104,7 @@ export const AiFactoryEngine = {
         prompt +=
           "\n\nBẮT BUỘC trả về chính xác một JSON object chứa mảng 'translations'.\nĐịnh dạng: {\"translations\": [\"nghĩa 1\", \"nghĩa 2\", ...]}";
 
+
         const schema = {
           type: 'OBJECT',
           properties: {
@@ -103,6 +112,7 @@ export const AiFactoryEngine = {
           },
           required: ['translations']
         };
+
 
         const aiPromise = callGeminiApi(prompt, schema, apiKey);
         let dynamicTimeout = 20000;
@@ -113,12 +123,15 @@ export const AiFactoryEngine = {
           }
         } catch (e) {}
 
+
         const timeoutPromise = new Promise((_, r) => {
           timeoutId = setTimeout(() => r(new Error('Timeout')), dynamicTimeout);
         });
 
+
         const res = await Promise.race([aiPromise, timeoutPromise]);
         clearTimeout(timeoutId);
+
 
         const parsed = parseAiJson(res.text);
         if (parsed && Array.isArray(parsed.translations)) {
@@ -128,6 +141,7 @@ export const AiFactoryEngine = {
             updatedCards[b.idx] = { ...updatedCards[b.idx], definition: parsed.translations[i] };
           }
           hasUpdates = true;
+
 
           if (res.tokenMetadata) {
             const used = res.tokenMetadata.totalTokenCount || 0;
@@ -144,8 +158,10 @@ export const AiFactoryEngine = {
       }
     }
 
+
     return { updatedCards, hasUpdates };
   },
+
 
   getHistoryPrompt: function (historyArray) {
     if (!historyArray || historyArray.length === 0) return '';
@@ -155,6 +171,7 @@ export const AiFactoryEngine = {
       'they', 'them', 'with', 'from', 'about'
     ];
     const processedHistory = [];
+
 
     historyArray.slice(-80).forEach((item) => {
       if (typeof item !== 'string') return;
@@ -171,12 +188,14 @@ export const AiFactoryEngine = {
       }
     });
 
+
     return (
       '\n\nHISTORY (LỊCH SỬ): Vui lòng cố gắng tránh lặp lại các khái niệm gần đây sau đây để nội dung luôn mới mẻ: [' +
       processedHistory.join(' | ') +
       '].\n'
     );
   },
+
 
   // ============================================================================
   // 2. MASTER PROMPT BUILDER & SCHEMAS (Internal Lõi Bọc Thép)
@@ -210,12 +229,14 @@ export const AiFactoryEngine = {
       }
     } catch (e) {}
 
+
     const activePedagogyEngine =
       IoeDataEngine || (typeof window !== 'undefined' ? window.IoeDataEngine : null);
     const targetLangName =
       lang === 'zh' ? 'Tiếng Trung' : lang === 'vi' ? 'Tiếng Việt' : 'Tiếng Anh';
     const cefrLevel = resolveCefrLevel(level);
     const levelDisplay = Array.isArray(level) ? level.join(', ') : level;
+
 
     // Tính toán Ngưỡng Từ loại Động (Dynamic POS Threshold)
     let isAdvancedLevel = false;
@@ -228,6 +249,7 @@ export const AiFactoryEngine = {
     }
     const posThresholdStr = isAdvancedLevel ? '10%' : '20%';
 
+
     // Lấy luật Sư phạm động từ Ma trận (Pedagogy Routing Matrix)
     const pedagogyRules = activePedagogyEngine?.getPedagogyMatrixRule
       ? activePedagogyEngine.getPedagogyMatrixRule(level, lang)
@@ -237,8 +259,10 @@ export const AiFactoryEngine = {
             'Bản dịch Tiếng Việt trực tiếp, chuẩn xác. TUYỆT ĐỐI KHÔNG giải nghĩa kiểu từ điển bách khoa.'
         };
 
+
     let prompt = `Bạn là một gia sư ${targetLangName} chuyên nghiệp và tận tâm, đang tạo nội dung cho một ứng dụng giáo dục.\n`;
     prompt += `CẤP ĐỘ MỤC TIÊU: ${levelDisplay} (Tiêu chuẩn tương đương: ${cefrLevel}).\n`;
+
 
     // Hợp nhất ngữ cảnh đa cấp độ (Multi-select Level Contexts)
     if (level) {
@@ -251,11 +275,13 @@ export const AiFactoryEngine = {
       }
     }
 
+
     if (lang === 'zh') {
       prompt += `QUY TẮC TỪ VỰNG: Vui lòng sử dụng từ vựng phù hợp với tiêu chuẩn ${levelDisplay}. Đối với cấp độ cơ bản (HSK 1-2), chỉ dùng các từ giao tiếp hàng ngày cơ bản. Với cấp độ cao hơn, dùng từ vựng nâng cao phù hợp nhưng không quá hiếm gặp hoặc tối nghĩa.\n`;
     } else {
       prompt += `QUY TẮC TỪ VỰNG: Vui lòng sử dụng từ vựng bám sát tiêu chuẩn ${cefrLevel}. Đảm bảo độ khó hoàn toàn phù hợp với học viên mục tiêu.\n`;
     }
+
 
     if (dataMode === 'sentence' || subType === 'grammar_mcq') {
       prompt += `QUY TẮC ĐỊNH DẠNG: Trường 'displaySentence' và tất cả các đáp án (options) đều phải là các câu văn hoàn chỉnh, nghe tự nhiên.\n`;
@@ -267,11 +293,13 @@ export const AiFactoryEngine = {
       }
     }
 
+
     if (lang === 'zh') {
       prompt += `GẮN NHÃN CẤP ĐỘ: Vui lòng khai báo đúng cấp độ HSK vào trường 'cefr_level' (ví dụ: 'HSK 3').\n`;
     } else {
       prompt += `GẮN NHÃN CẤP ĐỘ: Vui lòng khai báo đúng cấp độ CEFR vào trường 'cefr_level' (ví dụ: 'B1').\n`;
     }
+
 
     const isTopicFree =
       topic === 'ANY' ||
@@ -283,6 +311,7 @@ export const AiFactoryEngine = {
     } else if (topic) {
       prompt += `TẬP TRUNG CHỦ ĐỀ: Vui lòng tạo nội dung liên quan chặt chẽ đến chủ đề: "${topic}".\n`;
     }
+
 
     if (forgeType === 'base_card') {
       prompt += `NHIỆM VỤ: Tạo một ${dataMode === 'sentence' ? 'câu văn' : 'từ vựng'} phù hợp với cấp độ và chủ đề đã giao.\n`;
@@ -298,6 +327,7 @@ export const AiFactoryEngine = {
         prompt += `QUY TẮC CÂU VĂN & ĐỊNH NGHĨA: Trường 'term' là câu văn hoàn chỉnh tuân thủ: ${pedagogyRules.example}\n`;
         prompt += `Trường 'definition' là bản dịch Tiếng Việt tự nhiên, chuẩn xác của toàn bộ câu 'term'. Ngoài ra, cung cấp thêm một 'image_keyword' bằng Tiếng Anh đơn giản.\n`;
 
+
         if (IoeEnumRegistry && IoeEnumRegistry.LEVEL_TO_TRAPS) {
           const tagsArr = [];
           const prefix = lang === 'zh' ? 'zh' : 'en';
@@ -312,6 +342,7 @@ export const AiFactoryEngine = {
       } else {
         prompt += `QUY TẮC ĐỊNH NGHĨA: Trường 'definition' BẮT BUỘC tuân thủ: ${pedagogyRules.definition} Ngoài ra, cung cấp thêm một 'image_keyword' bằng Tiếng Anh đơn giản.\n`;
 
+
         // PRE-COMPUTATION CONSTRAINT: Dời luật Ngữ pháp lên trước luật JSON và thêm Pedagogical Prompt
         prompt += `\n[CÁC LỖI NGỮ PHÁP NGHIÊM CẤM]:\n`;
         // [V1.54] LOGIC CENTRALIZATION: Tích hợp Vắc-xin Ngữ pháp từ Block 2.2
@@ -319,6 +350,7 @@ export const AiFactoryEngine = {
           ? activePedagogyEngine.getMicroTierGrammarRule(lang)
           : `- Chỉ phân loại theo đúng ngữ pháp ngôn ngữ gốc, tuyệt đối không vay mượn ngữ pháp bản dịch Tiếng Việt.\n`;
         prompt += grammarRule + '\n';
+
 
         // [V1.52] PROMPT RESTRUCTURING: Tái cấu trúc Prompt trường 'example'
         prompt += `\n[QUY TẮC ĐỊNH DẠNG JSON (TỪ VỰNG)]:\n`;
@@ -419,14 +451,17 @@ export const AiFactoryEngine = {
       }
     }
 
+
     const randomSeed = Math.random().toString(36).substring(2, 10).toUpperCase();
     prompt += `\n[MÃ HẠT GIỐNG - SEED: ${randomSeed}] SỰ SÁNG TẠO: Vui lòng giữ cho nội dung luôn phong phú, đa dạng và thú vị.\n`;
     return prompt;
   },
 
+
   _getMasterSchema: function (forgeType, subType, dataMode = 'vocab', level = '') {
     const commonProps = { cefr_level: { type: 'STRING' } };
     const commonRequired = ['cefr_level'];
+
 
     // Tính toán Ngưỡng Từ loại Động (Dynamic POS Threshold)
     let isAdvancedLevel = false;
@@ -438,6 +473,7 @@ export const AiFactoryEngine = {
       isAdvancedLevel = advKeywords.some((kw) => levelCheckStr.includes(kw));
     }
     const posThresholdStr = isAdvancedLevel ? '10%' : '20%';
+
 
     if (forgeType === 'base_card') {
       if (dataMode === 'sentence') {
@@ -453,6 +489,7 @@ export const AiFactoryEngine = {
           required: ['term', 'definition', 'image_keyword', 'grammar_type', ...commonRequired]
         };
       }
+
 
       return {
         type: 'OBJECT',
@@ -487,6 +524,7 @@ export const AiFactoryEngine = {
         ]
       };
     }
+
 
     if (forgeType === 'matrix') {
       if (subType === 'match') {
@@ -577,6 +615,7 @@ export const AiFactoryEngine = {
         };
       }
     }
+
 
     if (forgeType === 'context') {
       if (subType === 'fill_blank') {
@@ -687,8 +726,10 @@ export const AiFactoryEngine = {
       }
     }
 
+
     return null;
   },
+
 
   // ============================================================================
   // 3. LÒ ĐÚC 1: LÒ ĐÚC CƠ SỞ (FORGE BASE CARD)
@@ -716,6 +757,7 @@ export const AiFactoryEngine = {
       if (historyPrompt) prompt += historyPrompt;
       const schema = AiFactoryEngine._getMasterSchema('base_card', null, dataMode, level);
 
+
       const aiPromise = callGeminiApi(prompt, schema, apiKey);
       let dynamicTimeout = 20000;
       try {
@@ -725,13 +767,16 @@ export const AiFactoryEngine = {
         }
       } catch (e) {}
 
+
       const timeoutPromise = new Promise((_, r) => {
         timeoutId = setTimeout(() => r(new Error('AI Base Card Timeout')), dynamicTimeout);
       });
 
+
       const res = await Promise.race([aiPromise, timeoutPromise]);
       clearTimeout(timeoutId);
       const parsed = parseAiJson(res.text);
+
 
       return {
         term: parsed.term,
@@ -753,6 +798,7 @@ export const AiFactoryEngine = {
       throw e;
     }
   },
+
 
   // ============================================================================
   // 4. LÒ ĐÚC 2: LÒ ĐÚC MA TRẬN (FORGE MATRIX)
@@ -781,6 +827,7 @@ export const AiFactoryEngine = {
       if (historyPrompt) prompt += historyPrompt;
       const schema = AiFactoryEngine._getMasterSchema('matrix', subType, dataMode, level);
 
+
       const aiPromise = callGeminiApi(prompt, schema, apiKey);
       let dynamicTimeout = 25000;
       try {
@@ -790,9 +837,11 @@ export const AiFactoryEngine = {
         }
       } catch (e) {}
 
+
       const timeoutPromise = new Promise((_, r) => {
         timeoutId = setTimeout(() => r(new Error('AI Matrix Timeout')), dynamicTimeout);
       });
+
 
       const res = await Promise.race([aiPromise, timeoutPromise]);
       clearTimeout(timeoutId);
@@ -804,6 +853,7 @@ export const AiFactoryEngine = {
         _tokenUsage: res.tokenMetadata
       };
 
+
       if (subType === 'odd_one_out' && result.words && Array.isArray(result.words)) {
         result.words = shuffleArray(result.words);
       }
@@ -813,6 +863,7 @@ export const AiFactoryEngine = {
       if ((subType === 'match' || subType === 'match_hard') && result.items) {
         result.items = shuffleArray(result.items);
       }
+
 
       return result;
     } catch (e) {
@@ -824,6 +875,7 @@ export const AiFactoryEngine = {
       throw e;
     }
   },
+
 
   // ============================================================================
   // 5. LÒ ĐÚC 3: LÒ ĐÚC NGỮ CẢNH (FORGE CONTEXT)
@@ -852,6 +904,7 @@ export const AiFactoryEngine = {
       if (historyPrompt) prompt += historyPrompt;
       const schema = AiFactoryEngine._getMasterSchema('context', subType, dataMode, level);
 
+
       const aiPromise = callGeminiApi(prompt, schema, apiKey);
       let dynamicTimeout = subType === 'reading_passage' ? 35000 : 25000;
       try {
@@ -865,12 +918,14 @@ export const AiFactoryEngine = {
         }
       } catch (e) {}
 
+
       const timeoutPromise = new Promise((_, r) => {
         timeoutId = setTimeout(
           () => r(new Error(`AI Context Timeout (${subType})`)),
           dynamicTimeout
         );
       });
+
 
       const res = await Promise.race([aiPromise, timeoutPromise]);
       clearTimeout(timeoutId);
@@ -882,11 +937,13 @@ export const AiFactoryEngine = {
         _tokenUsage: res.tokenMetadata
       };
 
+
       if (subType === 'listening' || subType === 'grammar_mcq' || subType === 'vocab_mcq') {
         if (result.options && Array.isArray(result.options)) {
           result.options = shuffleArray(result.options);
         }
       }
+
 
       return result;
     } catch (e) {
@@ -900,6 +957,7 @@ export const AiFactoryEngine = {
   }
 };
 
+
 // Named Exports tương thích trực tiếp với NewMapping.md
 export const batchEnrich = (...args) => AiFactoryEngine.batchEnrich(...args);
 export const getHistoryPrompt = (...args) => AiFactoryEngine.getHistoryPrompt(...args);
@@ -907,8 +965,13 @@ export const forgeBaseCard = (...args) => AiFactoryEngine.forgeBaseCard(...args)
 export const forgeMatrix = (...args) => AiFactoryEngine.forgeMatrix(...args);
 export const forgeContext = (...args) => AiFactoryEngine.forgeContext(...args);
 
+
 if (typeof window !== 'undefined') {
   window.AiFactoryEngine = AiFactoryEngine;
 }
 
+
 export default AiFactoryEngine;
+
+
+

@@ -1,22 +1,30 @@
 // ============================================================================
 // FILE 43/85: src/components/modals/ManualInputModal.jsx
-// NGUỒN GỐC: tang_4.js (Block 4.6)
+// NGUỒN GỐC: tang_4.js (Block 4.6 - Version 2.00)
 // NHIỆM VỤ: Modal Nhập dữ liệu thủ công từng thẻ (có nút AI điền tự động)
 //           hoặc nhập hàng loạt qua JSON.
 // ============================================================================
 
+
 import React, { useState, useEffect } from 'react';
 import { Icons } from '../common/Icons';
+
 
 const EMPTY_SINGLE_DATA = {
   term: '',
   pronunciation: '',
   definition: '',
   partOfSpeech: '',
+  topic: '',
+  analysis: '',
   example: '',
   sinoViet: '',
-  grammar_type: ''
+  image: '',
+  grammar_type: '',
+  level: '',
+  language: ''
 };
+
 
 /**
  * Helper hiển thị thông báo an toàn qua hệ thống Toast toàn cục
@@ -28,6 +36,7 @@ const notify = (msg, type = 'warning') => {
     console.warn(`[Toast - ${type}]:`, msg);
   }
 };
+
 
 /**
  * Modal Nhập dữ liệu thủ công từng thẻ hoặc nhập hàng loạt qua JSON
@@ -46,8 +55,10 @@ export const ManualInputModal = ({
   const [isFilling, setIsFilling] = useState(false);
   const [singleData, setSingleData] = useState(EMPTY_SINGLE_DATA);
 
+
   useEffect(() => {
     if (!isOpen) return;
+
 
     const timer = setTimeout(() => {
       setText('');
@@ -56,20 +67,49 @@ export const ManualInputModal = ({
       setIsFilling(false);
     }, 0);
 
+
     return () => clearTimeout(timer);
   }, [isOpen]);
+
 
   const handleSingleChange = (field, value) => {
     setSingleData((prev) => ({ ...prev, [field]: value }));
   };
 
+
   const handleSingleSubmit = () => {
     if (!singleData.term.trim()) return;
+
+
+    // Chuẩn hóa grammar_type về đúng mảng Array<string> theo Schema 12 trường
+    const normalizedGrammarType = Array.isArray(singleData.grammar_type)
+      ? singleData.grammar_type.filter(Boolean)
+      : typeof singleData.grammar_type === 'string' &&
+        singleData.grammar_type.trim() !== ''
+      ? singleData.grammar_type
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [];
+
+
+    const payload = {
+      ...singleData,
+      term: singleData.term.trim(),
+      grammar_type: normalizedGrammarType
+    };
+
+
+    if (!payload.level) delete payload.level;
+    if (!payload.language) delete payload.language;
+
+
     if (onAddCard) {
-      onAddCard(singleData);
+      onAddCard(payload);
     }
     setSingleData(EMPTY_SINGLE_DATA);
   };
+
 
   const handleAutoFillClick = async () => {
     if (!singleData.term.trim()) return;
@@ -78,9 +118,10 @@ export const ManualInputModal = ({
       return;
     }
 
+
     setIsFilling(true);
     try {
-      const result = await onAutoFill(singleData.term);
+      const result = await onAutoFill(singleData.term.trim());
       if (result) {
         if (result._tokenUsage) {
           const used = result._tokenUsage.totalTokenCount || 0;
@@ -91,28 +132,40 @@ export const ManualInputModal = ({
           localStorage.setItem('fc_total_tokens', String(currentTotal + used));
         }
 
+
         setSingleData((prev) => ({
           ...prev,
           pronunciation: result.pronunciation || prev.pronunciation,
           definition: result.definition || prev.definition,
           partOfSpeech: result.partOfSpeech || prev.partOfSpeech,
+          topic: result.topic || prev.topic,
+          analysis: result.analysis || prev.analysis,
           example: result.example || prev.example,
           sinoViet: result.sinoViet || prev.sinoViet,
+          image:
+            result.image && result.image.startsWith('http')
+              ? result.image
+              : prev.image,
           grammar_type: result.grammar_type
             ? Array.isArray(result.grammar_type)
               ? result.grammar_type.join(', ')
               : result.grammar_type
-            : prev.grammar_type
+            : prev.grammar_type,
+          level: result.level || prev.level,
+          language: result.language || prev.language
         }));
       }
     } catch (e) {
       console.error(e);
+      notify('Lỗi AI tự điền: ' + (e.message || 'Không xác định'), 'error');
     } finally {
       setIsFilling(false);
     }
   };
 
+
   if (!isOpen) return null;
+
 
   return (
     <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
@@ -129,6 +182,7 @@ export const ManualInputModal = ({
             <Icons.X size={20} />
           </button>
         </div>
+
 
         {/* Chuyển chế độ Nhập đơn / Nhập hàng loạt */}
         <div className="flex border-b">
@@ -154,13 +208,14 @@ export const ManualInputModal = ({
           </button>
         </div>
 
+
         {/* Body */}
         <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
           {mode === 'single' ? (
             <div className="space-y-4">
               <div className="relative">
                 <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">
-                  Từ vựng <span className="text-red-500">*</span>
+                  Từ vựng / Câu văn <span className="text-red-500">*</span>
                 </label>
                 <div className="flex gap-2">
                   <input
@@ -190,6 +245,7 @@ export const ManualInputModal = ({
                 </div>
               </div>
 
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div>
                   <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">
@@ -198,7 +254,7 @@ export const ManualInputModal = ({
                   <input
                     type="text"
                     className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-200 outline-none text-gray-600 font-sans text-sm"
-                    placeholder="Danh từ..."
+                    placeholder="n., v., adj..."
                     value={singleData.partOfSpeech || ''}
                     onChange={(e) =>
                       handleSingleChange('partOfSpeech', e.target.value)
@@ -221,7 +277,7 @@ export const ManualInputModal = ({
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">
-                    Hán Việt
+                    Hán Việt / Dịch sát nghĩa
                   </label>
                   <input
                     type="text"
@@ -235,12 +291,26 @@ export const ManualInputModal = ({
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">
-                    Nhãn ngữ pháp
+                    Chủ đề
                   </label>
                   <input
                     type="text"
                     className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-200 outline-none text-gray-600 text-sm"
-                    placeholder="ba_sentence, verb..."
+                    placeholder="Daily Life, Education..."
+                    value={singleData.topic || ''}
+                    onChange={(e) =>
+                      handleSingleChange('topic', e.target.value)
+                    }
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">
+                    Nhãn ngữ pháp (Cách nhau bởi dấu phẩy)
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-200 outline-none text-gray-600 text-sm"
+                    placeholder="present_simple, passive_voice, ba_sentence..."
                     value={singleData.grammar_type}
                     onChange={(e) =>
                       handleSingleChange('grammar_type', e.target.value)
@@ -248,6 +318,7 @@ export const ManualInputModal = ({
                   />
                 </div>
               </div>
+
 
               <div>
                 <label className="block text-xs font-bold text-blue-600 mb-1 uppercase">
@@ -264,13 +335,29 @@ export const ManualInputModal = ({
                 />
               </div>
 
+
               <div>
-                <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">
-                  Giải thích chi tiết & Ví dụ
+                <label className="block text-xs font-bold text-purple-600 mb-1 uppercase">
+                  Phân tích chi tiết / Ngữ pháp
                 </label>
                 <textarea
-                  className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-200 outline-none resize-none h-24"
-                  placeholder={'Ví dụ: Lời chào phổ biến...\n\nHello world!'}
+                  className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-200 outline-none resize-none h-20 text-sm"
+                  placeholder="Cấu trúc ngữ pháp, cách dùng hoặc từ đồng nghĩa..."
+                  value={singleData.analysis || ''}
+                  onChange={(e) =>
+                    handleSingleChange('analysis', e.target.value)
+                  }
+                />
+              </div>
+
+
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">
+                  Câu ví dụ minh họa
+                </label>
+                <textarea
+                  className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-200 outline-none resize-none h-24 text-sm"
+                  placeholder={'- Hello world! (Chào thế giới!)'}
                   value={singleData.example}
                   onChange={(e) =>
                     handleSingleChange('example', e.target.value)
@@ -285,13 +372,14 @@ export const ManualInputModal = ({
               </p>
               <textarea
                 className="w-full p-3 border rounded-lg text-sm font-mono h-60 focus:ring-2 focus:ring-blue-200 outline-none resize-none bg-gray-50"
-                placeholder='[{"term":"Hello", "definition":"Xin chào", "pronunciation":"/həˈloʊ/", "partOfSpeech":"Danh từ"}, ...]'
+                placeholder='[{"term":"Hello", "definition":"Xin chào", "pronunciation":"/həˈloʊ/", "partOfSpeech":"n."}, ...]'
                 value={text}
                 onChange={(e) => setText(e.target.value)}
               />
             </>
           )}
         </div>
+
 
         {/* Footer */}
         <div className="p-4 border-t bg-gray-50 flex justify-end gap-3">
@@ -324,9 +412,14 @@ export const ManualInputModal = ({
   );
 };
 
+
 // Gắn vào window để tương thích ngược trong quá trình chuyển đổi
 if (typeof window !== 'undefined') {
   window.ManualInputModal = ManualInputModal;
 }
 
+
 export default ManualInputModal;
+
+
+

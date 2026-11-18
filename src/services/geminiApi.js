@@ -4,6 +4,7 @@
 // NHIỆM VỤ: Trạm điều phối Gemini API: Mutex Lock, Radar theo dõi RPD, 7 tầng Proxy vượt CORS, Vòng lặp kép Key × Model Cascade, Làm giàu thẻ (Từ vựng & Câu văn).
 // ============================================================================
 
+
 import { STORAGE_KEYS, AI_MODELS, IoeEnumRegistry } from '../config/constants.js';
 import { DEFAULT_PROMPTS } from '../config/prompts.js';
 import {
@@ -15,10 +16,12 @@ import {
 } from '../utils/helpers.js';
 import { IoeDataEngine } from '../engines/pedagogyEngine.js';
 
+
 // ============================================================================
 // 0.A CƠ CHẾ KHÓA ĐA LUỒNG (GLOBAL MUTEX LOCK) - CHỐNG RACE CONDITION
 // ============================================================================
 let apiMutex = Promise.resolve();
+
 
 export const withApiLock = async (taskFn) => {
   const previousLock = apiMutex;
@@ -34,12 +37,14 @@ export const withApiLock = async (taskFn) => {
   }
 };
 
+
 // ============================================================================
 // 0.B HỆ THỐNG QUẢN LÝ ÁN PHẠT API & CẦU DAO TOÀN CỤC
 // ============================================================================
 export const getPersistentCooldowns = () => {
   return safeJsonParse('fc_api_cooldowns', {});
 };
+
 
 export const setKeyCooldown = (key, durationMs) => {
   if (!key) return;
@@ -48,6 +53,7 @@ export const setKeyCooldown = (key, durationMs) => {
   cooldowns[key] = { startedAt: now, expireAt: now + durationMs };
   localStorage.setItem('fc_api_cooldowns', JSON.stringify(cooldowns));
 };
+
 
 export const cleanExpiredCooldowns = () => {
   const cooldowns = getPersistentCooldowns();
@@ -63,24 +69,29 @@ export const cleanExpiredCooldowns = () => {
   return cooldowns;
 };
 
+
 export const isGlobalPaused = () => {
   const pauseUntil = parseInt(localStorage.getItem('fc_global_api_pause') || '0', 10);
   return Date.now() < pauseUntil;
 };
 
+
 export const triggerGlobalPause = (durationMs = 15000) => {
   localStorage.setItem('fc_global_api_pause', String(Date.now() + durationMs));
 };
+
 
 export const getCooldown429Ms = () => {
   const config = safeJsonParse('fc_ai_config', {});
   return (config.cooldown429 || 120) * 60 * 1000;
 };
 
+
 // Helper: Tập hợp danh sách API Key an toàn từ Pool + Key đơn + Paid Key
 const resolveEffectiveKeyPool = (apiKeyOverride = null) => {
   const rawPool = safeJsonParse('fc_apikey_pool', []);
   const pool = Array.isArray(rawPool) ? [...rawPool] : [];
+
 
   const addUniqueKey = (k) => {
     if (!k || typeof k !== 'string') return;
@@ -90,7 +101,9 @@ const resolveEffectiveKeyPool = (apiKeyOverride = null) => {
     }
   };
 
+
   if (apiKeyOverride) addUniqueKey(apiKeyOverride);
+
 
   const primaryStorageKey = STORAGE_KEYS?.API_KEY || 'fc_apikey';
   addUniqueKey(localStorage.getItem(primaryStorageKey));
@@ -98,8 +111,10 @@ const resolveEffectiveKeyPool = (apiKeyOverride = null) => {
   addUniqueKey(localStorage.getItem('fc_gemini_api_key'));
   addUniqueKey(localStorage.getItem('fc_paid_apikey'));
 
+
   return pool;
 };
+
 
 // ============================================================================
 // 0.C BỘ ĐẾM RPD (REQUESTS PER DAY) THÔNG MINH - MA TRẬN 2 CHIỀU
@@ -119,6 +134,7 @@ export const RPDTracker = {
     return `${yyyy}-${mm}-${dd}`;
   },
 
+
   _load: function () {
     const key = STORAGE_KEYS?.QUOTA_TRACKER || 'fc_quota_tracker';
     let data = safeJsonParse(key, null);
@@ -130,10 +146,12 @@ export const RPDTracker = {
     return data;
   },
 
+
   _save: function (data) {
     const key = STORAGE_KEYS?.QUOTA_TRACKER || 'fc_quota_tracker';
     localStorage.setItem(key, JSON.stringify(data));
   },
+
 
   getUsage: function (key, modelId) {
     const data = this._load();
@@ -142,6 +160,7 @@ export const RPDTracker = {
     const cleanK = String(key).replace(/["'\s]/g, '');
     return data.usage[cleanK]?.[modelId] || data.usage[key]?.[modelId] || 0;
   },
+
 
   incrementUsage: function (key, modelId) {
     if (!key || !modelId) return;
@@ -152,10 +171,12 @@ export const RPDTracker = {
     this._save(data);
   },
 
+
   // Alias tương thích NewMapping.md
   increment: function (key, modelId) {
     return this.incrementUsage(key, modelId);
   },
+
 
   isExhausted: function (key, modelId, limitOverride = null) {
     if (!key || !modelId) return false;
@@ -167,6 +188,7 @@ export const RPDTracker = {
     const limit = modelObj?.rpdLimit || 500;
     return used >= limit;
   },
+
 
   getMatrix: function (keys = [], models = AI_MODELS || []) {
     const matrix = {};
@@ -184,6 +206,7 @@ export const RPDTracker = {
   }
 };
 
+
 // ============================================================================
 // 1. TẢI DỮ LIỆU TỪ GOOGLE SHEETS BẰNG MẠNG LƯỚI 7 PROXY THÔNG MINH
 // ============================================================================
@@ -195,6 +218,7 @@ export const fetchWithFallback = async (url) => {
         .replace(/gid=0/, `gid=${(url.match(/gid=(\d+)/) || ['', '0'])[1]}`)
     : url;
   const cacheBuster = url.includes('?') ? `&cb=${Date.now()}` : `?cb=${Date.now()}`;
+
 
   const strategies = [
     { name: 'Direct', url: finalUrl },
@@ -215,6 +239,7 @@ export const fetchWithFallback = async (url) => {
     { name: 'CorsSH', url: `https://proxy.cors.sh/${finalUrl}` }
   ];
 
+
   for (const s of strategies) {
     try {
       const res = await fetch(s.url);
@@ -225,6 +250,7 @@ export const fetchWithFallback = async (url) => {
   }
   throw new Error('Lỗi tải dữ liệu mạng (Tất cả Proxy đều bị chặn)');
 };
+
 
 // ============================================================================
 // 2. THĂM DÒ XUNG KÍCH (HEURISTIC PROBING - RADAR)
@@ -238,6 +264,7 @@ export const pingGeminiKey = async (apiKey) => {
     const primaryModelId =
       localStorage.getItem(STORAGE_KEYS?.AI_MODEL || 'fc_ai_model') || 'gemini-3.5-flash-lite';
 
+
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${primaryModelId}:generateContent?key=${k}`,
       {
@@ -248,6 +275,7 @@ export const pingGeminiKey = async (apiKey) => {
       }
     );
     clearTimeout(timeoutId);
+
 
     if (res.status === 429) {
       setKeyCooldown(k, getCooldown429Ms());
@@ -261,6 +289,7 @@ export const pingGeminiKey = async (apiKey) => {
   }
 };
 
+
 // ============================================================================
 // 3. GỌI API GEMINI VẠN NĂNG (VÒNG LẶP KÉP: KEY TRƯỚC, MODEL SAU)
 // ============================================================================
@@ -270,10 +299,12 @@ export const callGeminiApi = async (prompt, schema = null, apiKeyOverride = null
       throw new Error('[GLOBAL_PAUSE] Mạng đang tạm nghỉ 15s để chống bộ lọc IP Spam.');
     }
 
+
     const keyPool = resolveEffectiveKeyPool(apiKeyOverride);
     if (keyPool.length === 0) {
       throw new Error('Chưa nhập API Key (Vui lòng cấu hình trong Settings)');
     }
+
 
     let dynamicTimeoutMs = 25000;
     try {
@@ -285,6 +316,7 @@ export const callGeminiApi = async (prompt, schema = null, apiKeyOverride = null
       // Bỏ qua lỗi cấu hình
     }
 
+
     const abortSignal =
       typeof window !== 'undefined' && window.__currentGameAbortController
         ? window.__currentGameAbortController.signal
@@ -293,12 +325,14 @@ export const callGeminiApi = async (prompt, schema = null, apiKeyOverride = null
       throw new DOMException('Người dùng đã hủy thao tác', 'AbortError');
     }
 
+
     const pointer = parseInt(localStorage.getItem('fc_key_pointer') || '0', 10);
     const poolSize = keyPool.length;
     const isAuto = localStorage.getItem('fc_is_auto_cascade') !== 'false';
     const isPremium = localStorage.getItem('fc_is_premium_key') === 'true';
     const primaryModelId =
       localStorage.getItem(STORAGE_KEYS?.AI_MODEL || 'fc_ai_model') || 'gemini-3.5-flash-lite';
+
 
     const modelsPool = AI_MODELS
       ? [...AI_MODELS]
@@ -313,6 +347,7 @@ export const callGeminiApi = async (prompt, schema = null, apiKeyOverride = null
           { id: 'gemini-2.5-flash', rpdLimit: 20 }
         ];
 
+
     const cascadeModels = [];
     const primaryObj = modelsPool.find((m) => m.id === primaryModelId);
     if (primaryObj) cascadeModels.push(primaryObj);
@@ -320,10 +355,12 @@ export const callGeminiApi = async (prompt, schema = null, apiKeyOverride = null
       if (m.id !== primaryModelId) cascadeModels.push(m);
     });
 
+
     const body = { contents: [{ parts: [{ text: prompt }] }] };
     if (schema) {
       body.generationConfig = { responseMimeType: 'application/json', responseSchema: schema };
     }
+
 
     let finalData = null;
     let usedModelId = null;
@@ -331,25 +368,31 @@ export const callGeminiApi = async (prompt, schema = null, apiKeyOverride = null
     let lastError = null;
     let shortestWaitMs = Infinity;
 
+
     cleanExpiredCooldowns();
     const activeCooldowns = getPersistentCooldowns();
+
 
     for (let i = 0; i < poolSize; i++) {
       const checkIndex = (pointer + i) % poolSize;
       const rawK = keyPool[checkIndex];
       if (!rawK || rawK.length < 10) continue;
 
+
       const cleanK = rawK.replace(/["'\s]/g, '');
       const cdData = activeCooldowns[cleanK];
       const cooldownUntil = cdData ? cdData.expireAt : 0;
       const waitMs = cooldownUntil - Date.now();
+
 
       if (waitMs > 0) {
         if (waitMs < shortestWaitMs) shortestWaitMs = waitMs;
         continue;
       }
 
+
       const modelsToTry = isAuto ? cascadeModels : [cascadeModels[0]];
+
 
       for (const model of modelsToTry) {
         const currentRpd = RPDTracker.getUsage(cleanK, model.id);
@@ -358,10 +401,12 @@ export const callGeminiApi = async (prompt, schema = null, apiKeyOverride = null
           continue;
         }
 
+
         try {
           const controller = new AbortController();
           const onAbort = () => controller.abort();
           if (abortSignal) abortSignal.addEventListener('abort', onAbort);
+
 
           const fetchPromise = fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${model.id}:generateContent?key=${cleanK}`,
@@ -375,6 +420,7 @@ export const callGeminiApi = async (prompt, schema = null, apiKeyOverride = null
             if (abortSignal) abortSignal.removeEventListener('abort', onAbort);
           });
 
+
           const timeoutPromise = new Promise((_, reject) => {
             setTimeout(() => {
               controller.abort();
@@ -382,7 +428,9 @@ export const callGeminiApi = async (prompt, schema = null, apiKeyOverride = null
             }, dynamicTimeoutMs);
           });
 
+
           const res = await Promise.race([fetchPromise, timeoutPromise]);
+
 
           if (res.status === 429) {
             lastError = new Error(`429: Too Many Requests (${model.id})`);
@@ -394,12 +442,14 @@ export const callGeminiApi = async (prompt, schema = null, apiKeyOverride = null
           }
           if (res.status === 500) throw new Error('500: Internal Server Error');
 
+
           if (!res.ok && res.status !== 200 && res.status !== 400 && res.status !== 403) {
             const contentType = res.headers.get('content-type');
             if (contentType && contentType.indexOf('application/json') === -1) {
               throw new Error(`HTTP ${res.status}: Lỗi mạng không xác định (Non-JSON)`);
             }
           }
+
 
           const d = await res.json();
           if (d.error) {
@@ -443,9 +493,11 @@ export const callGeminiApi = async (prompt, schema = null, apiKeyOverride = null
             throw new Error(d.error.message);
           }
 
+
           if (!d.candidates?.[0]?.content?.parts?.[0]?.text) {
             throw new Error('API trả về rỗng');
           }
+
 
           finalData = d;
           usedModelId = model.id;
@@ -464,8 +516,10 @@ export const callGeminiApi = async (prompt, schema = null, apiKeyOverride = null
         }
       }
 
+
       if (finalData) break;
     }
+
 
     if (!finalData) {
       if (shortestWaitMs !== Infinity && shortestWaitMs > 0) {
@@ -477,9 +531,11 @@ export const callGeminiApi = async (prompt, schema = null, apiKeyOverride = null
       throw new Error('Không có Key & Mô hình AI nào khả dụng.');
     }
 
+
     RPDTracker.incrementUsage(usedApiKey, usedModelId);
     const resultText = finalData.candidates[0].content.parts[0].text;
     const tokenMetadata = finalData.usageMetadata || null;
+
 
     if (keyPool.length > 1) {
       setKeyCooldown(usedApiKey, 5000);
@@ -489,10 +545,12 @@ export const callGeminiApi = async (prompt, schema = null, apiKeyOverride = null
       localStorage.setItem(activeStorageKey, usedApiKey);
     }
 
+
     await new Promise((r) => setTimeout(r, 3000));
     return { text: resultText, tokenMetadata };
   });
 };
+
 
 // ============================================================================
 // 4. LÀM GIÀU THẺ TỰ ĐỘNG BẰNG AI (DYNAMIC SCHEMA & POOLING)
@@ -511,8 +569,10 @@ export const fillCardWithAi = async (
       throw new Error('[GLOBAL_PAUSE] Mạng đang tạm nghỉ 15s để chống bộ lọc IP Spam.');
     }
 
+
     const keyPool = resolveEffectiveKeyPool(apiKey);
     if (keyPool.length === 0) throw new Error('Chưa nhập API Key (Thiếu Key Pool)');
+
 
     let dynamicTimeoutMs = 25000;
     try {
@@ -524,15 +584,18 @@ export const fillCardWithAi = async (
       // Bỏ qua lỗi cấu hình
     }
 
+
     const cleanTermForAi = term ? term.replace(/\u0332/g, '') : '';
     const isSentence = dataMode === 'sentence';
     const typeLabel = isSentence ? 'CÂU VĂN' : 'TỪ VỰNG';
+
 
     const activePedagogyEngine =
       IoeDataEngine || (typeof window !== 'undefined' ? window.IoeDataEngine : null);
     const levelDictionary = activePedagogyEngine?.LEVEL_DICTIONARY || {};
     let translatedLevels = [];
     let isAdvancedLevel = false;
+
 
     if (levelContext && Array.isArray(levelContext) && levelContext.length > 0) {
       translatedLevels = levelContext.map((lvl) => levelDictionary[lvl] || lvl);
@@ -548,7 +611,9 @@ export const fillCardWithAi = async (
       ];
     }
 
+
     const posThresholdStr = isAdvancedLevel ? '10%' : '20%';
+
 
     // Lấy luật Sư phạm động từ Ma trận (Pedagogy Routing Matrix)
     const pedagogyRules = activePedagogyEngine?.getPedagogyMatrixRule
@@ -558,6 +623,7 @@ export const fillCardWithAi = async (
           definition:
             'Bản dịch Tiếng Việt trực tiếp, chuẩn xác. TUYỆT ĐỐI KHÔNG giải nghĩa kiểu từ điển bách khoa.'
         };
+
 
     let propertiesToFetch = {
       term: { type: 'STRING' },
@@ -578,6 +644,7 @@ export const fillCardWithAi = async (
       grammar_type: { type: 'ARRAY', items: { type: 'STRING' } }
     };
 
+
     let requiredFields = [
       'term',
       'pronunciation',
@@ -592,6 +659,7 @@ export const fillCardWithAi = async (
       'grammar_type'
     ];
 
+
     if (lang !== 'zh') {
       delete propertiesToFetch.sinoViet;
       requiredFields = requiredFields.filter((f) => f !== 'sinoViet');
@@ -604,6 +672,7 @@ export const fillCardWithAi = async (
       delete propertiesToFetch.grammar_type;
       requiredFields = requiredFields.filter((f) => f !== 'grammar_type');
     }
+
 
     let isTrimming = false;
     if (targetFields && Array.isArray(targetFields) && targetFields.length > 0) {
@@ -621,6 +690,7 @@ export const fillCardWithAi = async (
         requiredFields = ['term'];
       }
     }
+
 
     const strictOrder = [
       'posAnalysis',
@@ -644,9 +714,11 @@ export const fillCardWithAi = async (
     propertiesToFetch = orderedProperties;
     requiredFields.sort((a, b) => strictOrder.indexOf(a) - strictOrder.indexOf(b));
 
+
     const promptKey = isSentence ? 'enrich_sentence' : 'enrich_word';
     let basePrompt = DEFAULT_PROMPTS ? DEFAULT_PROMPTS[promptKey] : 'Phân tích {term} ({lang})';
     basePrompt = basePrompt.replace(/{term}/g, cleanTermForAi).replace(/{lang}/g, lang);
+
 
     let dynamicInstruction = '';
     if (requiredFields.includes('pronunciation') || requiredFields.includes('sinoViet')) {
@@ -658,6 +730,7 @@ export const fillCardWithAi = async (
               : '')
           : ' Đối với pronunciation: BẮT BUỘC xuất chuẩn quốc tế IPA. Tuyệt đối KHÔNG xuất trường sinoViet.';
     }
+
 
     let userQuery = '';
     if (isTrimming) {
@@ -680,6 +753,7 @@ export const fillCardWithAi = async (
       userQuery = `Hãy phân tích toàn diện ${typeLabel} này: "${cleanTermForAi}" (Ngôn ngữ: ${lang}). Bắt buộc xuất đầy đủ JSON Schema đã định nghĩa.${dynamicInstruction}\n`;
     }
 
+
     // Luôn bơm Vắc-xin Ngữ pháp cho chế độ Từ vựng khi cần phân loại từ loại (bất kể isTrimming hay Full Enrich)
     if (
       !isSentence &&
@@ -692,6 +766,7 @@ export const fillCardWithAi = async (
       userQuery += grammarRule + '\n';
     }
 
+
     if (isTrimming) {
       if (!isSentence && requiredFields.includes('posAnalysis')) {
         userQuery += `4. ĐỊNH DẠNG & THỨ TỰ BẮT BUỘC: TRỌNG TÂM: Phải xuất trường 'posAnalysis' ĐẦU TIÊN trong chuỗi JSON để làm nháp. Chỉ xuất CHÍNH XÁC các trường: ${requiredFields.join(', ')}.\n`;
@@ -700,6 +775,7 @@ export const fillCardWithAi = async (
       }
       userQuery += `${dynamicInstruction}`;
     }
+
 
     let validTagsStr = '';
     if (IoeEnumRegistry && IoeEnumRegistry.LEVEL_TO_TRAPS) {
@@ -719,6 +795,7 @@ export const fillCardWithAi = async (
     } else {
       validTagsStr = `Chỉ xuất mã nhãn hợp lệ hoặc mảng rỗng [].`;
     }
+
 
     let fieldRules = `\n[QUY TẮC CÁC TRƯỜNG]:\n`;
     if (requiredFields.includes('pronunciation') && isSentence) {
@@ -794,6 +871,7 @@ export const fillCardWithAi = async (
     }
     userQuery += fieldRules;
 
+
     const payload = {
       contents: [{ parts: [{ text: userQuery }] }],
       systemInstruction: {
@@ -815,6 +893,7 @@ export const fillCardWithAi = async (
       }
     };
 
+
     const abortSignal =
       typeof window !== 'undefined' && window.__currentGameAbortController
         ? window.__currentGameAbortController.signal
@@ -823,12 +902,14 @@ export const fillCardWithAi = async (
       throw new DOMException('Người dùng đã hủy thao tác', 'AbortError');
     }
 
+
     const pointer = parseInt(localStorage.getItem('fc_key_pointer') || '0', 10);
     const poolSize = keyPool.length;
     const isAuto = localStorage.getItem('fc_is_auto_cascade') !== 'false';
     const isPremium = localStorage.getItem('fc_is_premium_key') === 'true';
     const primaryModelId =
       localStorage.getItem(STORAGE_KEYS?.AI_MODEL || 'fc_ai_model') || 'gemini-3.5-flash-lite';
+
 
     const modelsPool = AI_MODELS
       ? [...AI_MODELS]
@@ -843,6 +924,7 @@ export const fillCardWithAi = async (
           { id: 'gemini-2.5-flash', rpdLimit: 20 }
         ];
 
+
     const cascadeModels = [];
     const primaryObj = modelsPool.find((m) => m.id === primaryModelId);
     if (primaryObj) cascadeModels.push(primaryObj);
@@ -850,31 +932,38 @@ export const fillCardWithAi = async (
       if (m.id !== primaryModelId) cascadeModels.push(m);
     });
 
+
     let finalData = null;
     let usedModelId = null;
     let usedApiKey = null;
     let lastError = null;
     let shortestWaitMs = Infinity;
 
+
     cleanExpiredCooldowns();
     const activeCooldowns = getPersistentCooldowns();
+
 
     for (let i = 0; i < poolSize; i++) {
       const checkIndex = (pointer + i) % poolSize;
       const rawK = keyPool[checkIndex];
       if (!rawK || rawK.length < 10) continue;
 
+
       const cleanK = rawK.replace(/["'\s]/g, '');
       const cdData = activeCooldowns[cleanK];
       const cooldownUntil = cdData ? cdData.expireAt : 0;
       const waitMs = cooldownUntil - Date.now();
+
 
       if (waitMs > 0) {
         if (waitMs < shortestWaitMs) shortestWaitMs = waitMs;
         continue;
       }
 
+
       const modelsToTry = isAuto ? cascadeModels : [cascadeModels[0]];
+
 
       for (const model of modelsToTry) {
         const currentRpd = RPDTracker.getUsage(cleanK, model.id);
@@ -883,10 +972,12 @@ export const fillCardWithAi = async (
           continue;
         }
 
+
         try {
           const controller = new AbortController();
           const onAbort = () => controller.abort();
           if (abortSignal) abortSignal.addEventListener('abort', onAbort);
+
 
           const fetchPromise = fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${model.id}:generateContent?key=${cleanK}`,
@@ -900,6 +991,7 @@ export const fillCardWithAi = async (
             if (abortSignal) abortSignal.removeEventListener('abort', onAbort);
           });
 
+
           const timeoutPromise = new Promise((_, reject) => {
             setTimeout(() => {
               controller.abort();
@@ -911,7 +1003,9 @@ export const fillCardWithAi = async (
             }, dynamicTimeoutMs);
           });
 
+
           const res = await Promise.race([fetchPromise, timeoutPromise]);
+
 
           if (res.status === 429) {
             lastError = new Error(`429: Too Many Requests (${model.id})`);
@@ -923,12 +1017,14 @@ export const fillCardWithAi = async (
           }
           if (res.status === 500) throw new Error('500: Internal Server Error');
 
+
           if (!res.ok && res.status !== 200 && res.status !== 400 && res.status !== 403) {
             const contentType = res.headers.get('content-type');
             if (contentType && contentType.indexOf('application/json') === -1) {
               throw new Error(`HTTP ${res.status}: Lỗi mạng không xác định (Non-JSON)`);
             }
           }
+
 
           const data = await res.json();
           if (data.error) {
@@ -976,6 +1072,7 @@ export const fillCardWithAi = async (
             throw new Error(data.error.message);
           }
 
+
           finalData = data;
           usedModelId = model.id;
           usedApiKey = cleanK;
@@ -993,8 +1090,10 @@ export const fillCardWithAi = async (
         }
       }
 
+
       if (finalData) break;
     }
+
 
     if (!finalData) {
       if (shortestWaitMs !== Infinity && shortestWaitMs > 0) {
@@ -1006,7 +1105,9 @@ export const fillCardWithAi = async (
       throw new Error('Không có Key & Mô hình AI nào khả dụng.');
     }
 
+
     RPDTracker.incrementUsage(usedApiKey, usedModelId);
+
 
     if (keyPool.length > 1) {
       setKeyCooldown(usedApiKey, 5000);
@@ -1016,16 +1117,19 @@ export const fillCardWithAi = async (
       localStorage.setItem(activeStorageKey, usedApiKey);
     }
 
+
     const text = finalData.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) throw new Error('AI không trả về kết quả');
+
 
     const parsed = parseAiJson(text);
     if (lang === 'zh' && parsed.sinoViet) {
       parsed.sinoViet = parsed.sinoViet
-        .replace(/\(.*?\)/g, '')
+        .replace(/.*?/g, '')
         .replace(/（.*?）/g, '')
         .trim();
     }
+
 
     const finalResult = { ...parsed, term: term };
     for (const key in finalResult) {
@@ -1036,6 +1140,7 @@ export const fillCardWithAi = async (
     delete finalResult.posAnalysis;
     delete finalResult.image;
 
+
     if (finalResult.image_keyword && finalResult.image_keyword.trim() !== '') {
       finalResult.image = `https://tse4.mm.bing.net/th?q=${encodeURIComponent(finalResult.image_keyword.trim())}&w=300&h=300&c=7&rs=1&p=0`;
     }
@@ -1043,10 +1148,12 @@ export const fillCardWithAi = async (
       finalResult._tokenUsage = finalData.usageMetadata;
     }
 
+
     await new Promise((r) => setTimeout(r, 3000));
     return finalResult;
   });
 };
+
 
 // ============================================================================
 // 5. TẠO NHIỄU CHO GAME (QUIZ / MATCH)
@@ -1067,6 +1174,7 @@ export const fetchAiDistractors = async (baseText, targetText) => {
     definition: cleanTarget
   });
 
+
   try {
     const { text, tokenMetadata } = await callGeminiApi(prompt, schema);
     const res = parseAiJson(text);
@@ -1077,6 +1185,7 @@ export const fetchAiDistractors = async (baseText, targetText) => {
     return [];
   }
 };
+
 
 export const fetchAiDistractorsBatch = async (items, lang) => {
   const schema = {
@@ -1092,10 +1201,12 @@ export const fetchAiDistractorsBatch = async (items, lang) => {
     })
     .join('\n');
 
+
   const isSentenceMode =
     items.length > 0 && detectSentence(items[0].term ? items[0].term.replace(/\u0332/g, '') : '');
   const promptKey = isSentenceMode ? 'match_sentence' : 'match_word';
   const prompt = getPrompt(promptKey, { itemsText, fullLang, count: items.length });
+
 
   try {
     const { text, tokenMetadata } = await callGeminiApi(prompt, schema);
@@ -1108,6 +1219,7 @@ export const fetchAiDistractorsBatch = async (items, lang) => {
   }
 };
 
+
 // ============================================================================
 // 6. GIẢI THÍCH NGỮ PHÁP (GRAMMAR EXPLAIN)
 // ============================================================================
@@ -1117,6 +1229,7 @@ export const explainSentenceGrammar = async (sentence, lang, apiKey) => {
   const { text, tokenMetadata } = await callGeminiApi(prompt, null, apiKey);
   return { text: cleanText(text), _tokenUsage: tokenMetadata };
 };
+
 
 export const GeminiApiService = {
   withApiLock,
@@ -1136,10 +1249,13 @@ export const GeminiApiService = {
   explainSentenceGrammar
 };
 
+
 if (typeof window !== 'undefined') {
   window.GeminiApiService = GeminiApiService;
   window.RPDTracker = RPDTracker;
   window.Utils = Object.assign(window.Utils || {}, GeminiApiService);
 }
 
+
 export default GeminiApiService;
+

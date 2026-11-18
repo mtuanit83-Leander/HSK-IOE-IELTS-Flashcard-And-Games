@@ -1,7 +1,16 @@
+// ============================================================================
+// FILE 37/85: src/components/modals/NotebookModal.jsx
+// NGUỒN GỐC: tang_4.js (Block 4.3 - Version 1.05)
+// NHIỆM VỤ: Modal Sổ tay từ vựng (kèm ReviewDropdown ôn tập vạn năng,
+//           Global Local-First Lookup và tính năng AI Tự điền hàng loạt có chống spam).
+// ============================================================================
+
+
 import React, { useState, useEffect } from 'react';
 import { Icons } from '../common/Icons';
 import { Utils } from '../../utils/helpers';
 import { fillCardWithAi } from '../../services/geminiApi';
+
 
 /**
  * Helper hiển thị thông báo an toàn qua hệ thống Toast toàn cục
@@ -14,6 +23,117 @@ const notify = (msg, type = 'info') => {
   }
 };
 
+
+/**
+ * Đọc trực tiếp ngữ cảnh cấp độ hiện tại từ LocalStorage (Đồng bộ với useAiLogic)
+ */
+const getDirectLevelContext = (lang) => {
+  const defaultLvl = lang === 'zh' ? 'zh_level_1' : 'en_level_4';
+  try {
+    const saved = localStorage.getItem('fc_current_level_' + lang);
+    if (!saved) return [defaultLvl];
+    const parsed = JSON.parse(saved);
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    if (typeof parsed === 'string' && parsed.trim() !== '') return [parsed];
+  } catch (e) {
+    const raw = localStorage.getItem('fc_current_level_' + lang);
+    if (raw && typeof raw === 'string') {
+      const clean = raw.replace(/["[\]]/g, '').trim();
+      if (clean) return [clean];
+    }
+  }
+  return [defaultLvl];
+};
+
+
+/**
+ * Tra cứu thẻ trong toàn bộ các kho dữ liệu cục bộ (Local-First Lookup)
+ */
+const findCardInLocalPools = (term, lang, sourceData = []) => {
+  if (!term || typeof term !== 'string') return null;
+  const target = term.toLowerCase().trim();
+  if (!target) return null;
+
+
+  const safeParse =
+    Utils?.safeJsonParse ||
+    (typeof window !== 'undefined' && window.Utils?.safeJsonParse) ||
+    ((key, def) => {
+      try {
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : def;
+      } catch (e) {
+        return def;
+      }
+    });
+
+
+  // 1. Tìm trong sourceData (danh sách thẻ đang hiển thị) và fc_data_${lang}
+  const activeDeck = safeParse('fc_data_' + lang, []);
+  const primaryList = [
+    ...(Array.isArray(sourceData) ? sourceData : []),
+    ...(Array.isArray(activeDeck) ? activeDeck : [])
+  ];
+
+
+  const directMatch = primaryList.find(
+    (c) =>
+      c &&
+      c.term &&
+      c.term.toLowerCase().trim() === target &&
+      c.definition &&
+      c.definition.toString().trim() !== ''
+  );
+  if (directMatch) return directMatch;
+
+
+  // 2. Quét sâu vào Kho Master Data 9 cấp độ (Từ vựng & Câu văn)
+  const masterKeys = [
+    `fc_master_data_${lang}_vocab`,
+    `fc_master_data_${lang}_sentence`
+  ];
+  for (const key of masterKeys) {
+    const pool = safeParse(key, null);
+    if (pool && typeof pool === 'object') {
+      for (const levelArr of Object.values(pool)) {
+        if (Array.isArray(levelArr)) {
+          const found = levelArr.find(
+            (c) =>
+              c &&
+              c.term &&
+              c.term.toLowerCase().trim() === target &&
+              c.definition &&
+              c.definition.toString().trim() !== ''
+          );
+          if (found) return found;
+        }
+      }
+    }
+  }
+
+
+  return null;
+};
+
+
+/**
+ * Tạo dòng trống mặc định ở cuối bảng Sổ tay
+ */
+const createBlankNotebookRow = (seed = 0) => ({
+  term: '',
+  pronunciation: '',
+  definition: '',
+  partOfSpeech: '',
+  topic: '',
+  analysis: '',
+  example: '',
+  sinoViet: '',
+  image: '',
+  grammar_type: [],
+  _tempId: Date.now() + seed
+});
+
+
 /**
  * Component Menu Ôn Tập Vạn Năng (ReviewDropdown)
  * Dùng chung cho cả Sổ tay từ vựng (NotebookModal) và Sổ tay cần nhớ (IncorrectModal)
@@ -24,6 +144,7 @@ export const ReviewDropdown = ({
   mainColor = 'blue'
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+
 
   const games = [
     { id: 'flashcard', name: 'Học Thẻ Lật', min: 1, icon: 'BookOpen' },
@@ -38,6 +159,7 @@ export const ReviewDropdown = ({
     { id: 'listening', name: 'Đôi Tai Vàng', min: 1, icon: 'Headphones' },
     { id: 'reading', name: 'Đọc Hiểu', min: 1, icon: 'BookOpen' }
   ];
+
 
   return (
     <div className="relative inline-block text-left">
@@ -56,12 +178,14 @@ export const ReviewDropdown = ({
         />
       </button>
 
+
       {isOpen && (
         <div
           className="fixed inset-0 z-40"
           onClick={() => setIsOpen(false)}
         ></div>
       )}
+
 
       {isOpen && (
         <div className="absolute bottom-full right-0 sm:left-0 sm:right-auto mb-2 w-[220px] bg-white border border-gray-100 rounded-xl shadow-2xl z-50 py-2 animate-in fade-in slide-in-from-bottom-2 max-h-[50vh] overflow-y-auto custom-scrollbar">
@@ -113,6 +237,7 @@ export const ReviewDropdown = ({
   );
 };
 
+
 /**
  * Modal Sổ Tay Từ Vựng (NotebookModal)
  */
@@ -124,7 +249,6 @@ export const NotebookModal = ({
   onPlay,
   t = (k) => k,
   mainColor = 'sky',
-  onDelete,
   apiKey = '',
   lang = 'en',
   onCopy,
@@ -140,6 +264,7 @@ export const NotebookModal = ({
   const [isAutoFillingAll, setIsAutoFillingAll] = useState(false);
   const [fillProgress, setFillProgress] = useState({ current: 0, total: 0 });
 
+
   useEffect(() => {
     if (isOpen) {
       const safeData = Array.isArray(data) ? data : [];
@@ -149,17 +274,7 @@ export const NotebookModal = ({
           _tempId: Date.now() + index
         })
       );
-      loaded.push({
-        term: '',
-        pronunciation: '',
-        definition: '',
-        partOfSpeech: '',
-        topic: '',
-        example: '',
-        sinoViet: '',
-        image: '',
-        _tempId: Date.now() + 999999
-      });
+      loaded.push(createBlankNotebookRow(999999));
       setEditingData(loaded);
       setShowConfirmDelete(false);
       setPendingFillIndices(null);
@@ -168,75 +283,57 @@ export const NotebookModal = ({
     }
   }, [isOpen, data]);
 
+
+  // Danh sách các thẻ hợp lệ đang có trên bảng soạn thảo
+  const validEditingItems = editingData.filter(
+    (item) => item && item.term && item.term.trim() !== ''
+  );
+  const validCount = validEditingItems.length;
+
+
   const handleChange = (index, field, value) => {
     const newData = [...editingData];
-    newData[index][field] = value;
+    newData[index] = {
+      ...newData[index],
+      [field]: value
+    };
     if (index === newData.length - 1 && value.trim() !== '') {
-      newData.push({
-        term: '',
-        pronunciation: '',
-        definition: '',
-        partOfSpeech: '',
-        topic: '',
-        example: '',
-        sinoViet: '',
-        image: '',
-        _tempId: Date.now() + Math.random()
-      });
+      newData.push(createBlankNotebookRow(Math.random()));
     }
     setEditingData(newData);
   };
 
+
+  // Xóa 1 dòng trên bản nháp editingData (Chỉ lưu chính thức khi bấm handleSave)
   const handleDelete = (index) => {
     const newData = [...editingData];
     newData.splice(index, 1);
     if (newData.length === 0) {
-      newData.push({
-        term: '',
-        pronunciation: '',
-        definition: '',
-        partOfSpeech: '',
-        topic: '',
-        example: '',
-        sinoViet: '',
-        image: '',
-        _tempId: Date.now()
-      });
+      newData.push(createBlankNotebookRow(0));
     }
     setEditingData(newData);
-    if (onDelete) onDelete(index);
   };
+
 
   const handleDeleteAllClick = () => {
     setShowConfirmDelete(true);
   };
 
+
   const confirmDeleteAll = () => {
-    setEditingData([
-      {
-        term: '',
-        pronunciation: '',
-        definition: '',
-        partOfSpeech: '',
-        topic: '',
-        example: '',
-        sinoViet: '',
-        image: '',
-        _tempId: Date.now()
-      }
-    ]);
+    setEditingData([createBlankNotebookRow(0)]);
     setShowConfirmDelete(false);
   };
 
+
   const handleSave = () => {
-    const validData = editingData.filter(
-      (item) => item.term && item.term.trim() !== ''
-    );
+    const cleanData = validEditingItems.map(({ _tempId, ...rest }) => rest);
     if (onSave) {
-      onSave(validData.map(({ _tempId, ...rest }) => rest));
+      onSave(cleanData);
     }
     if (onClose) onClose();
   };
+
 
   const handleAiFill = async (index, isBatch = false) => {
     let item = editingData[index];
@@ -245,45 +342,42 @@ export const NotebookModal = ({
       return false;
     }
 
-    // [GLOBAL LOCAL-FIRST LOOKUP]
-    // Kéo toàn bộ kho tổng làm màng lọc, kết hợp với sourceData
-    const globalDeck = Utils?.safeJsonParse
-      ? Utils.safeJsonParse('fc_data_' + lang, [])
-      : [];
-    const combinedData = [...(sourceData || []), ...(globalDeck || [])];
 
-    if (combinedData.length > 0) {
-      const localMatch = combinedData.find(
-        (c) =>
-          c &&
-          c.term &&
-          c.term.toLowerCase().trim() === item.term.toLowerCase().trim()
-      );
-      if (localMatch) {
-        const mergedItem = {
-          ...item,
-          definition: item.definition || localMatch.definition,
-          pronunciation: item.pronunciation || localMatch.pronunciation,
-          partOfSpeech: item.partOfSpeech || localMatch.partOfSpeech,
-          topic: item.topic || localMatch.topic,
-          analysis: item.analysis || localMatch.analysis,
-          example: item.example || localMatch.example,
-          sinoViet: item.sinoViet || localMatch.sinoViet,
-          image:
-            localMatch.image &&
-            localMatch.image.startsWith('http') &&
-            !item.image
-              ? localMatch.image
-              : item.image
-        };
-        setEditingData((prev) => {
-          const newData = [...prev];
-          newData[index] = mergedItem;
-          return newData;
-        });
-        item = mergedItem;
-      }
+    // [BẢN VÁ V1.04+: GLOBAL LOCAL-FIRST LOOKUP TOÀN DIỆN]
+    const localMatch = findCardInLocalPools(item.term, lang, sourceData);
+    if (localMatch) {
+      const mergedItem = {
+        ...item,
+        definition: item.definition || localMatch.definition || '',
+        pronunciation: item.pronunciation || localMatch.pronunciation || '',
+        partOfSpeech: item.partOfSpeech || localMatch.partOfSpeech || '',
+        topic: item.topic || localMatch.topic || '',
+        analysis: item.analysis || localMatch.analysis || '',
+        example: item.example || localMatch.example || '',
+        sinoViet: item.sinoViet || localMatch.sinoViet || '',
+        grammar_type:
+          Array.isArray(item.grammar_type) && item.grammar_type.length > 0
+            ? item.grammar_type
+            : Array.isArray(localMatch.grammar_type)
+            ? localMatch.grammar_type
+            : [],
+        level: item.level || localMatch.level || undefined,
+        language: item.language || localMatch.language || lang,
+        image:
+          localMatch.image &&
+          localMatch.image.startsWith('http') &&
+          !item.image
+            ? localMatch.image
+            : item.image
+      };
+      setEditingData((prev) => {
+        const newData = [...prev];
+        newData[index] = mergedItem;
+        return newData;
+      });
+      item = mergedItem;
     }
+
 
     const requiredFields = [
       'pronunciation',
@@ -292,29 +386,45 @@ export const NotebookModal = ({
       'topic',
       'analysis',
       'sinoViet',
-      'example'
+      'example',
+      'grammar_type'
     ];
-    const missingFields = requiredFields.filter(
-      (field) => !item[field] || item[field].toString().trim() === ''
-    );
+    const missingFields = requiredFields.filter((field) => {
+      if (field === 'grammar_type') {
+        return !Array.isArray(item.grammar_type) || item.grammar_type.length === 0;
+      }
+      return !item[field] || item[field].toString().trim() === '';
+    });
+
+
     if (!item.image || !item.image.startsWith('http')) {
       missingFields.push('image');
     }
 
-    if (missingFields.length === 0) {
-      if (!isBatch)
+
+    // Nếu các trường cốt lõi đã đầy đủ từ Local-First thì không cần gọi API tốn Token
+    const coreRequired = ['pronunciation', 'definition', 'example', 'analysis'];
+    const isCoreStillMissing = coreRequired.some(
+      (f) => !item[f] || item[f].toString().trim() === ''
+    );
+    if (!isCoreStillMissing) {
+      if (!isBatch) {
         notify('Thông tin đã đầy đủ, không cần gọi AI!', 'success');
+      }
       return true;
     }
 
+
     if (!apiKey) {
-      if (!isBatch)
+      if (!isBatch) {
         notify(
           'Vui lòng nhập API Key để AI điền nốt thông tin còn thiếu!',
           'warning'
         );
+      }
       throw new Error('Missing API Key');
     }
+
 
     setFillingIndices((prev) => new Set(prev).add(index));
     try {
@@ -325,13 +435,23 @@ export const NotebookModal = ({
         throw new Error('Chức năng fillCardWithAi chưa sẵn sàng.');
       }
 
+
+      // Xác định ngữ cảnh cấp độ (Ưu tiên level riêng của thẻ hoặc level đang chọn)
+      const levelContext = item.level
+        ? [item.level]
+        : getDirectLevelContext(lang);
+
+
+      // [V1.05 STRICT DATA ROUTING + LEVEL CONTEXT]
       const result = await aiFillFn(
         item.term,
         lang,
         apiKey,
         missingFields,
-        dataMode
+        dataMode,
+        levelContext
       );
+
 
       if (result) {
         if (result._tokenUsage) {
@@ -345,18 +465,32 @@ export const NotebookModal = ({
             String(currentTotal + used)
           );
         }
+
+
         setEditingData((prev) => {
           const newData = [...prev];
+          const currentRow = newData[index] || item;
           newData[index] = {
-            ...newData[index],
-            definition: newData[index].definition || result.definition,
+            ...currentRow,
+            definition: currentRow.definition || result.definition || '',
             pronunciation:
-              newData[index].pronunciation || result.pronunciation,
-            partOfSpeech: newData[index].partOfSpeech || result.partOfSpeech,
-            topic: newData[index].topic || result.topic,
-            analysis: newData[index].analysis || result.analysis,
-            example: newData[index].example || result.example,
-            sinoViet: newData[index].sinoViet || result.sinoViet
+              currentRow.pronunciation || result.pronunciation || '',
+            partOfSpeech: currentRow.partOfSpeech || result.partOfSpeech || '',
+            topic: currentRow.topic || result.topic || '',
+            analysis: currentRow.analysis || result.analysis || '',
+            example: currentRow.example || result.example || '',
+            sinoViet: currentRow.sinoViet || result.sinoViet || '',
+            grammar_type:
+              Array.isArray(currentRow.grammar_type) &&
+              currentRow.grammar_type.length > 0
+                ? currentRow.grammar_type
+                : Array.isArray(result.grammar_type)
+                ? result.grammar_type
+                : [],
+            level:
+              currentRow.level ||
+              (Array.isArray(levelContext) ? levelContext[0] : levelContext),
+            language: currentRow.language || lang
           };
           if (result.image && result.image.startsWith('http')) {
             newData[index].image = result.image;
@@ -379,6 +513,7 @@ export const NotebookModal = ({
     }
   };
 
+
   const handleAiFillAll = () => {
     if (!apiKey) {
       notify('Vui lòng nhập API Key trước!', 'warning');
@@ -386,16 +521,18 @@ export const NotebookModal = ({
     }
     if (isAutoFillingAll) return;
 
+
     const indicesToFill = editingData
       .map((item, idx) => {
         if (!item.term || item.term.trim() === '') return -1;
         const required = ['definition', 'pronunciation', 'example'];
         const isMissing = required.some(
-          (f) => !item[f] || item[f].trim() === ''
+          (f) => !item[f] || item[f].toString().trim() === ''
         );
         return isMissing ? idx : -1;
       })
       .filter((idx) => idx !== -1);
+
 
     if (indicesToFill.length === 0) {
       notify(
@@ -405,16 +542,20 @@ export const NotebookModal = ({
       return;
     }
 
+
     setPendingFillIndices(indicesToFill);
   };
+
 
   const executeAiFillAll = async () => {
     const indicesToFill = pendingFillIndices;
     setPendingFillIndices(null);
     if (!indicesToFill || indicesToFill.length === 0) return;
 
+
     setIsAutoFillingAll(true);
     setFillProgress({ current: 0, total: indicesToFill.length });
+
 
     for (let i = 0; i < indicesToFill.length; i++) {
       const idx = indicesToFill[i];
@@ -422,6 +563,7 @@ export const NotebookModal = ({
       let attempts = 0;
       const maxAttempts = 3;
       let success = false;
+
 
       while (attempts < maxAttempts && !success) {
         try {
@@ -448,12 +590,27 @@ export const NotebookModal = ({
       }
     }
 
+
     setIsAutoFillingAll(false);
     setFillProgress({ current: 0, total: 0 });
     notify('Đã hoàn tất quá trình AI tự điền hàng loạt!', 'success');
   };
 
+
+  // Xử lý khi chọn chế độ Ôn tập lại từ Sổ tay (Tự động lấy danh sách thẻ đang soạn thảo)
+  const handleSelectReviewGame = (type) => {
+    const cleanData = validEditingItems.map(({ _tempId, ...rest }) => rest);
+    if (onSave) {
+      onSave(cleanData);
+    }
+    if (onReviewGame) {
+      onReviewGame(type, cleanData, 'Sổ tay từ vựng');
+    }
+  };
+
+
   if (!isOpen) return null;
+
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
@@ -490,6 +647,7 @@ export const NotebookModal = ({
           </div>
         )}
 
+
         {/* Popup xác nhận AI Tự điền hàng loạt */}
         {pendingFillIndices && (
           <div className="absolute inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in">
@@ -523,6 +681,7 @@ export const NotebookModal = ({
           </div>
         )}
 
+
         {/* Header */}
         <div
           className={`p-4 border-b bg-${mainColor}-50 flex justify-between items-center`}
@@ -530,13 +689,13 @@ export const NotebookModal = ({
           <h2
             className={`font-bold flex gap-2 text-${mainColor}-700 text-lg items-center`}
           >
-            <Icons.BookOpen /> {t('notebookTitle')} (
-            {editingData.filter((i) => i.term).length})
+            <Icons.BookOpen /> {t('notebookTitle')} ({validCount})
           </h2>
           <button onClick={onClose} data-tooltip={t('ttClose')}>
             <Icons.X />
           </button>
         </div>
+
 
         {/* Danh sách từ vựng */}
         <div className="flex-1 overflow-auto p-4 custom-scrollbar bg-gray-50">
@@ -563,7 +722,7 @@ export const NotebookModal = ({
                     <textarea
                       className="w-full p-2 border rounded text-sm font-medium focus:ring-2 focus:ring-blue-200 outline-none resize-none placeholder-gray-300"
                       rows="2"
-                      value={item.term}
+                      value={item.term || ''}
                       onChange={(e) =>
                         handleChange(idx, 'term', e.target.value)
                       }
@@ -608,6 +767,7 @@ export const NotebookModal = ({
                     </div>
                   </div>
 
+
                   <div className="col-span-1">
                     <textarea
                       className="w-full p-2 border rounded text-sm text-gray-600 focus:ring-2 focus:ring-blue-200 outline-none resize-none placeholder-gray-300"
@@ -620,6 +780,7 @@ export const NotebookModal = ({
                     />
                   </div>
 
+
                   <div className="col-span-2">
                     <textarea
                       className="w-full p-2 border rounded text-sm text-gray-600 focus:ring-2 focus:ring-blue-200 outline-none resize-none"
@@ -630,6 +791,7 @@ export const NotebookModal = ({
                       }
                     />
                   </div>
+
 
                   <div className="col-span-3">
                     <textarea
@@ -642,6 +804,7 @@ export const NotebookModal = ({
                     />
                   </div>
 
+
                   <div className="col-span-2">
                     <textarea
                       className="w-full p-2 border rounded text-sm text-gray-600 focus:ring-2 focus:ring-blue-200 outline-none resize-none placeholder-gray-300"
@@ -653,6 +816,7 @@ export const NotebookModal = ({
                       placeholder="Chủ đề..."
                     />
                   </div>
+
 
                   <div className="col-span-1 flex justify-center items-center h-full">
                     {(idx !== editingData.length - 1 || item.term) && (
@@ -671,19 +835,18 @@ export const NotebookModal = ({
           </div>
         </div>
 
+
         {/* Footer */}
         <div className="p-4 border-t bg-gray-50 flex flex-col sm:flex-row justify-between gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] relative z-10">
           <div className="flex gap-2 w-full sm:w-auto">
             <ReviewDropdown
-              onSelect={(type) =>
-                onReviewGame && onReviewGame(type, data, 'Sổ tay từ vựng')
-              }
-              dataLength={data.length}
+              onSelect={handleSelectReviewGame}
+              dataLength={validCount}
               mainColor={mainColor}
             />
             <button
               onClick={handleAiFillAll}
-              disabled={data.length === 0 || isAutoFillingAll}
+              disabled={validCount === 0 || isAutoFillingAll}
               title="AI Tự điền hàng loạt"
               className="px-2 sm:px-4 py-2 bg-purple-100 text-purple-700 border border-purple-200 font-bold rounded-lg hover:bg-purple-200 flex items-center justify-center gap-2 text-xs sm:text-base shadow-sm transition-all active:scale-95 disabled:opacity-50 disabled:cursor-wait"
             >
@@ -711,10 +874,7 @@ export const NotebookModal = ({
             </button>
             <button
               onClick={handleDeleteAllClick}
-              disabled={
-                editingData.filter((i) => i.term).length === 0 ||
-                isAutoFillingAll
-              }
+              disabled={validCount === 0 || isAutoFillingAll}
               title="Xóa toàn bộ"
               className="px-2 sm:px-4 py-2 bg-red-100 text-red-600 border border-red-200 font-bold rounded-lg hover:bg-red-200 flex items-center justify-center gap-2 text-xs sm:text-base shadow-sm transition-all active:scale-95 disabled:opacity-50"
             >
@@ -722,14 +882,16 @@ export const NotebookModal = ({
             </button>
           </div>
 
+
           <div className="grid grid-cols-2 sm:flex gap-2 w-full sm:w-auto mt-2 sm:mt-0">
             <button
               onClick={() =>
-                onCopy && onCopy(editingData.filter((i) => i.term))
+                onCopy &&
+                onCopy(validEditingItems.map(({ _tempId, ...rest }) => rest))
               }
-              disabled={data.length === 0}
+              disabled={validCount === 0}
               title="Copy Sheet"
-              className="px-2 sm:px-4 py-2 bg-teal-50 text-teal-700 border border-teal-200 font-bold rounded-lg hover:bg-teal-100 flex items-center justify-center gap-2 text-xs sm:text-base shadow-sm active:scale-95 transition-all"
+              className="px-2 sm:px-4 py-2 bg-teal-50 text-teal-700 border border-teal-200 font-bold rounded-lg hover:bg-teal-100 flex items-center justify-center gap-2 text-xs sm:text-base shadow-sm active:scale-95 transition-all disabled:opacity-50"
             >
               <Icons.ExternalLink
                 size={16}
@@ -752,10 +914,13 @@ export const NotebookModal = ({
   );
 };
 
-// Gắn vào window để tương thích ngược trong quá trình chuyển đổi
+
+// Gắn vào window để tương thích ngược
 if (typeof window !== 'undefined') {
   window.ReviewDropdown = ReviewDropdown;
   window.NotebookModal = NotebookModal;
 }
 
+
 export default NotebookModal;
+
