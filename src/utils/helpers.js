@@ -1,8 +1,126 @@
+// ============================================================================
+// FILE 10/85: src/utils/helpers.js
+// NGUỒN GỐC: tang_2.js (Block 2.1b - Core Data Utilities)
+// PHIÊN BẢN: Ver 1.0
+// NGÀY GIỜ NÂNG CẤP: 18/11/2026 - 22:36 (GMT+7)
+// NHIỆM VỤ: Cung cấp các hàm tiện ích thuần túy xử lý chuỗi, mảng, chuẩn hóa ngôn ngữ, giải mã JSON AI, chuẩn hóa URL ảnh minh họa thông minh (isValidImageUrl, buildSmartImageUrl), tính toán SRS, chuyển đổi CSV/TSV và quản lý WakeLock.
+// ============================================================================
+
 import { CONFIG_SAMPLES } from '../config/constants.js';
 import { DEFAULT_PROMPTS } from '../config/prompts.js';
 
 // Biến lưu trữ trạng thái giữ sáng màn hình (Screen Wake Lock)
 let currentWakeLock = null;
+
+// Danh sách các từ khóa rỗng/rác không được phép dùng làm URL hoặc từ khóa tìm ảnh
+const GARBAGE_IMAGE_TOKENS = new Set([
+  'null',
+  'undefined',
+  'none',
+  'n/a',
+  'na',
+  'false',
+  'nan',
+  'empty',
+  'no image',
+  'no_image',
+  'khong co',
+  'không có'
+]);
+
+/**
+ * Kiểm tra một giá trị có phải là đường dẫn URL hình ảnh hợp lệ hay không
+ */
+export const isValidImageUrl = (val) => {
+  if (!val || typeof val !== 'string') return false;
+  const trimmed = val.trim();
+  if (!trimmed) return false;
+  if (GARBAGE_IMAGE_TOKENS.has(trimmed.toLowerCase())) return false;
+  return (
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('data:image/') ||
+    trimmed.startsWith('blob:')
+  );
+};
+
+/**
+ * Làm sạch cụm từ khóa tìm ảnh Tiếng Anh, loại bỏ ký tự rác và chữ Hán
+ */
+const sanitizeImageKeyword = (raw) => {
+  if (!raw || typeof raw !== 'string') return '';
+  let s = raw.trim();
+  if (!s || GARBAGE_IMAGE_TOKENS.has(s.toLowerCase())) return '';
+
+  // Loại bỏ chữ Hán (CJK) để tránh bẫy ảnh Meme chữ Hán (表情包) trên Bing
+  s = s.replace(/[\u4e00-\u9fff\u3400-\u4dbf]/g, ' ');
+
+  // Loại bỏ dấu ngoặc, ký tự đặc biệt, giữ lại chữ cái Latin và chữ số
+  s = s
+    .replace(/["'`[\](){}<>|\\/~^*+=@#$%&;:!?.,_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (s.length < 2 || GARBAGE_IMAGE_TOKENS.has(s.toLowerCase())) return '';
+  return s;
+};
+
+/**
+ * Xây dựng URL ảnh minh họa thông minh từ URL có sẵn hoặc cụm từ khóa Tiếng Anh
+ * - Bảo toàn URL nếu đã hợp lệ (http/https/data:image)
+ * - Lọc sạch từ khóa rác & chữ Hán
+ * - Tự động bổ sung hậu tố "clean illustration no text" để ưu tiên hình minh họa sạch chữ
+ */
+export const buildSmartImageUrl = (
+  rawImageOrKeyword,
+  fallbackTerm = '',
+  dataMode = 'vocab'
+) => {
+  // 1. Nếu đầu vào đã là một URL ảnh hợp lệ -> Giữ nguyên
+  if (isValidImageUrl(rawImageOrKeyword)) {
+    return rawImageOrKeyword.trim();
+  }
+
+  // 2. Làm sạch từ khóa chính
+  let cleanKw = sanitizeImageKeyword(rawImageOrKeyword);
+
+  // 3. Nếu từ khóa chính rỗng, thử dùng fallbackTerm (Chỉ chấp nhận nếu fallbackTerm là từ tiếng Anh không dấu, không chứa chữ Hán)
+  if (!cleanKw && fallbackTerm && typeof fallbackTerm === 'string') {
+    const hasCjk = /[\u4e00-\u9fff\u3400-\u4dbf]/.test(fallbackTerm);
+    const hasVietDiacritics = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(
+      fallbackTerm
+    );
+    if (!hasCjk && !hasVietDiacritics) {
+      cleanKw = sanitizeImageKeyword(fallbackTerm);
+    }
+  }
+
+  if (!cleanKw) return '';
+
+  // Giới hạn độ dài từ khóa tối đa 8 từ để công cụ tìm ảnh đạt độ chính xác cao nhất
+  const words = cleanKw.split(' ').filter(Boolean);
+  const compactKw = words.slice(0, 8).join(' ');
+  const lowerKw = compactKw.toLowerCase();
+
+  // Tự động gắn hậu tố lọc chữ nếu từ khóa chưa có chỉ dẫn phong cách
+  const hasStyleSuffix =
+    lowerKw.includes('illustration') ||
+    lowerKw.includes('clipart') ||
+    lowerKw.includes('no text') ||
+    lowerKw.includes('vector');
+
+  const suffix =
+    dataMode === 'sentence'
+      ? 'scene illustration no text'
+      : 'clean illustration no text';
+
+  const finalQuery = hasStyleSuffix ? compactKw : `${compactKw} ${suffix}`;
+
+  return `https://tse2.mm.bing.net/th?q=${encodeURIComponent(finalQuery)}&w=400&h=300&c=7&rs=1&p=0`;
+};
+
+// Alias tương thích cho các module gọi tên resolveSmartImageUrl
+export const resolveSmartImageUrl = buildSmartImageUrl;
 
 /**
  * Đọc và phân tích cú pháp JSON an toàn từ LocalStorage
@@ -205,6 +323,8 @@ export const convertRawRowsToCards = (rows) => {
     .slice(1)
     .map((row) => {
       if (!row || row.length === 0 || !row[0]) return null;
+      const rawImg = String(row[6] || '').trim();
+      const resolvedImg = rawImg ? buildSmartImageUrl(rawImg) : '';
       return {
         term: String(row[0] || '').trim(),
         pronunciation: String(row[1] || '').trim(),
@@ -212,7 +332,7 @@ export const convertRawRowsToCards = (rows) => {
         analysis: String(row[3] || '').trim(),
         sinoViet: String(row[4] || '').trim(),
         example: String(row[5] || '').trim(),
-        image: String(row[6] || '').trim(),
+        image: resolvedImg,
         partOfSpeech: String(row[7] || '').trim(),
         topic: String(row[8] || '').trim(),
         // Bắt dữ liệu cột J (index 9) và ép vào mảng an toàn
@@ -249,25 +369,28 @@ export const parseAndMapCSV = (csvText) => {
 export const sanitizeCards = (rawCards) => {
   if (!Array.isArray(rawCards)) return [];
   return rawCards
-    .map((c) => ({
-      term: String(c.term || ''),
-      pronunciation: String(c.pronunciation || ''),
-      definition: String(c.definition || ''),
-      analysis: String(c.analysis || ''),
-      sinoViet: String(c.sinoViet || ''),
-      example: String(c.example || ''),
-      image: String(c.image || ''),
-      partOfSpeech: String(c.partOfSpeech || ''),
-      topic: String(c.topic || ''),
-      grammar_type: Array.isArray(c.grammar_type)
-        ? c.grammar_type
-        : typeof c.grammar_type === 'string' && c.grammar_type.trim() !== ''
-        ? c.grammar_type
-            .split(',')
-            .map((s) => s.trim())
-            .filter(Boolean)
-        : []
-    }))
+    .map((c) => {
+      const rawImg = String(c.image || '').trim();
+      return {
+        term: String(c.term || ''),
+        pronunciation: String(c.pronunciation || ''),
+        definition: String(c.definition || ''),
+        analysis: String(c.analysis || ''),
+        sinoViet: String(c.sinoViet || ''),
+        example: String(c.example || ''),
+        image: rawImg ? buildSmartImageUrl(rawImg) : '',
+        partOfSpeech: String(c.partOfSpeech || ''),
+        topic: String(c.topic || ''),
+        grammar_type: Array.isArray(c.grammar_type)
+          ? c.grammar_type
+          : typeof c.grammar_type === 'string' && c.grammar_type.trim() !== ''
+          ? c.grammar_type
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean)
+          : []
+      };
+    })
     .filter((c) => c.term.trim() !== '');
 };
 
@@ -341,6 +464,20 @@ export const calculateSimilarity = (str1, str2) => {
   }
 
   return (2.0 * intersection) / (clean1.length - 1 + clean2.length - 1);
+};
+
+/**
+ * Loại bỏ dấu thanh điệu Pinyin về dạng chữ cái Latin không dấu
+ */
+export const removePinyinTones = (str) => {
+  if (!str) return '';
+  return String(str)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/ü/gi, 'v')
+    .replace(/[^a-zA-Z0-9\s]/g, '')
+    .toLowerCase()
+    .trim();
 };
 
 /**
@@ -495,6 +632,9 @@ export const generateTrickyVariant = (correctText, otherCards) => {
  * Đối tượng tổng hợp Utils để tương thích hoàn toàn với các mô-đun gọi qua namespace Utils.*
  */
 export const Utils = {
+  isValidImageUrl,
+  buildSmartImageUrl,
+  resolveSmartImageUrl,
   safeJsonParse,
   safeLocalStorageSet,
   getFontFamily,
@@ -513,6 +653,7 @@ export const Utils = {
   detectSentence,
   jsonToTsv,
   calculateSimilarity,
+  removePinyinTones,
   comparePinyin,
   generateQuizQuestion,
   parseSrsTime,
@@ -520,5 +661,9 @@ export const Utils = {
   getSrsTimeLabel,
   generateTrickyVariant
 };
+
+if (typeof window !== 'undefined') {
+  window.Utils = Object.assign(window.Utils || {}, Utils);
+}
 
 export default Utils;

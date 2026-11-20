@@ -1,11 +1,15 @@
 // ============================================================================
 // FILE 32/85: src/components/layout/FlashcardDisplay.jsx
 // NGUỒN GỐC: tang_3.js (Block 3.2 - Version 1.13)
-// NHIỆM VỤ: Thẻ lật 3D, ô gõ kiểm tra từ vựng, nhảy thẻ nhanh, hiển thị từ loại kiểu từ điển, Progressive Disclosure cho phân tích ngữ pháp và 4 nút SRS.
+// PHIÊN BẢN: Ver 1.0
+// NGÀY GIỜ NÂNG CẤP: 20/11/2026 - 05:28 (GMT+7)
+// NHIỆM VỤ: Thẻ lật 3D, ô gõ kiểm tra từ vựng (vá lỗi placeholder Scramble),
+//           nhảy thẻ nhanh, hiển thị ảnh minh họa bổ trợ bằng React State
+//           (tự ẩn khung & căn giữa chữ khi lỗi, referrerPolicy="no-referrer",
+//           Thumbnail mặt sau tự nhường chỗ cho Analysis) và 4 nút SRS.
 // ============================================================================
 
-
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Icons } from '../common/Icons';
 import { AiModeSwitch as DefaultAiModeSwitch } from '../common/Controls';
 import {
@@ -13,9 +17,90 @@ import {
   detectSentence,
   calculateSRS,
   getSrsTimeLabel,
-  getFontFamily as utilGetFontFamily
+  getFontFamily as utilGetFontFamily,
+  isValidImageUrl,
+  buildSmartImageUrl
 } from '../../utils/helpers';
 
+// Tập chuỗi rác không được phép dùng làm ảnh hoặc từ khóa tìm ảnh
+const INVALID_IMAGE_VALUES = new Set([
+  'null',
+  'undefined',
+  'none',
+  'n/a',
+  'na',
+  'false',
+  'true',
+  'empty',
+  'no image',
+  '-'
+]);
+
+/**
+ * Kiểm tra đường dẫn ảnh hợp lệ (hỗ trợ http/https/data:image)
+ */
+const checkIsValidImage = (val) => {
+  if (typeof isValidImageUrl === 'function') return isValidImageUrl(val);
+  if (typeof Utils?.isValidImageUrl === 'function') {
+    return Utils.isValidImageUrl(val);
+  }
+  if (!val || typeof val !== 'string') return false;
+  const trimmed = val.trim();
+  return (
+    /^https?:\/\/.+/i.test(trimmed) ||
+    /^data:image\/[a-zA-Z0-9.+-]+;base64,/i.test(trimmed)
+  );
+};
+
+/**
+ * Lọc sạch ứng viên từ khóa ảnh Tiếng Anh (chặn rác, đường dẫn file gãy, chữ Hán)
+ */
+const sanitizeImageKeywordCandidate = (raw) => {
+  if (!raw || typeof raw !== 'string') return '';
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+
+  if (INVALID_IMAGE_VALUES.has(trimmed.toLowerCase())) return '';
+  if (/[\u4e00-\u9fa5]/.test(trimmed)) return '';
+  if (/(^\/|^\.\.?\/|:\\|:\/\/|\bwww\.)/i.test(trimmed)) return '';
+  if (/\.(png|jpe?g|gif|webp|svg|bmp|ico|avif)(\?.*|#.*)?$/i.test(trimmed)) {
+    return '';
+  }
+  if (!/[a-zA-Z]{2,}/.test(trimmed)) return '';
+
+  return trimmed;
+};
+
+/**
+ * Chuẩn hóa URL ảnh an toàn cho thẻ học:
+ * - Giữ nguyên URL hợp lệ (http/https/data:image)
+ * - Chuyển từ khóa Tiếng Anh sạch (VD từ file Excel cũ) sang URL chuẩn qua buildSmartImageUrl
+ * - Trả về chuỗi rỗng nếu là giá trị rác hoặc không hợp lệ
+ */
+const resolveCardImageUrl = (rawImage, isSentence) => {
+  if (!rawImage || typeof rawImage !== 'string') return '';
+  const trimmed = rawImage.trim();
+  if (!trimmed) return '';
+
+  if (checkIsValidImage(trimmed)) {
+    return trimmed;
+  }
+
+  // Với câu văn, chỉ hiển thị nếu đã là URL ảnh hợp lệ
+  if (isSentence) return '';
+
+  const cleanKeyword = sanitizeImageKeywordCandidate(trimmed);
+  if (!cleanKeyword) return '';
+
+  const smartBuilder =
+    typeof buildSmartImageUrl === 'function'
+      ? buildSmartImageUrl
+      : typeof Utils?.buildSmartImageUrl === 'function'
+      ? Utils.buildSmartImageUrl
+      : null;
+
+  return smartBuilder ? smartBuilder(cleanKeyword, '', 'vocab') || '' : '';
+};
 
 /**
  * Component hiển thị Thẻ học 3D trung tâm (FlashcardDisplay)
@@ -50,10 +135,8 @@ export const FlashcardDisplay = ({
   onJumpToCard
 }) => {
   const currentCard = cards[currentCardIndex];
-  const hasImage = Boolean(currentCard?.image && currentCard.image.trim() !== '');
   const isDefFirst = settings?.startSide === 'def';
   const scale = settings?.cardSize || 1;
-
 
   const detectSentenceFn =
     detectSentence ||
@@ -62,6 +145,33 @@ export const FlashcardDisplay = ({
   const isSentence =
     currentCard && detectSentenceFn ? detectSentenceFn(currentCard.term) : false;
 
+  // Chuẩn hóa đường dẫn ảnh an toàn (lọc rác & hỗ trợ từ khóa sạch ở dữ liệu cũ)
+  const resolvedImageUrl = useMemo(
+    () => resolveCardImageUrl(currentCard?.image, isSentence),
+    [currentCard?.image, isSentence]
+  );
+
+  // Quản lý vòng đời tải ảnh bằng React State (xóa sổ lỗi khung trắng & lệch chữ)
+  const [imgError, setImgError] = useState(false);
+  const [imgLoaded, setImgLoaded] = useState(false);
+  const frontImgRef = useRef(null);
+
+  // Tự động khôi phục trạng thái ảnh mỗi khi đổi thẻ hoặc AI vừa bổ sung URL ảnh mới
+  useEffect(() => {
+    setImgError(false);
+    setImgLoaded(false);
+  }, [currentCardIndex, resolvedImageUrl]);
+
+  // Nếu ảnh đã có sẵn trong bộ nhớ đệm trình duyệt (cached), đánh dấu đã tải ngay lập tức
+  useEffect(() => {
+    const imgEl = frontImgRef.current;
+    if (imgEl && imgEl.complete && imgEl.naturalWidth > 0) {
+      setImgLoaded(true);
+    }
+  }, [currentCardIndex, resolvedImageUrl]);
+
+  // Chỉ hiển thị khung ảnh và chừa lề md:pr-40 khi thực sự có ảnh hợp lệ chưa bị lỗi
+  const showValidImage = Boolean(resolvedImageUrl && !imgError);
 
   // Kiểm tra xem thẻ hiện tại có đang bị khuyết các trường cốt lõi hay không
   const isMissingCoreFields = Boolean(
@@ -71,19 +181,17 @@ export const FlashcardDisplay = ({
         !currentCard.definition ||
         currentCard.definition.toString().trim() === '' ||
         !currentCard.example ||
-        currentCard.example.toString().trim() === '')
+        currentCard.example.toString().trim() === '' ||
+        (!isSentence && !resolvedImageUrl))
   );
-
 
   const [typingInput, setTypingInput] = useState('');
   const [typingStatus, setTypingStatus] = useState('idle');
   const typingInputRef = useRef(null);
   const [jumpInput, setJumpInput] = useState('');
 
-
   // [V1.09] State ẩn/hiện trường Analysis (Progressive Disclosure)
   const [showAnalysis, setShowAnalysis] = useState(false);
-
 
   // Reset các trạng thái cục bộ khi chuyển sang thẻ khác
   useEffect(() => {
@@ -93,14 +201,12 @@ export const FlashcardDisplay = ({
     setShowAnalysis(false);
   }, [currentCardIndex]);
 
-
   // Tự động ẩn phần phân tích khi lật thẻ về mặt trước
   useEffect(() => {
     if (!isFlipped) {
       setShowAnalysis(false);
     }
   }, [isFlipped]);
-
 
   // Phím tắt toàn cục Delete: Xóa nhanh ô gõ từ vựng và tự động Focus
   useEffect(() => {
@@ -124,7 +230,6 @@ export const FlashcardDisplay = ({
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, []);
 
-
   // Trễ hiển thị mặt chữ khi bật chế độ Kiểm tra trí nhớ (isContentHidden)
   const [delayedHidden, setDelayedHidden] = useState(isContentHidden);
   useEffect(() => {
@@ -138,12 +243,10 @@ export const FlashcardDisplay = ({
     }
   }, [isContentHidden, currentCardIndex]);
 
-
   // Xử lý thao tác vuốt (Swipe) trên màn hình cảm ứng
   const [touchStart, setTouchStart] = useState(null);
   const [touchEnd, setTouchEnd] = useState(null);
   const minSwipeDistance = 50;
-
 
   const onTouchStart = (e) => {
     setTouchEnd(null);
@@ -153,14 +256,12 @@ export const FlashcardDisplay = ({
     });
   };
 
-
   const onTouchMove = (e) => {
     setTouchEnd({
       x: e.targetTouches[0].clientX,
       y: e.targetTouches[0].clientY
     });
   };
-
 
   const onTouchEnd = () => {
     if (!touchStart || !touchEnd) return;
@@ -171,13 +272,11 @@ export const FlashcardDisplay = ({
     if (distanceX < -minSwipeDistance && onPrev) onPrev();
   };
 
-
   // Tính toán nhãn thời gian ôn tập tiếp theo cho 4 nút SRS
   const srsLabelFn =
     getSrsTimeLabel ||
     Utils?.getSrsTimeLabel ||
     (typeof window !== 'undefined' ? window.Utils?.getSrsTimeLabel : null);
-
 
   const getSrsLabel = (grade) => {
     if (!currentCard) return '';
@@ -189,7 +288,6 @@ export const FlashcardDisplay = ({
     const result = calcFn(currentCard, grade, settings);
     return srsLabelFn(result.srs_interval);
   };
-
 
   // Lấy font-family theo cài đặt người dùng
   const getFontFamily = () => {
@@ -209,16 +307,20 @@ export const FlashcardDisplay = ({
     }
   };
 
-
-  // Kiểm tra kết quả gõ từ vựng
+  // Kiểm tra kết quả gõ từ vựng (loại bỏ ký tự gạch chân \u0332 & dấu câu)
   const handleCheckTyping = () => {
     if (!currentCard) return;
     const clean = (str) =>
       String(str || '')
+        .replace(/\u0332/g, '')
         .toLowerCase()
         .replace(/[^\p{L}\p{N}]/gu, '')
         .trim();
     const inputClean = clean(typingInput);
+    if (!inputClean) {
+      setTypingStatus('idle');
+      return;
+    }
     const targetClean = clean(currentCard.term);
     if (inputClean === targetClean) {
       setTypingStatus('correct');
@@ -228,10 +330,12 @@ export const FlashcardDisplay = ({
     }
   };
 
-
   // Xử lý nhảy nhanh đến số thứ tự thẻ (Quick Jump)
   const handleJumpSubmit = () => {
-    if (!jumpInput) return;
+    if (!jumpInput || cards.length === 0) {
+      setJumpInput('');
+      return;
+    }
     let target = parseInt(jumpInput, 10);
     if (isNaN(target)) {
       setJumpInput('');
@@ -246,30 +350,31 @@ export const FlashcardDisplay = ({
     if (document.activeElement) document.activeElement.blur();
   };
 
-
   // Kích hoạt làm giàu hoặc phân tích ngữ pháp thông minh ở mặt sau thẻ
+  // Truyền silent = false khi bấm thủ công để bật loading, hiển thị Toast & không rò rỉ Rejection
   const handleSmartBackAiAction = (e) => {
     e.stopPropagation();
     if (isLoading) return;
     if (isMissingCoreFields && onEnrichCard) {
-      onEnrichCard(currentCardIndex, true);
+      Promise.resolve(onEnrichCard(currentCardIndex, false)).catch(() => {});
     } else if (onExplainGrammar) {
-      onExplainGrammar();
+      Promise.resolve(onExplainGrammar(currentCardIndex)).catch(() => {});
     } else if (onEnrichCard) {
-      onEnrichCard(currentCardIndex, true);
+      Promise.resolve(onEnrichCard(currentCardIndex, false)).catch(() => {});
     }
   };
 
-
   const isSrsEnabled = settings?.srsEnabled !== false;
   const sinoVietLabel = mainColor === 'sky' ? 'Dịch chi tiết' : t('sinoVietLabel');
+  const typingPlaceholder = isSentence
+    ? 'Gõ lại câu văn... (Phím Delete để xóa nhanh)'
+    : 'Gõ lại từ vựng... (Phím Delete để xóa nhanh)';
   const cardStyle = {
     '--fc-scale': scale,
     transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)'
   };
   const inputGroupStyle = { '--fc-scale': scale };
   const safeGetCardStyle = getCardStyle || (() => ({}));
-
 
   return (
     <div className="w-full flex flex-col items-center shrink-0 my-auto py-2">
@@ -319,6 +424,7 @@ export const FlashcardDisplay = ({
           aspect-ratio: 1 / 1;
           flex-shrink: 0;
           margin-bottom: 0.5rem;
+          transition: transform 0.25s ease;
         }
         @media (min-width: 768px) {
           .fc-card { width: calc(600px * var(--fc-scale)); }
@@ -338,7 +444,6 @@ export const FlashcardDisplay = ({
           }
         }
       `}</style>
-
 
       {/* Ô gõ kiểm tra từ vựng */}
       <div className="fc-input-group" style={inputGroupStyle}>
@@ -362,10 +467,7 @@ export const FlashcardDisplay = ({
               ? 'border-red-500 bg-red-50 text-red-700'
               : 'border-white focus:border-blue-400 focus:ring-2 focus:ring-blue-100'
           }`}
-          placeholder={(t('modeScramble') || 'Ghép Câu').replace(
-            'Ghép Câu',
-            'Gõ lại từ vựng... (Phím Delete để xóa nhanh)'
-          )}
+          placeholder={typingPlaceholder}
           style={{ fontFamily: getFontFamily() }}
           autoComplete="off"
           autoCapitalize="off"
@@ -389,7 +491,6 @@ export const FlashcardDisplay = ({
           )}
         </button>
       </div>
-
 
       {/* Khung Thẻ Lật 3D */}
       <div
@@ -417,7 +518,6 @@ export const FlashcardDisplay = ({
               />
             )}
 
-
             {/* Tính năng nhảy thẻ nhanh (Quick Jump) */}
             <div
               className="self-start flex items-center text-xs text-gray-400 relative z-[60]"
@@ -427,14 +527,20 @@ export const FlashcardDisplay = ({
                 type="text"
                 inputMode="numeric"
                 pattern="[0-9]*"
-                value={jumpInput !== '' ? jumpInput : currentCardIndex + 1}
+                value={
+                  jumpInput !== ''
+                    ? jumpInput
+                    : cards.length > 0
+                    ? currentCardIndex + 1
+                    : 0
+                }
                 onChange={(e) => setJumpInput(e.target.value.replace(/\D/g, ''))}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleJumpSubmit();
                 }}
-                disabled={isAutoPlaying}
+                disabled={isAutoPlaying || cards.length === 0}
                 className={`w-8 sm:w-10 text-center bg-transparent outline-none transition-all py-0.5 rounded font-bold ${
-                  isAutoPlaying
+                  isAutoPlaying || cards.length === 0
                     ? 'cursor-default'
                     : 'hover:bg-gray-100 focus:bg-blue-50 focus:text-blue-600 focus:ring-1 focus:ring-blue-300 cursor-text'
                 }`}
@@ -452,15 +558,14 @@ export const FlashcardDisplay = ({
               )}
             </div>
 
-
             {/* Nội dung chính mặt trước */}
             <div className="flex-1 flex flex-col md:flex-row items-center justify-center w-full relative min-h-[150px]">
               {!delayedHidden ? (
                 <>
                   <div
                     className={`text-center break-words w-full order-2 md:order-1 ${
-                      hasImage ? 'md:pr-40' : 'px-4'
-                    } flex-1 flex flex-col justify-center overflow-y-auto custom-scrollbar`}
+                      showValidImage ? 'md:pr-40' : 'px-4'
+                    } flex-1 flex flex-col justify-center overflow-y-auto custom-scrollbar transition-all`}
                     style={{
                       ...safeGetCardStyle(false),
                       fontWeight: settings?.fontWeight || 'bold',
@@ -469,15 +574,24 @@ export const FlashcardDisplay = ({
                   >
                     {isDefFirst ? currentCard?.definition : currentCard?.term}
                   </div>
-                  {hasImage && (
-                    <div className="fc-card-image order-1 md:order-2 p-1 bg-white rounded-xl shadow-md border border-gray-100">
+                  {showValidImage && (
+                    <div
+                      className={`fc-card-image order-1 md:order-2 p-1 bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden ${
+                        !imgLoaded ? 'animate-pulse bg-gray-100' : ''
+                      }`}
+                    >
                       <img
-                        src={currentCard.image}
-                        alt="minh họa"
-                        className="w-full h-full object-contain rounded-lg"
-                        onError={(e) => {
-                          e.target.parentElement.style.display = 'none';
-                        }}
+                        ref={frontImgRef}
+                        src={resolvedImageUrl}
+                        alt={currentCard?.term || 'minh họa'}
+                        referrerPolicy="no-referrer"
+                        loading="lazy"
+                        decoding="async"
+                        onLoad={() => setImgLoaded(true)}
+                        onError={() => setImgError(true)}
+                        className={`w-full h-full object-contain rounded-lg transition-opacity duration-300 ${
+                          imgLoaded ? 'opacity-100' : 'opacity-0'
+                        }`}
                       />
                     </div>
                   )}
@@ -497,7 +611,6 @@ export const FlashcardDisplay = ({
               )}
             </div>
 
-
             {/* Hàng nút chức năng mặt trước (Loa, Tập viết Hán tự, Mute) */}
             <div className="flex justify-center mt-2 gap-3 shrink-0">
               <button
@@ -510,7 +623,6 @@ export const FlashcardDisplay = ({
               >
                 <Icons.Volume2 size={24} />
               </button>
-
 
               {lang === 'zh' && (
                 <button
@@ -525,7 +637,6 @@ export const FlashcardDisplay = ({
                   <Icons.Brush size={24} />
                 </button>
               )}
-
 
               {isAutoPlaying && (
                 <button
@@ -549,7 +660,6 @@ export const FlashcardDisplay = ({
               )}
             </div>
           </div>
-
 
           {/* ================= MẶT SAU (BACK FACE) ================= */}
           <div
@@ -591,6 +701,25 @@ export const FlashcardDisplay = ({
               </div>
             )}
 
+            {/* Thumbnail ảnh minh họa bổ trợ ở góc trên bên phải Mặt sau (tự ẩn khi mở khung Giải thích chi tiết) */}
+            {!isSentence && showValidImage && !showAnalysis && (
+              <div
+                className="absolute top-3 right-3 z-10 w-11 h-11 sm:w-12 sm:h-12 p-0.5 bg-white/95 rounded-lg shadow-sm border border-gray-200/80 overflow-hidden pointer-events-none"
+                aria-hidden="true"
+              >
+                <img
+                  src={resolvedImageUrl}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  loading="lazy"
+                  decoding="async"
+                  onError={() => setImgError(true)}
+                  className={`w-full h-full object-contain rounded-md transition-opacity duration-300 ${
+                    imgLoaded ? 'opacity-100' : 'opacity-0'
+                  }`}
+                />
+              </div>
+            )}
 
             {/* Nội dung chi tiết mặt sau */}
             <div
@@ -610,7 +739,6 @@ export const FlashcardDisplay = ({
                 )}
               </div>
 
-
               {/* Định nghĩa (hoặc Từ vựng nếu đang ở chế độ Nghĩa trước) */}
               <div
                 className="text-gray-800 text-center my-1"
@@ -623,7 +751,6 @@ export const FlashcardDisplay = ({
               >
                 {isDefFirst ? currentCard?.term : currentCard?.definition}
               </div>
-
 
               {/* [V1.09] Tiết lộ Lũy tiến (Progressive Disclosure) cho trường Analysis */}
               {currentCard?.analysis && (
@@ -659,7 +786,6 @@ export const FlashcardDisplay = ({
                 </div>
               )}
 
-
               {/* Âm Hán Việt / Dịch chi tiết */}
               {currentCard?.sinoViet && (
                 <div
@@ -676,7 +802,6 @@ export const FlashcardDisplay = ({
                 </div>
               )}
 
-
               {/* [V1.13 DEFENSIVE RENDERING] Câu ví dụ kèm thuật toán bẻ dòng thông minh nhận diện marker "- " */}
               {currentCard?.example && (
                 <div
@@ -692,7 +817,6 @@ export const FlashcardDisplay = ({
                     : currentCard.example}
                 </div>
               )}
-
 
               {/* Nút gọi AI tạo phân tích hoặc làm giàu toàn diện nếu thẻ còn thiếu thông tin */}
               {(!currentCard?.analysis || (isMissingCoreFields && onEnrichCard)) && (
@@ -715,7 +839,6 @@ export const FlashcardDisplay = ({
                 </button>
               )}
             </div>
-
 
             {/* 4 Nút chấm điểm SRS (Again / Hard / Good / Easy) */}
             {onSrsGrade && isSrsEnabled && (
@@ -777,12 +900,9 @@ export const FlashcardDisplay = ({
   );
 };
 
-
 // Gắn vào window để tương thích ngược
 if (typeof window !== 'undefined') {
   window.FlashcardDisplay = FlashcardDisplay;
 }
 
-
 export default FlashcardDisplay;
-
