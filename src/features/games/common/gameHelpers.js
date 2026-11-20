@@ -1,18 +1,81 @@
 // ============================================================================
 // FILE 48/85: src/features/games/common/gameHelpers.js
 // NGUỒN GỐC: tang_5.js (Rút trích & Chuẩn hóa từ 10 Mini-Games)
-// NHIỆM VỤ: Chứa các hàm tiện ích dùng chung cho 10 Mini-Games & Khảo thí:
-//           Thu hồi đạn từ Queue (extractPendingCardsFromQueue / Coordinator,
-//           mergePendingAmmoToDeck), Tính điểm, Âm thanh SFX, Chống lặp vị trí
-//           đáp án (Anti-Streak), Ép kiểu an toàn cho mảng Level/Topic,
-//           Định dạng thời gian và Kỷ luật thoát ngang.
+// PHIÊN BẢN: Ver 1.0
+// NGÀY GIỜ NÂNG CẤP: 20/11/2026 - 06:23 (GMT+7)
+// NHIỆM VỤ: Bộ tiện ích dùng chung cho 10 Mini-Games & Khảo thí:
+//           Bổ sung alias export bị thiếu (mergePendingAmmoToDeck,
+//           extractPendingCardsFromCoordinator), thêm helper chuẩn
+//           resolveActiveApiKey (Key/PaidKey/Pool), thu hồi đạn từ Queue,
+//           chống lặp vị trí đáp án (Anti-Streak), chuẩn hóa Level/Topic,
+//           tính điểm, Web Audio SFX và kỷ luật thoát ngang.
 // ============================================================================
 
+
+import { STORAGE_KEYS } from '@/config/constants';
 import { Utils } from '@/utils/helpers';
+
+
+// ============================================================================
+// 0. HELPER ĐỌC API KEY ĐỒNG NHẤT 4 TẦNG (KEY / PAID KEY / KEY POOL)
+// ============================================================================
+
+
+/**
+ * Truy xuất API Key đang hoạt động theo đúng thứ tự ưu tiên của hệ thống:
+ * 1. preferredKey (prop hoặc state truyền trực tiếp)
+ * 2. fc_apikey (STORAGE_KEYS.API_KEY)
+ * 3. fc_paid_apikey (STORAGE_KEYS.PAID_API_KEY)
+ * 4. Phần tử hợp lệ đầu tiên trong fc_apikey_pool (STORAGE_KEYS.API_KEY_POOL)
+ *
+ * @param {string} [preferredKey='']
+ * @returns {string}
+ */
+export const resolveActiveApiKey = (preferredKey = '') => {
+  if (typeof preferredKey === 'string' && preferredKey.trim()) {
+    return preferredKey.trim();
+  }
+
+
+  if (typeof localStorage === 'undefined') return '';
+
+
+  try {
+    const primaryKeyName = STORAGE_KEYS?.API_KEY || 'fc_apikey';
+    const primaryKey = localStorage.getItem(primaryKeyName);
+    if (primaryKey && primaryKey.trim()) return primaryKey.trim();
+
+
+    const paidKeyName = STORAGE_KEYS?.PAID_API_KEY || 'fc_paid_apikey';
+    const paidKey = localStorage.getItem(paidKeyName);
+    if (paidKey && paidKey.trim()) return paidKey.trim();
+
+
+    const poolKeyName = STORAGE_KEYS?.API_KEY_POOL || 'fc_apikey_pool';
+    const pool = Utils.safeJsonParse(poolKeyName, []);
+    if (Array.isArray(pool)) {
+      for (const entry of pool) {
+        if (typeof entry === 'string' && entry.trim()) {
+          return entry.trim();
+        }
+        if (entry && typeof entry === 'object' && typeof entry.key === 'string' && entry.key.trim()) {
+          return entry.key.trim();
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[GameHelpers] Không thể đọc API Key từ LocalStorage:', err);
+  }
+
+
+  return '';
+};
+
 
 // ============================================================================
 // 1. VẮC-XIN CHUẨN HÓA MULTI-SELECT LEVEL & TOPIC (ARRAY ARMOR)
 // ============================================================================
+
 
 /**
  * Lấy chuỗi Level an toàn (tương thích ngược 100% với các hàm ở tang_5.js)
@@ -22,10 +85,13 @@ import { Utils } from '@/utils/helpers';
  */
 export const getSafeLevelString = (level, defaultLevel = 'level_4_discovery_basic') => {
   if (Array.isArray(level)) {
-    return level.length > 0 && level[0] ? String(level[0]) : defaultLevel;
+    const firstValid = level.find((item) => item !== null && item !== undefined && String(item).trim() !== '');
+    return firstValid ? String(firstValid).trim() : defaultLevel;
   }
-  return level ? String(level) : defaultLevel;
+  const str = level !== null && level !== undefined ? String(level).trim() : '';
+  return str || defaultLevel;
 };
+
 
 /**
  * Chuyển đổi an toàn `currentLevel` và `currentTopic` (Mảng hoặc Chuỗi)
@@ -34,27 +100,32 @@ export const getSafeLevelString = (level, defaultLevel = 'level_4_discovery_basi
 export const normalizeLevelAndTopic = (currentLevel, currentTopic, lang = 'en') => {
   const defaultLevel = lang === 'zh' ? 'zh_level_1' : 'en_level_4';
 
+
   const levelArr = Array.isArray(currentLevel)
-    ? currentLevel.filter(Boolean).map(String)
-    : currentLevel
-    ? [String(currentLevel)]
+    ? currentLevel.map((v) => (v !== null && v !== undefined ? String(v).trim() : '')).filter(Boolean)
+    : currentLevel && String(currentLevel).trim()
+    ? [String(currentLevel).trim()]
     : [defaultLevel];
 
+
   const topicArr = Array.isArray(currentTopic)
-    ? currentTopic.filter(Boolean).map(String)
-    : currentTopic
-    ? [String(currentTopic)]
+    ? currentTopic.map((v) => (v !== null && v !== undefined ? String(v).trim() : '')).filter(Boolean)
+    : currentTopic && String(currentTopic).trim()
+    ? [String(currentTopic).trim()]
     : [];
+
 
   const pickedLevel =
     levelArr.length > 0
       ? levelArr[Math.floor(Math.random() * levelArr.length)]
       : defaultLevel;
 
+
   const pickedTopic =
     topicArr.length > 0
       ? topicArr[Math.floor(Math.random() * topicArr.length)]
       : '';
+
 
   return {
     levelArr,
@@ -67,9 +138,11 @@ export const normalizeLevelAndTopic = (currentLevel, currentTopic, lang = 'en') 
   };
 };
 
+
 // ============================================================================
 // 2. THUẬT TOÁN "TRỘN CÓ TRÍ NHỚ" (ANTI-STREAK OPTION & WORD SHUFFLER)
 // ============================================================================
+
 
 /**
  * Chống hiện tượng đáp án đúng rơi vào cùng 1 vị trí quá 2 lần liên tiếp.
@@ -82,8 +155,10 @@ export const normalizeLevelAndTopic = (currentLevel, currentTopic, lang = 'en') 
 export const applyAntiStreakShuffle = (items, streakTrackerRef, oddWord = null) => {
   if (!Array.isArray(items) || items.length <= 1) return items;
 
+
   const cloned = [...items];
   let correctIdx = -1;
+
 
   if (oddWord !== null && oddWord !== undefined) {
     const cleanOdd = String(oddWord).toLowerCase().trim();
@@ -96,10 +171,13 @@ export const applyAntiStreakShuffle = (items, streakTrackerRef, oddWord = null) 
     );
   }
 
+
   if (correctIdx === -1) return cloned;
 
-  const history = streakTrackerRef?.current || [];
+
+  const history = Array.isArray(streakTrackerRef?.current) ? streakTrackerRef.current : [];
   let shuffleCount = 0;
+
 
   while (
     history.length >= 2 &&
@@ -118,12 +196,15 @@ export const applyAntiStreakShuffle = (items, streakTrackerRef, oddWord = null) 
     shuffleCount++;
   }
 
-  if (streakTrackerRef && Array.isArray(streakTrackerRef.current)) {
+
+  if (streakTrackerRef && typeof streakTrackerRef === 'object') {
     streakTrackerRef.current = [correctIdx, ...history].slice(0, 2);
   }
 
+
   return cloned;
 };
+
 
 /**
  * Áp dụng Anti-Streak trực tiếp lên đối tượng câu hỏi `data` (tương thích 100% với tang_5.js).
@@ -132,12 +213,14 @@ export const applyAntiStreakShuffle = (items, streakTrackerRef, oddWord = null) 
 export const applyAntiStreak = (data, streakTrackerRef) => {
   if (!data || typeof data !== 'object') return data;
 
+
   if (Array.isArray(data.options) && data.options.length > 1) {
     return {
       ...data,
       options: applyAntiStreakShuffle(data.options, streakTrackerRef)
     };
   }
+
 
   if (Array.isArray(data.words) && data.oddWord && data.words.length > 1) {
     return {
@@ -146,12 +229,15 @@ export const applyAntiStreak = (data, streakTrackerRef) => {
     };
   }
 
+
   return data;
 };
+
 
 // ============================================================================
 // 3. CỖ MÁY ĐÓNG GÓI LỖI SAI ĐA CẤU TRÚC & KỶ LUẬT THOÁT NGANG
 // ============================================================================
+
 
 /**
  * Chuẩn hóa dữ liệu câu hỏi của bất kỳ Mini-game nào thành cấu trúc thẻ Lỗi sai (`mistakeCard`)
@@ -160,9 +246,11 @@ export const applyAntiStreak = (data, streakTrackerRef) => {
 export const createMistakePayload = (question, gameType = 'quiz', extraTags = []) => {
   if (!question) return null;
 
+
   const typeKey = String(gameType || 'quiz').toLowerCase();
   const baseId = `mistake_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   const tags = [typeKey, ...extraTags.filter(Boolean)];
+
 
   // 1. Game Điền từ (FillBlank)
   if (typeKey.includes('fillblank') || typeKey.includes('fill_blank')) {
@@ -176,6 +264,7 @@ export const createMistakePayload = (question, gameType = 'quiz', extraTags = []
       ? displaySentence.replace('[__________]', underlinedTarget)
       : displaySentence || targetWord;
 
+
     return {
       ...baseData,
       id: baseId,
@@ -187,6 +276,7 @@ export const createMistakePayload = (question, gameType = 'quiz', extraTags = []
       timestamp: Date.now()
     };
   }
+
 
   // 2. Game Tìm lỗi sai (SpotMistake)
   if (typeKey.includes('spotmistake') || typeKey.includes('spot_mistake')) {
@@ -202,6 +292,7 @@ export const createMistakePayload = (question, gameType = 'quiz', extraTags = []
         ? wrongSentence.replace(wrongWord, underlinedCorrection)
         : wrongSentence || correction;
 
+
     return {
       ...baseData,
       id: baseId,
@@ -215,12 +306,14 @@ export const createMistakePayload = (question, gameType = 'quiz', extraTags = []
     };
   }
 
+
   // 3. Game Từ khác loại (OddOneOut)
   if (typeKey.includes('oddoneout') || typeKey.includes('odd_one_out')) {
     const baseData = (question.originCards && question.originCards[0]) || question.origin || {};
     const wordsStr = Array.isArray(question.words)
       ? question.words.join(' • ')
       : String(question.words || question.oddWord || '');
+
 
     return {
       ...baseData,
@@ -235,11 +328,13 @@ export const createMistakePayload = (question, gameType = 'quiz', extraTags = []
     };
   }
 
+
   // 4. Game Vua Ngữ Âm (Pronunciation)
   if (typeKey.includes('pronunciation')) {
     const options = Array.isArray(question.options) ? question.options : [];
     const correctOpt = options.find((o) => o && o.isCorrect);
     const cleanTerm = correctOpt ? correctOpt.text : question.term || '';
+
 
     return {
       id: baseId,
@@ -252,11 +347,13 @@ export const createMistakePayload = (question, gameType = 'quiz', extraTags = []
     };
   }
 
+
   // 5. Game Đôi Tai Vàng (Listening)
   if (typeKey.includes('listening')) {
     const options = Array.isArray(question.options) ? question.options : [];
     const correctOpt = options.find((o) => o && o.isCorrect);
     const ansText = correctOpt ? correctOpt.text : 'Chưa rõ';
+
 
     return {
       id: baseId,
@@ -270,12 +367,14 @@ export const createMistakePayload = (question, gameType = 'quiz', extraTags = []
     };
   }
 
+
   // 6. Game Đọc Hiểu (Reading)
   if (typeKey.includes('reading')) {
     const ansText = question.correctAnswer || 'Chưa rõ';
     let typeName = 'Đọc hiểu';
     if (question.type === 'tfng') typeName = 'True/False/Not Given';
     else if (question.type === 'fill_blank') typeName = 'Điền từ';
+
 
     return {
       id: baseId,
@@ -291,9 +390,11 @@ export const createMistakePayload = (question, gameType = 'quiz', extraTags = []
     };
   }
 
+
   // 7. Mặc định cho Quiz, Match, Scramble, ImageQuiz
   const baseCard = question.origin || question.question || question;
   if (!baseCard || !baseCard.term) return null;
+
 
   return {
     ...baseCard,
@@ -305,6 +406,7 @@ export const createMistakePayload = (question, gameType = 'quiz', extraTags = []
     timestamp: Date.now()
   };
 };
+
 
 /**
  * Kỷ luật thoát ngang: Nếu người chơi thoát khi câu hỏi đã hiện ra mà chưa trả lời xong,
@@ -322,6 +424,7 @@ export const handleExitDiscipline = ({
 }) => {
   if (!isPlaying || isAnswered || !currentCard) return;
 
+
   try {
     if (typeof onLogWrong === 'function') {
       const mistakeCard = createMistakePayload(currentCard, gameType, extraTags);
@@ -329,6 +432,7 @@ export const handleExitDiscipline = ({
         onLogWrong(mistakeCard);
       }
     }
+
 
     if (typeof addToRetryBag === 'function') {
       const payloadToRetry = rawQuestionData || currentCard;
@@ -339,23 +443,22 @@ export const handleExitDiscipline = ({
   }
 };
 
+
 // ============================================================================
 // 4. THU HỒI ĐẠN CHƯA BẮN TỪ QUEUE ENGINE KHI AUTO-SAVE
 // ============================================================================
 
+
 /**
  * Trích xuất danh sách các thẻ/câu hỏi chưa bắn nằm trong hàng đợi của QueueEngine.
- * Hỗ trợ tất cả các biến thể cấu trúc dữ liệu của 10 Mini-games và nhận diện cả Ref lẫn Instance.
- * @param {Object} coordinatorOrRef Đối tượng điều phối hàng đợi (coordinatorRef.current hoặc coordinatorRef)
+ * Hỗ trợ tất cả các biến thể cấu trúc dữ liệu của 10 Mini-games.
+ * @param {Object} coordinator Đối tượng điều phối hàng đợi (coordinatorRef.current)
  * @returns {Array} Mảng các thẻ chưa sử dụng
  */
-export const extractPendingCardsFromQueue = (coordinatorOrRef) => {
+export const extractPendingCardsFromQueue = (coordinator) => {
   const pendingCards = [];
-  if (!coordinatorOrRef) return pendingCards;
-
-  const coordinator =
-    coordinatorOrRef.current !== undefined ? coordinatorOrRef.current : coordinatorOrRef;
   if (!coordinator) return pendingCards;
+
 
   const pendingTasks =
     typeof coordinator.getPendingItems === 'function'
@@ -364,7 +467,9 @@ export const extractPendingCardsFromQueue = (coordinatorOrRef) => {
       ? coordinator.queue
       : [];
 
+
   if (!Array.isArray(pendingTasks)) return pendingCards;
+
 
   pendingTasks.forEach((task) => {
     if (!task) return;
@@ -383,44 +488,64 @@ export const extractPendingCardsFromQueue = (coordinatorOrRef) => {
     }
   });
 
+
   return pendingCards;
 };
 
+
 /**
- * Alias tương thích 100% với ScrambleGame.jsx (File 55) & OddOneOutGame.jsx (File 63)
+ * Alias tương thích chuẩn NewMapping.md cho `extractPendingCardsFromQueue`
  */
 export const extractPendingCardsFromCoordinator = extractPendingCardsFromQueue;
 
+
 /**
  * Thu hồi các thẻ chưa sử dụng nằm trong hàng đợi của QueueEngine và gộp với bộ bài hiện tại.
- * Tự động nhận diện thông minh thứ tự tham số dù truyền `(coordinator, currentDeck)` hay `(currentDeck, coordinator)`.
+ * Khử trùng lặp an toàn theo `term` đã chuẩn hóa (trim + lowercase).
  */
-export const mergePendingDeckFromCoordinator = (arg1, arg2 = []) => {
-  const isArg1Array = Array.isArray(arg1);
-  const coordinator = isArg1Array ? arg2 : arg1;
-  const currentDeck = isArg1Array ? arg1 : Array.isArray(arg2) ? arg2 : [];
-
+export const mergePendingDeckFromCoordinator = (coordinator, currentDeck = []) => {
   const pendingCards = extractPendingCardsFromQueue(coordinator);
-  const combined = [...pendingCards, ...currentDeck];
+  const combined = [...pendingCards, ...(Array.isArray(currentDeck) ? currentDeck : [])];
+  const seenTerms = new Set();
+  const seenRefs = new Set();
+  const result = [];
 
-  return combined.filter(
-    (item, idx, arr) =>
-      item &&
-      idx ===
-        arr.findIndex((t) =>
-          t && t.term && item.term ? t.term === item.term : t === item
-        )
-  );
+
+  for (const item of combined) {
+    if (!item) continue;
+    const normTerm =
+      typeof item.term === 'string' && item.term.trim()
+        ? item.term.trim().toLowerCase()
+        : '';
+
+
+    if (normTerm) {
+      if (seenTerms.has(normTerm)) continue;
+      seenTerms.add(normTerm);
+      result.push(item);
+    } else {
+      if (seenRefs.has(item)) continue;
+      seenRefs.add(item);
+      result.push(item);
+    }
+  }
+
+
+  return result;
 };
 
+
 /**
- * Alias tương thích 100% với QuizGame.jsx (File 57)
+ * Alias tương thích chuẩn NewMapping.md cho `mergePendingDeckFromCoordinator`
+ * (Được gọi trực tiếp bởi QuizGame.jsx và các Mini-Games khi AutoSave / Back).
  */
 export const mergePendingAmmoToDeck = mergePendingDeckFromCoordinator;
+
 
 // ============================================================================
 // 5. ĐỘNG CƠ TÍNH ĐIỂM & HIỆU ỨNG ÂM THANH (SCORING & WEB AUDIO SFX)
 // ============================================================================
+
 
 /**
  * Tính điểm dựa trên điểm cơ bản, thời gian còn lại, chuỗi thắng (combo) và độ khó.
@@ -435,15 +560,19 @@ export const calculateGameScore = (
   const safeTime = Math.max(0, Number(timeLeft) || 0);
   const safeStreak = Math.max(0, Number(streak) || 0);
 
+
   let timeMultiplier = 2;
   if (difficulty === 'hard' || difficulty === 'hell') timeMultiplier = 4;
   else if (difficulty === 'easy') timeMultiplier = 1;
 
+
   const timeBonus = Math.floor(safeTime * timeMultiplier);
   const streakBonus = Math.min(safeStreak * 10, 100);
 
+
   return safeBase + timeBonus + streakBonus;
 };
+
 
 /**
  * Phát âm thanh hiệu ứng trực tiếp bằng Web Audio API (0ms latency, không cần file MP3 ngoài).
@@ -451,21 +580,25 @@ export const calculateGameScore = (
  * @param {boolean} isMuted
  */
 export const playGameSFX = (type = 'correct', isMuted = false) => {
-  if (isMuted) return;
+  if (isMuted || typeof window === 'undefined') return;
+
 
   try {
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextClass) return;
+
 
     if (!window.fc_audioCtx) {
       window.fc_audioCtx = new AudioContextClass();
     }
     const ctx = window.fc_audioCtx;
     if (ctx.state === 'suspended') {
-      ctx.resume();
+      ctx.resume().catch(() => {});
     }
 
+
     const now = ctx.currentTime;
+
 
     if (type === 'correct') {
       const osc = ctx.createOscillator();
@@ -475,8 +608,10 @@ export const playGameSFX = (type = 'correct', isMuted = false) => {
       osc.frequency.setValueAtTime(659.25, now + 0.08); // E5
       osc.frequency.setValueAtTime(783.99, now + 0.16); // G5
 
+
       gain.gain.setValueAtTime(0.18, now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+
 
       osc.connect(gain);
       gain.connect(ctx.destination);
@@ -489,8 +624,10 @@ export const playGameSFX = (type = 'correct', isMuted = false) => {
       osc.frequency.setValueAtTime(160, now);
       osc.frequency.linearRampToValueAtTime(110, now + 0.35);
 
+
       gain.gain.setValueAtTime(0.15, now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+
 
       osc.connect(gain);
       gain.connect(ctx.destination);
@@ -505,8 +642,10 @@ export const playGameSFX = (type = 'correct', isMuted = false) => {
         const startTime = now + idx * 0.11;
         osc.frequency.setValueAtTime(freq, startTime);
 
+
         gain.gain.setValueAtTime(0.2, startTime);
         gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.45);
+
 
         osc.connect(gain);
         gain.connect(ctx.destination);
@@ -519,8 +658,10 @@ export const playGameSFX = (type = 'correct', isMuted = false) => {
       osc.type = 'sine';
       osc.frequency.setValueAtTime(800, now);
 
+
       gain.gain.setValueAtTime(0.06, now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+
 
       osc.connect(gain);
       gain.connect(ctx.destination);
@@ -532,9 +673,11 @@ export const playGameSFX = (type = 'correct', isMuted = false) => {
   }
 };
 
+
 // ============================================================================
 // 6. CÁC HÀM ĐỊNH DẠNG THỜI GIAN & CẤU HÌNH UI COOLDOWN
 // ============================================================================
+
 
 /**
  * Định dạng số giây thành chuỗi `m:ss` (VD: 65 -> "1:05")
@@ -546,6 +689,7 @@ export const formatGameTime = (seconds = 0) => {
   return `${m}:${s.toString().padStart(2, '0')}`;
 };
 
+
 /**
  * Lấy class màu chữ cho đồng hồ đếm ngược dựa trên tỉ lệ thời gian còn lại
  */
@@ -556,14 +700,18 @@ export const getTimerColor = (timeLeft = 0, totalTime = 30) => {
   return 'text-red-600 animate-pulse';
 };
 
+
 /**
  * Đọc thời gian làm nguội UI (UI Cooldown) từ cấu hình Lõi AI (`fc_ai_config`)
  */
 export const getConfiguredUiCooldown = (defaultSec = 9) => {
   try {
     const cfg = Utils.safeJsonParse('fc_ai_config', {});
-    if (cfg && cfg.uiCooldown !== undefined) {
-      return Math.max(0, parseInt(cfg.uiCooldown, 10));
+    if (cfg && cfg.uiCooldown !== undefined && cfg.uiCooldown !== null && String(cfg.uiCooldown).trim() !== '') {
+      const parsed = parseInt(cfg.uiCooldown, 10);
+      if (Number.isFinite(parsed)) {
+        return Math.max(0, parsed);
+      }
     }
   } catch {
     // Fallback an toàn về giá trị mặc định
@@ -571,7 +719,9 @@ export const getConfiguredUiCooldown = (defaultSec = 9) => {
   return defaultSec;
 };
 
+
 export const GameHelpers = {
+  resolveActiveApiKey,
   getSafeLevelString,
   normalizeLevelAndTopic,
   applyAntiStreakShuffle,
@@ -589,8 +739,11 @@ export const GameHelpers = {
   getConfiguredUiCooldown
 };
 
+
 if (typeof window !== 'undefined') {
   window.GameHelpers = GameHelpers;
 }
 
+
 export default GameHelpers;
+

@@ -1,8 +1,15 @@
 // ============================================================================
 // FILE 56/85: src/features/games/QuizUI.jsx
 // NGUỒN GỐC: tang_5.js (Block 5.5 - Quiz UI V1.35)
+// PHIÊN BẢN: Ver 1.1
+// NGÀY GIỜ NÂNG CẤP: 20/11/2026 - 22:47 (GMT+7)
 // NHIỆM VỤ: Giao diện Cài đặt (QuizSetup), Màn hình chơi (GamePlayScreen) và
 //           Màn hình kết quả (GameResult) cho trò chơi Trắc Nghiệm (Multiple Choice).
+//           Nâng cấp Ver 1.1: Chặn nổi bọt bàn phím (onKeyDown) 2 lớp từ nút Loa/
+//           Bookmark con, phân luồng thoát về Menu khi 0/0 ở Loading/Lỗi, đồng bộ
+//           Bookmark câu hỏi chính qua notebookKeySet NFC, thống nhất
+//           effectiveSourceMode, bảo lưu grammarFocus trong localStorage, khóa chặt
+//           100% tương tác khi isLocked và kiểm duyệt timeLimit/formatLevelBadge.
 // ============================================================================
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -11,17 +18,168 @@ import { MenuToggle } from '@/components/common/Controls';
 import { GlobalLoadingScreen } from '@/components/common/GlobalLoadingScreen';
 import { Utils } from '@/utils/helpers';
 import { getGrammarTopics } from '@/engines/microPrompts';
-import { getSafeLevelString } from './common/gameHelpers';
+import { getSafeLevelString, getTimerColor } from './common/gameHelpers';
+
+const VALID_TIME_LIMITS = [15, 30, 45, 60];
+
+// Bảng ánh xạ lớp Tailwind tĩnh (chống Tailwind JIT bỏ sót khi ghép chuỗi động)
+const MAIN_COLOR_STYLES = {
+  blue: {
+    btn: 'bg-blue-600 hover:bg-blue-700',
+    iconBtn: 'hover:bg-blue-50 text-blue-600 border-blue-100',
+    cardActive: 'border-blue-500 bg-blue-50 shadow-sm',
+    iconActive: 'text-blue-600',
+    startRing: 'bg-blue-600 ring-blue-200',
+    speaker: 'text-blue-600 bg-blue-50 hover:bg-blue-100 border-blue-200',
+    listenBtn: 'bg-white border-blue-100 hover:bg-blue-50 text-blue-600',
+    focusRing: 'focus:ring-blue-300'
+  },
+  sky: {
+    btn: 'bg-sky-600 hover:bg-sky-700',
+    iconBtn: 'hover:bg-sky-50 text-sky-600 border-sky-100',
+    cardActive: 'border-sky-500 bg-sky-50 shadow-sm',
+    iconActive: 'text-sky-600',
+    startRing: 'bg-sky-600 ring-sky-200',
+    speaker: 'text-sky-600 bg-sky-50 hover:bg-sky-100 border-sky-200',
+    listenBtn: 'bg-white border-sky-100 hover:bg-sky-50 text-sky-600',
+    focusRing: 'focus:ring-sky-300'
+  },
+  red: {
+    btn: 'bg-red-600 hover:bg-red-700',
+    iconBtn: 'hover:bg-red-50 text-red-600 border-red-100',
+    cardActive: 'border-red-500 bg-red-50 shadow-sm',
+    iconActive: 'text-red-600',
+    startRing: 'bg-red-600 ring-red-200',
+    speaker: 'text-red-600 bg-red-50 hover:bg-red-100 border-red-200',
+    listenBtn: 'bg-white border-red-100 hover:bg-red-50 text-red-600',
+    focusRing: 'focus:ring-red-300'
+  },
+  indigo: {
+    btn: 'bg-indigo-600 hover:bg-indigo-700',
+    iconBtn: 'hover:bg-indigo-50 text-indigo-600 border-indigo-100',
+    cardActive: 'border-indigo-500 bg-indigo-50 shadow-sm',
+    iconActive: 'text-indigo-600',
+    startRing: 'bg-indigo-600 ring-indigo-200',
+    speaker: 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border-indigo-200',
+    listenBtn: 'bg-white border-indigo-100 hover:bg-indigo-50 text-indigo-600',
+    focusRing: 'focus:ring-indigo-300'
+  },
+  emerald: {
+    btn: 'bg-emerald-600 hover:bg-emerald-700',
+    iconBtn: 'hover:bg-emerald-50 text-emerald-600 border-emerald-100',
+    cardActive: 'border-emerald-500 bg-emerald-50 shadow-sm',
+    iconActive: 'text-emerald-600',
+    startRing: 'bg-emerald-600 ring-emerald-200',
+    speaker: 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100 border-emerald-200',
+    listenBtn: 'bg-white border-emerald-100 hover:bg-emerald-50 text-emerald-600',
+    focusRing: 'focus:ring-emerald-300'
+  },
+  purple: {
+    btn: 'bg-purple-600 hover:bg-purple-700',
+    iconBtn: 'hover:bg-purple-50 text-purple-600 border-purple-100',
+    cardActive: 'border-purple-500 bg-purple-50 shadow-sm',
+    iconActive: 'text-purple-600',
+    startRing: 'bg-purple-600 ring-purple-200',
+    speaker: 'text-purple-600 bg-purple-50 hover:bg-purple-100 border-purple-200',
+    listenBtn: 'bg-white border-purple-100 hover:bg-purple-50 text-purple-600',
+    focusRing: 'focus:ring-purple-300'
+  },
+  orange: {
+    btn: 'bg-orange-600 hover:bg-orange-700',
+    iconBtn: 'hover:bg-orange-50 text-orange-600 border-orange-100',
+    cardActive: 'border-orange-500 bg-orange-50 shadow-sm',
+    iconActive: 'text-orange-600',
+    startRing: 'bg-orange-600 ring-orange-200',
+    speaker: 'text-orange-600 bg-orange-50 hover:bg-orange-100 border-orange-200',
+    listenBtn: 'bg-white border-orange-100 hover:bg-orange-50 text-orange-600',
+    focusRing: 'focus:ring-orange-300'
+  },
+  cyan: {
+    btn: 'bg-cyan-600 hover:bg-cyan-700',
+    iconBtn: 'hover:bg-cyan-50 text-cyan-600 border-cyan-100',
+    cardActive: 'border-cyan-500 bg-cyan-50 shadow-sm',
+    iconActive: 'text-cyan-600',
+    startRing: 'bg-cyan-600 ring-cyan-200',
+    speaker: 'text-cyan-600 bg-cyan-50 hover:bg-cyan-100 border-cyan-200',
+    listenBtn: 'bg-white border-cyan-100 hover:bg-cyan-50 text-cyan-600',
+    focusRing: 'focus:ring-cyan-300'
+  },
+  slate: {
+    btn: 'bg-slate-600 hover:bg-slate-700',
+    iconBtn: 'hover:bg-slate-50 text-slate-600 border-slate-100',
+    cardActive: 'border-slate-500 bg-slate-50 shadow-sm',
+    iconActive: 'text-slate-600',
+    startRing: 'bg-slate-600 ring-slate-200',
+    speaker: 'text-slate-600 bg-slate-50 hover:bg-slate-100 border-slate-200',
+    listenBtn: 'bg-white border-slate-100 hover:bg-slate-50 text-slate-600',
+    focusRing: 'focus:ring-slate-300'
+  }
+};
+
+const getThemeStyle = (color) => MAIN_COLOR_STYLES[color] || MAIN_COLOR_STYLES.blue;
+
+// Chuẩn hóa khóa so khớp Unicode NFC (không phân biệt hoa/thường và khoảng trắng thừa)
+const normalizeNotebookKey = (val) => {
+  if (val === undefined || val === null) return '';
+  const str = String(val).trim().toLowerCase();
+  return typeof str.normalize === 'function' ? str.normalize('NFC') : str;
+};
+
+// Kiểm tra an toàn chỉ số sai (hỗ trợ cả Set lẫn Array khi khôi phục phiên)
+const hasWrongIndex = (wrongCollection, idx) => {
+  if (!wrongCollection) return false;
+  if (wrongCollection instanceof Set || typeof wrongCollection.has === 'function') {
+    return wrongCollection.has(idx);
+  }
+  if (Array.isArray(wrongCollection)) {
+    return wrongCollection.includes(idx);
+  }
+  return false;
+};
+
+// Chuẩn hóa giá trị thời gian giới hạn từ LocalStorage
+const sanitizeTimeLimit = (val) => {
+  const num = Number(val);
+  return VALID_TIME_LIMITS.includes(num) ? num : 30;
+};
 
 // Đọc cấu hình đã lưu từ LocalStorage một cách an toàn
 const getSavedQuizConfig = () => {
   try {
+    if (typeof localStorage === 'undefined') return {};
     const saved = localStorage.getItem('fc_quiz_config');
     return saved ? JSON.parse(saved) : {};
   } catch (e) {
-    console.warn('Load quiz config failed:', e);
+    console.warn('[QuizUI] Load quiz config failed:', e);
     return {};
   }
+};
+
+// Lưu cấu hình vào LocalStorage một cách an toàn
+const saveQuizConfig = (config) => {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('fc_quiz_config', JSON.stringify(config));
+    }
+  } catch (e) {
+    console.warn('[QuizUI] Save quiz config failed:', e);
+  }
+};
+
+// Định dạng nhãn Level thân thiện cho GlobalLoadingScreen (hỗ trợ cả mảng nhiều cấp độ)
+const formatLevelBadge = (rawLevel) => {
+  const safeLevelStr = getSafeLevelString(rawLevel, '');
+  if (!safeLevelStr) return '';
+  const baseLabel = safeLevelStr
+    .replace(/^(?:(?:en|zh)_)?level_/i, 'LEVEL ')
+    .replace(/_/g, ' ')
+    .trim()
+    .toUpperCase();
+  if (Array.isArray(rawLevel)) {
+    const validCount = rawLevel.filter(Boolean).length;
+    if (validCount > 1) return `${baseLabel} (+${validCount - 1})`;
+  }
+  return baseLabel;
 };
 
 // ============================================================================
@@ -35,6 +193,7 @@ export const QuizSetup = ({
   onBack,
   onOpenAiConfig
 }) => {
+  const theme = getThemeStyle(mainColor);
   const initialCfg = useMemo(() => getSavedQuizConfig(), []);
 
   const [sourceMode, setSourceMode] = useState(() => initialCfg.sourceMode ?? 'card');
@@ -42,14 +201,14 @@ export const QuizSetup = ({
   const [listenMode, setListenMode] = useState(() => initialCfg.listenMode ?? false);
   const [hardMode, setHardMode] = useState(() => initialCfg.hardMode ?? false);
   const [aiMode, setAiMode] = useState(() => initialCfg.aiMode ?? false);
-  const [timeLimit, setTimeLimit] = useState(() => initialCfg.timeLimit ?? 30);
+  const [timeLimit, setTimeLimit] = useState(() => sanitizeTimeLimit(initialCfg.timeLimit));
   const [askMode, setAskMode] = useState(() => initialCfg.askMode ?? 'term');
   const [showPronun, setShowPronun] = useState(() => initialCfg.showPronun ?? false);
   const [autoReadAnswer, setAutoReadAnswer] = useState(() => initialCfg.autoReadAnswer ?? false);
   const [suddenDeath, setSuddenDeath] = useState(() => initialCfg.suddenDeath ?? false);
   const [grammarFocus, setGrammarFocus] = useState(() => initialCfg.grammarFocus ?? 'random');
 
-  // Lấy danh sách chuyên đề ngữ pháp theo trình độ hiện tại (sử dụng useMemo thay cho polling)
+  // Lấy danh sách chuyên đề ngữ pháp theo ngôn ngữ & trình độ hiện tại
   const grammarTopics = useMemo(() => {
     const repLevel = getSafeLevelString(
       currentLevel,
@@ -68,6 +227,19 @@ export const QuizSetup = ({
     return [];
   }, [lang, currentLevel]);
 
+  // Kiểm duyệt grammarFocus theo danh sách chuyên đề hiện hành
+  const effectiveGrammarFocus = useMemo(() => {
+    if (!grammarFocus || grammarFocus === 'random') return 'random';
+    const isValid = grammarTopics.some((topic) => topic && topic.id === grammarFocus);
+    return isValid ? grammarFocus : 'random';
+  }, [grammarFocus, grammarTopics]);
+
+  useEffect(() => {
+    if (grammarFocus !== effectiveGrammarFocus) {
+      setGrammarFocus(effectiveGrammarFocus);
+    }
+  }, [grammarFocus, effectiveGrammarFocus]);
+
   const groupedTopics = useMemo(() => {
     return grammarTopics.reduce((acc, topic) => {
       const grp = topic.group || 'Chuyên đề Khác';
@@ -77,26 +249,41 @@ export const QuizSetup = ({
     }, {});
   }, [grammarTopics]);
 
-  // [FORCED AI GUARD - V1.28] Ép bật AI nếu người dùng chọn Khó + Không Đảo Ngược ở chế độ Thẻ cá nhân
+  // Ép bật AI khi dùng nguồn AI Tự Sinh hoặc chọn Khó + Hỏi Từ ở chế độ Thẻ cá nhân
   const isAiForced = hardMode && askMode === 'term' && sourceMode === 'card';
-  const effectiveAiMode = isAiForced ? true : aiMode;
+  const effectiveAiMode = sourceMode === 'ai_pure' ? true : isAiForced ? true : aiMode;
 
   const handleStart = () => {
-    const config = {
+    const baseConfig = {
       timerMode,
       listenMode,
       hardMode,
       aiMode: effectiveAiMode,
-      timeLimit,
+      isAiMode: effectiveAiMode,
+      timeLimit: sanitizeTimeLimit(timeLimit),
       askMode,
       showPronun,
       autoReadAnswer,
       sourceMode,
-      suddenDeath,
-      grammarFocus
+      suddenDeath
     };
-    localStorage.setItem('fc_quiz_config', JSON.stringify(config));
-    onStart('quiz', config);
+
+    // Bảo lưu effectiveGrammarFocus trong localStorage để không mất lựa chọn khi tạm tắt Đảo ngược
+    saveQuizConfig({
+      ...baseConfig,
+      grammarFocus: effectiveGrammarFocus
+    });
+
+    // Chỉ kích hoạt bẫy ngữ pháp ở payload chạy game khi dùng AI Tự Sinh + Chế độ Đảo ngược
+    const startPayload = {
+      ...baseConfig,
+      grammarFocus:
+        sourceMode === 'ai_pure' && askMode === 'def' ? effectiveGrammarFocus : 'random'
+    };
+
+    if (typeof onStart === 'function') {
+      onStart('quiz', startPayload);
+    }
   };
 
   const handleHardModeChange = (val) => {
@@ -116,7 +303,7 @@ export const QuizSetup = ({
     }
   };
 
-  // Chỉ hiển thị Dropdown Ngữ pháp khi dùng nguồn AI Tự sinh và bật Đảo ngược
+  // Chỉ hiển thị Dropdown Ngữ pháp khi dùng nguồn AI Tự sinh và có chuyên đề
   const showGrammarSection = sourceMode === 'ai_pure';
   const isGrammarDisabled = askMode !== 'def';
 
@@ -135,16 +322,19 @@ export const QuizSetup = ({
     <div className="relative z-10 flex flex-col items-center w-full max-w-3xl h-full animate-in slide-in-from-right-8 px-2 sm:px-4">
       <div className="w-full flex items-center justify-between mb-4 mt-2 shrink-0">
         <button
+          type="button"
           onClick={onBack}
           className="p-2 rounded-full hover:bg-gray-100 text-gray-500 transition-colors"
+          title="Quay lại"
         >
           <Icons.ChevronLeft size={24} />
         </button>
         <h2 className="text-xl font-bold text-gray-800">Cấu hình Trắc Nghiệm</h2>
         {onOpenAiConfig ? (
           <button
+            type="button"
             onClick={onOpenAiConfig}
-            className={`p-2 rounded-full hover:bg-${mainColor}-50 text-${mainColor}-600 transition-colors shadow-sm border border-${mainColor}-100`}
+            className={`p-2 rounded-full transition-colors shadow-sm border ${theme.iconBtn}`}
             title="Cài đặt Lõi AI (Tốc độ, Băng đạn)"
           >
             <Icons.Sparkles size={20} />
@@ -162,16 +352,17 @@ export const QuizSetup = ({
           </label>
           <div className="grid grid-cols-2 gap-3">
             <button
+              type="button"
               onClick={() => setSourceMode('card')}
               className={`p-2 rounded-2xl border-2 flex flex-col items-center gap-1 transition-all ${
                 sourceMode === 'card'
-                  ? `border-${mainColor}-500 bg-${mainColor}-50 shadow-sm`
+                  ? theme.cardActive
                   : 'border-gray-100 bg-white opacity-60 hover:opacity-100'
               } hover:scale-105`}
             >
               <Icons.Layers
                 size={24}
-                className={sourceMode === 'card' ? `text-${mainColor}-600` : 'text-gray-400'}
+                className={sourceMode === 'card' ? theme.iconActive : 'text-gray-400'}
               />
               <div className="text-center">
                 <div className="font-bold text-gray-800 text-sm">Thẻ của tôi</div>
@@ -179,6 +370,7 @@ export const QuizSetup = ({
               </div>
             </button>
             <button
+              type="button"
               onClick={() => setSourceMode('ai_pure')}
               className={`p-2 rounded-2xl border-2 flex flex-col items-center gap-1 transition-all ${
                 sourceMode === 'ai_pure'
@@ -205,7 +397,7 @@ export const QuizSetup = ({
               <Icons.Target size={16} /> Chuyên đề Ngữ pháp (Bẫy AI)
             </label>
             <select
-              value={grammarFocus}
+              value={effectiveGrammarFocus}
               onChange={(e) => setGrammarFocus(e.target.value)}
               disabled={isGrammarDisabled}
               className={`w-full p-3 border rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm transition-all ${
@@ -313,8 +505,9 @@ export const QuizSetup = ({
                     Chọn thời gian:
                   </span>
                   <div className="flex gap-1">
-                    {[15, 30, 45, 60].map((sec) => (
+                    {VALID_TIME_LIMITS.map((sec) => (
                       <button
+                        type="button"
                         key={sec}
                         onClick={(e) => {
                           e.stopPropagation();
@@ -339,8 +532,9 @@ export const QuizSetup = ({
 
       <div className="w-full mt-2 pt-4 border-t border-gray-100 bg-white pb-safe shrink-0 flex justify-center">
         <button
+          type="button"
           onClick={handleStart}
-          className={`w-full max-w-sm py-4 bg-${mainColor}-600 text-white rounded-xl font-bold shadow-lg hover:bg-${mainColor}-700 flex items-center justify-center gap-2 active:scale-95 transition-transform`}
+          className={`w-full max-w-sm py-4 text-white rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-transform ${theme.btn}`}
         >
           <Icons.Play size={24} /> BẮT ĐẦU CHƠI
         </button>
@@ -358,14 +552,18 @@ export const GameResult = ({
   correctCount = 0,
   wrongCount = 0
 }) => {
+  const theme = getThemeStyle(mainColor);
+
   useEffect(() => {
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       window.speechSynthesis.cancel();
     }
   }, []);
 
-  const totalPlayed = correctCount + wrongCount;
-  const accuracy = totalPlayed > 0 ? Math.round((correctCount / totalPlayed) * 100) : 0;
+  const safeCorrect = Math.max(0, Number(correctCount) || 0);
+  const safeWrong = Math.max(0, Number(wrongCount) || 0);
+  const totalPlayed = safeCorrect + safeWrong;
+  const accuracy = totalPlayed > 0 ? Math.round((safeCorrect / totalPlayed) * 100) : 0;
 
   return (
     <div className="relative z-10 flex flex-col items-center w-full max-w-sm text-center animate-in zoom-in">
@@ -376,13 +574,13 @@ export const GameResult = ({
           <div className="text-xs text-green-500 uppercase font-bold tracking-wider mb-1">
             Đúng
           </div>
-          <div className="text-3xl font-black text-green-600">{correctCount}</div>
+          <div className="text-3xl font-black text-green-600">{safeCorrect}</div>
         </div>
         <div className="text-center border-l border-gray-300 pl-4">
           <div className="text-xs text-red-500 uppercase font-bold tracking-wider mb-1">
             Sai
           </div>
-          <div className="text-3xl font-black text-red-500">{wrongCount}</div>
+          <div className="text-3xl font-black text-red-500">{safeWrong}</div>
         </div>
         <div className="text-center border-l border-gray-300 pl-4">
           <div className="text-xs text-blue-500 uppercase font-bold tracking-wider mb-1">
@@ -392,8 +590,9 @@ export const GameResult = ({
         </div>
       </div>
       <button
+        type="button"
         onClick={onBack}
-        className={`w-full py-4 rounded-xl font-bold text-white bg-${mainColor}-600 hover:bg-${mainColor}-700 shadow-lg active:scale-95 transition-all`}
+        className={`w-full py-4 rounded-xl font-bold text-white shadow-lg active:scale-95 transition-all ${theme.btn}`}
       >
         Hoàn tất
       </button>
@@ -410,12 +609,14 @@ export const GamePlayScreen = ({
   currentQuestionData,
   streak = 0,
   gameMode,
-  setGameMode,
+  // Giữ prop setGameMode để tương thích ngược chữ ký (không gọi tắt vĩnh viễn chế độ Luyện nghe)
+  setGameMode: _setGameMode,
   isAudioPlaying,
   playSequence,
   onBookmark,
   isInNotebook,
   onPlay,
+  onPlayOption,
   selectedOptionIndex,
   isChecking,
   clickedWrongIndices = new Set(),
@@ -452,39 +653,74 @@ export const GamePlayScreen = ({
   aiAmmoCount = 0,
   notebook = []
 }) => {
+  const theme = getThemeStyle(mainColor);
   const [showConfirmEnd, setShowConfirmEnd] = useState(false);
 
-  const getTimerColor = (time, total) => {
-    const ratio = time / total;
-    if (ratio > 0.6) return 'text-green-600';
-    if (ratio > 0.3) return 'text-orange-500';
-    return 'text-red-600 animate-pulse';
+  // Thống nhất nguồn sourceMode dùng xuyên suốt màn hình chơi
+  const effectiveSourceMode = sourceMode || config?.sourceMode || 'card';
+
+  // Tập chỉ mục Sổ tay chuẩn hóa Unicode NFC giúp tra cứu O(1) chính xác
+  const notebookKeySet = useMemo(() => {
+    const set = new Set();
+    if (Array.isArray(notebook)) {
+      notebook.forEach((n) => {
+        const key = normalizeNotebookKey(n?.term);
+        if (key) set.add(key);
+      });
+    }
+    return set;
+  }, [notebook]);
+
+  const stopBrowserSpeech = () => {
+    try {
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    } catch {
+      // Bỏ qua an toàn
+    }
+  };
+
+  // Thoát từ Loading / Lỗi nạp dữ liệu: nếu chưa trả lời câu nào (0/0) thì quay thẳng về Menu
+  const handleExitOrAbort = () => {
+    stopBrowserSpeech();
+    const totalAnswered = (Number(correctCount) || 0) + (Number(wrongCount) || 0);
+    if (totalAnswered === 0 && typeof onBack === 'function') {
+      onBack();
+      return;
+    }
+    if (typeof onEndGame === 'function') {
+      onEndGame({ correct: correctCount, wrong: wrongCount });
+    }
+  };
+
+  const handleConfirmExit = () => {
+    setShowConfirmEnd(false);
+    stopBrowserSpeech();
+    if (typeof onEndGame === 'function') {
+      onEndGame({ correct: correctCount, wrong: wrongCount });
+    }
   };
 
   // [SILENT OFFLINE] Chặn đứng GlobalLoadingScreen nếu là thẻ offline
   if (isGenerating && !currentQuestionData) {
-    if (sourceMode === 'card' && !isAiMode) {
+    if (effectiveSourceMode === 'card' && !isAiMode) {
       return (
         <div className="w-full h-full bg-gray-50 flex items-center justify-center pointer-events-none"></div>
       );
     }
 
-    const safeLevelStr = getSafeLevelString(config?.level, '');
     return (
       <GlobalLoadingScreen
-        onCancel={() => onEndGame && onEndGame()}
+        onCancel={handleExitOrAbort}
         queueLength={aiAmmoCount}
         text={
-          sourceMode === 'ai_pure'
+          effectiveSourceMode === 'ai_pure'
             ? 'AI đang sáng tác câu đố...'
             : 'Đang thiết lập trò chơi...'
         }
         mainColor={mainColor}
-        levelStr={
-          config?.sourceMode === 'ai_pure' && safeLevelStr
-            ? safeLevelStr.replace('level_', '').replace(/_/g, ' ').toUpperCase()
-            : ''
-        }
+        levelStr={effectiveSourceMode === 'ai_pure' ? formatLevelBadge(config?.level) : ''}
       />
     );
   }
@@ -498,7 +734,8 @@ export const GamePlayScreen = ({
           Hệ thống không thể tải được câu hỏi. Vui lòng kiểm tra lại kết nối mạng hoặc thử lại.
         </p>
         <button
-          onClick={() => onEndGame && onEndGame()}
+          type="button"
+          onClick={handleExitOrAbort}
           className="px-6 py-3 bg-red-600 text-white font-bold rounded-xl shadow-lg hover:bg-red-700 transition-colors"
         >
           Thoát về Menu
@@ -512,9 +749,17 @@ export const GamePlayScreen = ({
   const isReverse = askMode === 'def';
   const isReverseListen = gameMode === 'listen' && isReverse;
 
-  // [CHỐT CHẶN BẢO MẬT BOOKMARK - V1.27]
   // Khóa Bookmark nếu chưa trả lời (isChecking = false) VÀ đang ở chế độ rủi ro lộ đáp án
   const isBookmarkLocked = !isChecking && (askMode === 'def' || gameMode === 'listen');
+
+  // Đồng bộ trạng thái Bookmark của câu hỏi chính theo chuẩn Unicode NFC
+  const isQuestionInNotebook = Boolean(
+    isInNotebook || notebookKeySet.has(normalizeNotebookKey(currentQuestionData?.question?.term))
+  );
+
+  const isLimitedListen = gameMode === 'listen' && hardMode && !timerMode;
+  const remainingListens = Math.max(0, 2 - (Number(listenPlayCount) || 0));
+  const isListenExhausted = isLimitedListen && remainingListens <= 0;
 
   const getOptionClass = (opt, i) => {
     const isListenLocked = gameMode === 'listen' && !hasStartedListening && !isReverseListen;
@@ -530,7 +775,7 @@ export const GamePlayScreen = ({
       }
       return 'bg-gray-50 border-gray-100 text-gray-300 opacity-60 cursor-default';
     }
-    if (clickedWrongIndices.has(i)) {
+    if (hasWrongIndex(clickedWrongIndices, i)) {
       return 'bg-red-50 border-red-200 text-red-300 opacity-80 cursor-not-allowed';
     }
     return 'bg-white border-gray-200 text-gray-700 hover:bg-blue-50 hover:border-blue-200 hover:shadow-md active:scale-95 cursor-pointer';
@@ -542,9 +787,11 @@ export const GamePlayScreen = ({
     return 'bg-white text-gray-500';
   };
 
-  const totalOptions = currentQuestionData?.options?.length || 0;
+  const optionsList = Array.isArray(currentQuestionData?.options)
+    ? currentQuestionData.options
+    : [];
+  const totalOptions = optionsList.length;
   const isOddOptions = totalOptions % 2 !== 0;
-  const labels = ['A', 'B', 'C', 'D', 'E'];
 
   const isSentenceMode = config?.dataMode === 'sentence';
   const questionText = isReverse
@@ -555,16 +802,42 @@ export const GamePlayScreen = ({
 
   const showPronunciation =
     !isReverse && showPronun && currentQuestionData?.question?.pronunciation;
-  const isLimitedListen = gameMode === 'listen' && hardMode && !timerMode;
-  const isListenExhausted = isLimitedListen && listenPlayCount >= 2;
 
-  // [ADAPTIVE TRIM - V1.31] Thuật toán nhận diện mất cân bằng hình thể đáp án (Meta-gaming)
+  // Chỉ cắt tỉa phần nghĩa phụ ở chiều xuôi (!isReverse) để bảo vệ đáp án ngoại ngữ
   let delimCount = 0;
-  const optionsList = currentQuestionData?.options || [];
-  optionsList.forEach((opt) => {
-    if (opt && opt.text && /[,/;]/.test(opt.text)) delimCount++;
-  });
-  const isImbalanced = !isSentenceMode && delimCount > 0 && delimCount < optionsList.length;
+  if (!isReverse && !isSentenceMode) {
+    optionsList.forEach((opt) => {
+      if (opt && opt.text && /[,/;]/.test(opt.text)) delimCount++;
+    });
+  }
+  const isImbalanced = !isReverse && !isSentenceMode && delimCount > 0 && delimCount < totalOptions;
+
+  // Lớp nút "Tiếp theo" hoàn toàn tĩnh (an toàn 100% với Tailwind JIT)
+  const nextBtnColorClass =
+    feedbackType === 'correct' ? 'bg-green-500 hover:bg-green-600' : theme.btn;
+
+  // Xử lý nút phát âm thanh trên từng đáp án
+  const handleOptionSpeak = (e, textToSpeak, optIndex) => {
+    e.stopPropagation();
+    if (isLocked || !textToSpeak) return;
+    // Khi đang ở chế độ Đảo ngược + Nghe (Hard Mode) và chưa trả lời: chặn bẻ khóa lượt nghe
+    if (isReverseListen && !isChecking && isListenExhausted) return;
+
+    if (typeof onPlayOption === 'function') {
+      onPlayOption(textToSpeak, optIndex, { isChecking, isReverseListen });
+    } else if (typeof onPlay === 'function') {
+      onPlay(textToSpeak);
+    }
+  };
+
+  // Xử lý bấm "Không nghe được? (Chấp nhận sai để xem chữ)" - KHÔNG tắt vĩnh viễn chế độ Luyện nghe
+  const handleGiveUpListen = (e) => {
+    e.stopPropagation();
+    if (isLocked || isChecking) return;
+    if (typeof handleAnswer === 'function') {
+      handleAnswer(999, false, false, true);
+    }
+  };
 
   return (
     <div className="w-full h-full bg-gray-50 rounded-2xl shadow-xl flex flex-col border-2 border-gray-200 animate-in overflow-hidden relative">
@@ -581,16 +854,15 @@ export const GamePlayScreen = ({
             </p>
             <div className="flex w-full gap-3">
               <button
+                type="button"
                 onClick={() => setShowConfirmEnd(false)}
                 className="flex-1 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition-colors"
               >
                 Chơi tiếp
               </button>
               <button
-                onClick={() => {
-                  setShowConfirmEnd(false);
-                  if (onEndGame) onEndGame();
-                }}
+                type="button"
+                onClick={handleConfirmExit}
                 className="flex-1 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-colors shadow-lg shadow-red-200"
               >
                 Thoát ngay
@@ -601,7 +873,7 @@ export const GamePlayScreen = ({
       )}
 
       {showChanceToast && (
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 animate-in fade-in">
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 animate-in fade-in pointer-events-none">
           <div className="bg-orange-500 text-white px-6 py-3 rounded-full shadow-2xl font-bold flex items-center gap-2 border-2 border-white">
             <Icons.AlertCircle size={20} /> {t ? t('secondChance') : 'Cơ hội thứ 2!'}
           </div>
@@ -609,7 +881,7 @@ export const GamePlayScreen = ({
       )}
 
       {feedbackType === 'timeout' && (
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 animate-in fade-in">
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 animate-in fade-in pointer-events-none">
           <div className="bg-red-500 text-white px-6 py-3 rounded-full shadow-2xl font-bold flex items-center gap-2 border-2 border-white">
             <Icons.Clock size={20} /> HẾT GIỜ!
           </div>
@@ -623,8 +895,10 @@ export const GamePlayScreen = ({
               TẠM DỪNG
             </h3>
             <button
+              type="button"
               onClick={onPause}
-              className={`w-16 h-16 rounded-full bg-${mainColor}-600 text-white flex items-center justify-center shadow-lg hover:scale-110 transition-transform`}
+              className={`w-16 h-16 rounded-full text-white flex items-center justify-center shadow-lg hover:scale-110 transition-transform ${theme.btn}`}
+              title="Tiếp tục"
             >
               <Icons.Play size={32} fill="currentColor" />
             </button>
@@ -633,10 +907,11 @@ export const GamePlayScreen = ({
       )}
 
       {/* HEADER */}
-      <div className="flex flex-col bg-white border-b shadow-sm z-10">
+      <div className="flex flex-col bg-white border-b shadow-sm z-10 shrink-0">
         <div className="flex justify-between items-center p-3 pb-2">
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={onBack}
               className="text-gray-500 hover:text-gray-700 p-1"
               title={t ? t('backMenu') : 'Quay lại'}
@@ -644,6 +919,7 @@ export const GamePlayScreen = ({
               <Icons.ChevronLeft size={24} />
             </button>
             <button
+              type="button"
               onClick={onPause}
               className={`w-8 h-8 flex items-center justify-center rounded-full transition-colors ${
                 isPaused
@@ -681,9 +957,11 @@ export const GamePlayScreen = ({
             )}
           </div>
 
+          {/* Nút Bookmark duy nhất cho câu hỏi chính (đồng bộ trạng thái qua notebookKeySet NFC) */}
           <div className="flex items-center gap-1 sm:gap-2">
             {!isBookmarkLocked ? (
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   if (currentQuestionData?.question && onBookmark) {
@@ -696,17 +974,23 @@ export const GamePlayScreen = ({
                   }
                 }}
                 className={`p-2 rounded-lg transition-colors ${
-                  isInNotebook
+                  isQuestionInNotebook
                     ? 'text-yellow-500 bg-yellow-50 hover:bg-yellow-100'
                     : 'text-gray-400 hover:text-yellow-500 hover:bg-gray-100'
                 }`}
-                title="Lưu vào Sổ tay"
+                title={
+                  isQuestionInNotebook
+                    ? 'Đã lưu trong Sổ tay'
+                    : t
+                    ? t('addToNotebook')
+                    : 'Lưu vào Sổ tay'
+                }
               >
-                <Icons.Bookmark size={20} fill={isInNotebook ? 'currentColor' : 'none'} />
+                <Icons.Bookmark size={20} fill={isQuestionInNotebook ? 'currentColor' : 'none'} />
               </button>
             ) : (
               <div
-                className="p-2 text-gray-300 opacity-50"
+                className="p-2 text-gray-300 opacity-50 cursor-not-allowed"
                 title={
                   gameMode === 'listen'
                     ? 'Đang ở chế độ Nghe. Trả lời xong mới được lưu!'
@@ -725,8 +1009,9 @@ export const GamePlayScreen = ({
         {isLocked && !isPaused && (
           <div className="absolute inset-0 z-30 flex items-center justify-center bg-white/10 backdrop-blur-[2px]">
             <button
+              type="button"
               onClick={onStartRound}
-              className={`group relative flex items-center justify-center w-24 h-24 bg-${mainColor}-600 text-white rounded-full shadow-2xl hover:scale-110 active:scale-95 transition-all duration-300 border-4 border-white ring-4 ring-${mainColor}-200 animate-in zoom-in`}
+              className={`group relative flex items-center justify-center w-24 h-24 text-white rounded-full shadow-2xl hover:scale-110 active:scale-95 transition-all duration-300 border-4 border-white ring-4 animate-in zoom-in ${theme.startRing}`}
             >
               <Icons.Play size={40} fill="currentColor" className="ml-1" />
               <span className="absolute -bottom-8 font-bold text-gray-600 bg-white px-3 py-1 rounded-full shadow text-sm">
@@ -736,7 +1021,7 @@ export const GamePlayScreen = ({
           </div>
         )}
 
-        <div className="w-full flex justify-end items-center mb-1 gap-2">
+        <div className="w-full flex flex-wrap justify-end items-center mb-1 gap-2">
           {/* Nhãn diện nguồn gốc AI và Đồng hồ Throttling KÈM AMMO COUNTER */}
           {currentQuestionData?.question?._isRescued || currentQuestionData?._isRescued ? (
             <span
@@ -761,7 +1046,7 @@ export const GamePlayScreen = ({
             </span>
           )}
 
-          {(isAiMode || sourceMode === 'ai_pure') && aiAmmoCount > 0 && (
+          {(isAiMode || effectiveSourceMode === 'ai_pure') && aiAmmoCount > 0 && (
             <span
               className="text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1 shadow-sm bg-blue-50 text-blue-600 border border-blue-200"
               title={`Đã nạp sẵn ${aiAmmoCount} câu AI`}
@@ -793,34 +1078,10 @@ export const GamePlayScreen = ({
         {/* KHUNG CÂU HỎI CHÍNH */}
         <div
           className={`w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-6 relative min-h-[160px] flex items-center justify-center animate-in transition-all duration-300 ${
-            isLocked ? 'blur-md' : ''
+            isLocked ? 'blur-md pointer-events-none select-none' : ''
           }`}
         >
-          {gameMode === 'read' && !isBookmarkLocked && (
-            <button
-              className={`absolute top-3 right-3 p-2 rounded-full transition-all ${
-                isInNotebook
-                  ? 'text-yellow-500 bg-yellow-50 shadow-sm'
-                  : 'text-gray-300 hover:text-yellow-400 hover:bg-gray-50'
-              }`}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (currentQuestionData?.question && onBookmark) {
-                  onBookmark({
-                    isSmartTarget: true,
-                    display: currentQuestionData.question.term,
-                    save: currentQuestionData.question.term,
-                    analysis: currentQuestionData.question.definition
-                  });
-                }
-              }}
-              title={t ? t('addToNotebook') : 'Lưu vào Sổ tay'}
-            >
-              <Icons.Bookmark size={22} fill={isInNotebook ? 'currentColor' : 'none'} />
-            </button>
-          )}
-
-          <div className="text-center w-full px-6">
+          <div className="text-center w-full px-2 sm:px-6">
             {gameMode === 'read' || isChecking || isReverseListen ? (
               <div className="flex flex-col gap-2 animate-in fade-in items-center">
                 <div
@@ -838,6 +1099,47 @@ export const GamePlayScreen = ({
                     {currentQuestionData.question.pronunciation}
                   </div>
                 )}
+
+                {/* Thanh điều khiển nghe & đếm lượt cho chế độ Đảo ngược + Luyện Nghe */}
+                {isReverseListen && !isChecking && (
+                  <div className="flex flex-col items-center gap-2 mt-2 pt-2 border-t border-gray-100 w-full max-w-sm">
+                    <div className="flex flex-wrap items-center justify-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => !isLocked && playSequence && playSequence()}
+                        disabled={isAudioPlaying || isListenExhausted || isLocked}
+                        className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border text-xs font-bold shadow-sm transition-all ${
+                          isListenExhausted || isLocked
+                            ? 'bg-gray-100 border-gray-200 text-gray-400 opacity-60 cursor-not-allowed'
+                            : isAudioPlaying
+                            ? 'opacity-60 cursor-not-allowed bg-blue-50 border-blue-200 text-blue-600'
+                            : `${theme.listenBtn} hover:scale-105 active:scale-95`
+                        }`}
+                      >
+                        <Icons.Volume2
+                          size={16}
+                          className={isAudioPlaying ? 'animate-pulse' : ''}
+                        />
+                        <span>{isAudioPlaying ? 'Đang phát...' : 'Nghe tất cả đáp án'}</span>
+                      </button>
+
+                      {isLimitedListen && (
+                        <span className="text-xs text-gray-500 font-bold bg-gray-100 px-2.5 py-1 rounded-full">
+                          Lượt nghe: {remainingListens}/2
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleGiveUpListen}
+                      className="text-[10px] sm:text-xs text-gray-400 hover:text-red-500 underline font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      disabled={isLocked || isChecking}
+                    >
+                      Không nghe được? (Chấp nhận sai để xem chữ)
+                    </button>
+                  </div>
+                )}
+
                 {gameMode === 'listen' && isChecking && (
                   <div className="text-xs text-gray-400 italic mt-1">
                     (Đáp án của âm thanh vừa nghe)
@@ -847,14 +1149,15 @@ export const GamePlayScreen = ({
             ) : (
               <div className="flex flex-col items-center justify-center gap-4 animate-in fade-in">
                 <button
-                  onClick={() => playSequence && playSequence()}
-                  disabled={isAudioPlaying || isListenExhausted}
+                  type="button"
+                  onClick={() => !isLocked && playSequence && playSequence()}
+                  disabled={isAudioPlaying || isListenExhausted || isLocked}
                   className={`flex flex-col items-center gap-1 p-5 rounded-full border-4 shadow-md transition-all ${
-                    isListenExhausted
+                    isListenExhausted || isLocked
                       ? 'bg-gray-100 border-gray-200 text-gray-400 opacity-60 cursor-not-allowed'
                       : isAudioPlaying
-                      ? 'opacity-50 cursor-not-allowed bg-blue-50 border-blue-200'
-                      : `bg-white border-${mainColor}-100 hover:bg-${mainColor}-50 hover:scale-105 active:scale-95 text-${mainColor}-600`
+                      ? 'opacity-50 cursor-not-allowed bg-blue-50 border-blue-200 text-blue-500'
+                      : `${theme.listenBtn} hover:scale-105 active:scale-95`
                   }`}
                 >
                   <Icons.Volume2 size={40} className={isAudioPlaying ? 'animate-pulse' : ''} />
@@ -864,17 +1167,14 @@ export const GamePlayScreen = ({
                 </button>
                 {isLimitedListen && (
                   <div className="text-xs text-gray-500 font-bold mt-1">
-                    Lượt nghe: {2 - listenPlayCount}/2
+                    Lượt nghe: {remainingListens}/2
                   </div>
                 )}
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleAnswer(999, false, false, true);
-                    setGameMode('read');
-                  }}
-                  className="text-[10px] sm:text-xs text-gray-400 hover:text-red-500 underline mt-2 font-medium transition-colors"
-                  disabled={isPaused}
+                  type="button"
+                  onClick={handleGiveUpListen}
+                  className="text-[10px] sm:text-xs text-gray-400 hover:text-red-500 underline mt-2 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  disabled={isLocked || isChecking}
                 >
                   Không nghe được? (Chấp nhận sai để xem chữ)
                 </button>
@@ -884,40 +1184,52 @@ export const GamePlayScreen = ({
         </div>
 
         {/* LƯỚI ĐÁP ÁN */}
-        <div className={`flex flex-col gap-3 w-full mt-2 transition-all duration-300 ${contentBlurClass}`}>
+        <div
+          className={`flex flex-col gap-3 w-full mt-2 transition-all duration-300 ${contentBlurClass}`}
+        >
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
-            {currentQuestionData?.options?.map((opt, i) => {
+            {optionsList.map((opt, i) => {
+              const labelChar = String.fromCharCode(65 + i);
+              const isClickedWrong = hasWrongIndex(clickedWrongIndices, i);
               const btnClass = getOptionClass(opt, i);
               const isLastAndOdd = isOddOptions && i === totalOptions - 1;
               const icon =
                 isChecking && opt.isCorrect ? (
                   <Icons.CheckCircle size={20} className="text-green-700" />
                 ) : (isChecking && i === selectedOptionIndex && !opt.isCorrect) ||
-                  clickedWrongIndices.has(i) ? (
+                  isClickedWrong ? (
                   <Icons.X
                     size={20}
-                    className={clickedWrongIndices.has(i) ? 'text-red-300' : 'text-red-700'}
+                    className={isClickedWrong ? 'text-red-300' : 'text-red-700'}
                   />
                 ) : null;
 
               const optionDisplayText =
-                isReverseListen && !isChecking ? `Đáp án ${labels[i]}` : opt.text || '';
+                isReverseListen && !isChecking ? `Đáp án ${labelChar}` : opt.text || '';
 
-              // [ADAPTIVE TRIM - V1.32] Lưỡi kéo cắt tỉa chia tách văn bản
+              // Chỉ tách phần nghĩa phụ khi chiều xuôi (!isReverse)
               let mainText = optionDisplayText;
               let subText = '';
-              if (isImbalanced && !isReverseListen && optionDisplayText) {
+              if (isImbalanced && !isReverse && !isReverseListen && optionDisplayText) {
                 const match = optionDisplayText.match(/([,/;])/);
-                if (match) {
+                if (match && match.index > 0) {
                   mainText = optionDisplayText.substring(0, match.index).trim();
                   subText = optionDisplayText.substring(match.index).trim();
                 }
               }
 
-              // [POST-ANSWER AUDIO - V1.33] Tính toán hiển thị loa tại đáp án
-              const showOptionSpeaker = (isReverseListen && !isChecking) || isChecking;
-              let speakerColorClass = `text-${mainColor}-500 bg-${mainColor}-50 hover:bg-${mainColor}-100 border-${mainColor}-200`;
-              if (isChecking) {
+              // Tính toán hiển thị và trạng thái loa tại đáp án
+              const textToSpeak = isReverse ? opt.text : opt.meaning;
+              const showOptionSpeaker =
+                Boolean(textToSpeak) && ((isReverseListen && !isChecking) || isChecking);
+              const isOptionSpeakerDisabled =
+                isLocked || (isReverseListen && !isChecking && isListenExhausted);
+
+              let speakerColorClass = theme.speaker;
+              if (isOptionSpeakerDisabled) {
+                speakerColorClass =
+                  'text-gray-400 bg-gray-100 border-gray-200 opacity-50 cursor-not-allowed';
+              } else if (isChecking) {
                 if (opt.isCorrect) {
                   speakerColorClass =
                     'text-green-700 bg-green-200 hover:bg-green-300 border-green-300';
@@ -929,44 +1241,52 @@ export const GamePlayScreen = ({
                 }
               }
 
-              // [SCAVENGING BOOKMARK - V1.35] Tính toán dữ liệu lưu Sổ tay trên từng đáp án
+              // Tra cứu Sổ tay chuẩn Unicode NFC
               const foreignWord = isReverse ? opt.text : opt.meaning;
               const vietnameseMeaning = isReverse ? opt.meaning : opt.text;
-              const isOptInNotebook = notebook?.some((n) => n.term === foreignWord);
+              const isOptInNotebook = notebookKeySet.has(normalizeNotebookKey(foreignWord));
 
               const isListenLocked =
                 gameMode === 'listen' && !hasStartedListening && !isReverseListen;
-              const isDisabled = isChecking || clickedWrongIndices.has(i) || isListenLocked;
+              const isDisabled = isChecking || isClickedWrong || isListenLocked || isLocked;
 
               return (
                 <div
                   key={i}
                   role="button"
+                  tabIndex={isDisabled ? -1 : 0}
+                  aria-disabled={isDisabled}
                   onClick={() => {
-                    if (!isDisabled) {
+                    if (!isDisabled && handleAnswer) {
                       handleAnswer(i, opt.isCorrect);
                     }
                   }}
-                  className={`w-full p-4 border-2 rounded-xl shadow-sm transition-all text-left flex items-center justify-between outline-none focus:ring-2 focus:ring-${mainColor}-300 ${btnClass} ${
+                  onKeyDown={(e) => {
+                    // Chặn nổi bọt bàn phím từ các nút con (Loa / Bookmark) bên trong thẻ đáp án
+                    if (e.target !== e.currentTarget) return;
+                    if (!isDisabled && handleAnswer && (e.key === 'Enter' || e.key === ' ')) {
+                      e.preventDefault();
+                      handleAnswer(i, opt.isCorrect);
+                    }
+                  }}
+                  className={`w-full p-4 border-2 rounded-xl shadow-sm transition-all text-left flex items-center justify-between outline-none focus:ring-2 ${theme.focusRing} ${btnClass} ${
                     isLastAndOdd ? 'sm:col-span-2' : ''
                   }`}
                 >
-                  <div className="flex items-center w-full">
+                  <div className="flex items-center w-full min-w-0">
                     <span
                       className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold mr-3 flex-none shadow-inner ${getLabelClass(
                         opt,
                         i
                       )}`}
                     >
-                      {labels[i]}
+                      {labelChar}
                     </span>
-                    <div className="flex flex-col flex-1">
+                    <div className="flex flex-col flex-1 min-w-0">
                       <span
-                        className={`break-words ${
-                          clickedWrongIndices.has(i) ? 'line-through' : ''
-                        } ${isReverse ? 'text-gray-800' : ''} ${
-                          isReverseListen && !isChecking ? 'italic text-gray-500' : ''
-                        }`}
+                        className={`break-words ${isClickedWrong ? 'line-through' : ''} ${
+                          isReverse ? 'text-gray-800' : ''
+                        } ${isReverseListen && !isChecking ? 'italic text-gray-500' : ''}`}
                         style={{
                           fontWeight: settings?.fontWeight || 'normal',
                           fontSize: settings?.backFontSize
@@ -983,14 +1303,14 @@ export const GamePlayScreen = ({
                       {subText && isChecking && (
                         <span
                           className={`text-[11px] mt-0.5 font-medium opacity-70 animate-in fade-in slide-in-from-top-1 ${
-                            clickedWrongIndices.has(i) ? 'line-through' : ''
+                            isClickedWrong ? 'line-through' : ''
                           }`}
                         >
                           {subText}
                         </span>
                       )}
                       {isChecking && opt.meaning && (
-                        <span className="text-sm text-gray-500 italic mt-0.5 animate-in fade-in slide-in-from-top-1 font-medium">
+                        <span className="text-sm text-gray-500 italic mt-0.5 animate-in fade-in slide-in-from-top-1 font-medium break-words">
                           {opt.meaning}
                         </span>
                       )}
@@ -999,20 +1319,26 @@ export const GamePlayScreen = ({
 
                   <div className="flex items-center shrink-0 gap-1.5 ml-2">
                     {showOptionSpeaker && (
-                      <div
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const textToSpeak = isReverse ? opt.text : opt.meaning;
-                          if (onPlay && textToSpeak) onPlay(textToSpeak);
-                        }}
-                        className={`p-2 rounded-full flex-none transition-transform active:scale-90 border shadow-sm cursor-pointer ${speakerColorClass}`}
-                        title="Nghe phát âm"
+                      <button
+                        type="button"
+                        disabled={isOptionSpeakerDisabled}
+                        onClick={(e) => handleOptionSpeak(e, textToSpeak, i)}
+                        onKeyDown={(e) => e.stopPropagation()}
+                        className={`p-2 rounded-full flex-none transition-transform border shadow-sm ${
+                          isOptionSpeakerDisabled ? '' : 'active:scale-90 cursor-pointer'
+                        } ${speakerColorClass}`}
+                        title={
+                          isOptionSpeakerDisabled
+                            ? 'Đã hết lượt nghe ở Chế độ Khó'
+                            : 'Nghe phát âm'
+                        }
                       >
                         <Icons.Volume2 size={20} />
-                      </div>
+                      </button>
                     )}
                     {isChecking && foreignWord && (
-                      <div
+                      <button
+                        type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           if (onBookmark) {
@@ -1024,6 +1350,7 @@ export const GamePlayScreen = ({
                             });
                           }
                         }}
+                        onKeyDown={(e) => e.stopPropagation()}
                         className={`p-2 rounded-full flex-none transition-transform active:scale-90 border shadow-sm cursor-pointer ${
                           isOptInNotebook
                             ? 'text-yellow-600 bg-yellow-100 hover:bg-yellow-200 border-yellow-300'
@@ -1035,7 +1362,7 @@ export const GamePlayScreen = ({
                           size={20}
                           fill={isOptInNotebook ? 'currentColor' : 'none'}
                         />
-                      </div>
+                      </button>
                     )}
                     {icon && <div className="flex-none">{icon}</div>}
                   </div>
@@ -1046,48 +1373,49 @@ export const GamePlayScreen = ({
         </div>
       </div>
 
-      {/* FOOTER */}
-      <div className="w-full p-4 bg-white border-t border-gray-200 shrink-0 flex items-center justify-between z-10 pb-safe shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] relative">
+      {/* FOOTER (Bố cục Flex chống chồng lấn trên mọi kích thước màn hình) */}
+      <div className="w-full p-3 sm:p-4 bg-white border-t border-gray-200 shrink-0 flex items-center justify-between gap-2 sm:gap-3 z-10 pb-safe shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
         <button
+          type="button"
           onClick={() => setShowConfirmEnd(true)}
-          className="absolute left-2 sm:left-4 text-red-500 hover:text-red-700 font-bold text-xs flex items-center gap-1 transition-colors px-2 py-2 hover:bg-red-50 rounded-lg"
+          className="shrink-0 text-red-500 hover:text-red-700 font-bold text-xs flex items-center gap-1 transition-colors px-2 py-2 hover:bg-red-50 rounded-lg"
           title="Kết thúc"
         >
           <Icons.X size={16} /> <span className="hidden sm:inline">Kết thúc</span>
         </button>
 
-        <div className="flex-1 flex justify-center sm:justify-end max-w-md ml-auto">
+        <div className="flex-1 min-w-0 flex justify-center sm:justify-end max-w-md ml-auto">
           {isChecking ? (
-            <div className="w-full flex gap-3">
+            <div className="w-full flex gap-2 sm:gap-3">
               <button
+                type="button"
                 onClick={() => toggleResultPause && toggleResultPause()}
-                className={`flex-1 py-3 sm:py-4 font-bold text-xs sm:text-sm rounded-xl border-2 transition-all flex items-center justify-center gap-1.5 sm:gap-2 ${
+                className={`flex-1 py-3 sm:py-4 px-2 font-bold text-xs sm:text-sm rounded-xl border-2 transition-all flex items-center justify-center gap-1.5 sm:gap-2 whitespace-nowrap ${
                   isResultPaused
                     ? 'bg-yellow-50 text-yellow-700 border-yellow-300 shadow-inner'
-                    : 'bg-white text-gray-500 hover:bg-gray-50'
+                    : 'bg-white text-gray-500 hover:bg-gray-50 border-gray-200'
                 }`}
               >
                 {isResultPaused ? (
                   <>
                     <Icons.Play size={16} fill="currentColor" /> Đã dừng
                   </>
+                ) : resultTimer < 0 ? (
+                  <>
+                    <Icons.Volume2 size={16} className="animate-pulse text-blue-500" /> Đang đọc...
+                  </>
                 ) : (
                   <>
-                    <Icons.Pause size={16} fill="currentColor" /> Đợi ({resultTimer}s)
+                    <Icons.Pause size={16} fill="currentColor" /> Đợi ({Math.max(0, resultTimer)}s)
                   </>
                 )}
               </button>
               <button
+                type="button"
                 onClick={onNext}
                 disabled={isGenerating || aiWaitTime > 0}
-                className={`flex-[2] py-3 sm:py-4 bg-${
-                  feedbackType === 'correct' ? 'green-500' : `${mainColor}-600`
-                } text-white font-bold text-sm sm:text-lg rounded-xl shadow-lg flex justify-center items-center gap-1.5 sm:gap-2 transition-transform ${
-                  isGenerating || aiWaitTime > 0
-                    ? 'opacity-70 cursor-not-allowed'
-                    : `active:scale-95 hover:bg-${
-                        feedbackType === 'correct' ? 'green-600' : `${mainColor}-700`
-                      }`
+                className={`flex-[2] py-3 sm:py-4 px-3 text-white font-bold text-sm sm:text-lg rounded-xl shadow-lg flex justify-center items-center gap-1.5 sm:gap-2 transition-transform ${nextBtnColorClass} ${
+                  isGenerating || aiWaitTime > 0 ? 'opacity-70 cursor-not-allowed' : 'active:scale-95'
                 }`}
               >
                 {isGenerating ? (
@@ -1104,10 +1432,13 @@ export const GamePlayScreen = ({
             </div>
           ) : (
             <button
+              type="button"
               onClick={onSkip}
-              disabled={aiWaitTime > 0 || isGenerating}
+              disabled={aiWaitTime > 0 || isGenerating || isLocked}
               className={`w-full py-3 sm:py-4 bg-gray-100 text-gray-600 font-bold text-xs sm:text-sm rounded-xl hover:bg-gray-200 transition-all border border-gray-200 flex items-center justify-center gap-2 ${
-                aiWaitTime > 0 || isGenerating ? 'opacity-50 cursor-not-allowed' : 'active:scale-95'
+                aiWaitTime > 0 || isGenerating || isLocked
+                  ? 'opacity-50 cursor-not-allowed'
+                  : 'active:scale-95'
               }`}
             >
               Bỏ qua câu này <Icons.SkipForward size={18} className="sm:w-5 sm:h-5" />

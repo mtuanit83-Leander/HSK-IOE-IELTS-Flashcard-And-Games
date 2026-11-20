@@ -1,15 +1,20 @@
 // ============================================================================
 // FILE 51/85: src/features/games/GameView.jsx
-// NGUỒN GỐC: tang_5.js (Block 5.7 - GameView V1.09) + transshipment-05.js
-// NHIỆM VỤ: Bộ định tuyến trung tâm điều hướng giữa GameMenu, các màn hình
-//           Setup, 10 Mini-games PlayScreen, GameResult và ExamUIShell.
-//           Hợp nhất cơ chế lưu phiên (AutoSave/Resume), hỗ trợ cả Props phẳng
-//           lẫn { state, actions, setters } và đạt chuẩn 0 Problems.
+// NGUỒN GỐC: tang_5.js (Block 5.7 - GameView V1.09)
+// PHIÊN BẢN: Ver 1.1
+// NGÀY GIỜ NÂNG CẤP: 20/11/2026 - 22:24 (GMT+7)
+// NHIỆM VỤ: Bộ định tuyến trung tâm điều hướng giữa GameMenu, 10 màn hình Setup,
+//           10 Mini-games PlayScreen, GameResult và ExamUIShell.
+//           Nâng cấp Ver 1.1: Tách restoredSession chống re-render mỗi 5s,
+//           chốt chặn đồng bộ activeSessionIdRef + stopAllSpeech, tách unmount
+//           cleanup cho setIsGamePlaying, chuẩn hóa ngưỡng thẻ tối thiểu chống
+//           0 thẻ, hợp nhất sharedGameProps cho 10 Mini-games và gia cố
+//           VALID_GAME_ROUTES / fallback id-first cho onUpdateCards.
 // ============================================================================
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { STORAGE_KEYS } from '../../config/constants';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { AiModeSwitch } from '../../components/common/Controls';
+import { resolveActiveApiKey } from './common/gameHelpers';
 
 // Menu chính
 import { GameMenu } from './GameMenu';
@@ -41,6 +46,29 @@ import { ReadingGame } from './ReadingGame';
 // Phân hệ Khảo thí Tổng hợp (Mock Test)
 import { ExamUIShell } from '../exam/ExamUIShell';
 
+// Danh sách trắng các Route hợp lệ được phép điều hướng từ bên ngoài (Sổ tay / Lỗi sai)
+const VALID_GAME_ROUTES = new Set([
+  'menu',
+  'mock_test',
+  'result',
+  'quiz_setup',
+  'scramble_setup',
+  'match_setup',
+  'fillblank_setup',
+  'spotmistake_setup',
+  'oddoneout_setup',
+  'imagequiz_setup',
+  'pronunciation_setup',
+  'listening_setup',
+  'reading_setup'
+]);
+
+// Nhóm game ngữ cảnh AI (có thể tự chạy mà không cần thẻ nếu không chọn tường minh sourceMode === 'card')
+const CONTEXT_AI_GAMES = new Set(['pronunciation', 'listening', 'reading']);
+
+// Nhóm game cần tối thiểu 1 thẻ khi chơi nguồn Thẻ cá nhân
+const SINGLE_CARD_GAMES = new Set(['fillblank', 'spotmistake', 'imagequiz']);
+
 /**
  * Chuẩn hóa tham số trả về từ các màn hình Setup
  * Hỗ trợ cả 2 chuẩn gọi: onStart('quiz', config) và onStart(config)
@@ -50,6 +78,70 @@ const resolveSetupStartArgs = (defaultType, arg1, arg2) => {
     return { type: arg1, config: arg2 || {} };
   }
   return { type: defaultType, config: arg1 || {} };
+};
+
+/**
+ * Kiểm tra cấu hình có thuộc chế độ AI Tự sinh (Pure AI) hay không
+ */
+const isPureAiSource = (config) => {
+  const src = config?.sourceMode;
+  return src === 'ai_pure' || src === 'ai';
+};
+
+/**
+ * Chuẩn hóa cờ isAiMode nhất quán cho từng Mini-Game
+ */
+const resolveConfigAiMode = (config, fallbackAiMode = false) => {
+  if (isPureAiSource(config)) return true;
+  if (config?.isAiMode !== undefined) return Boolean(config.isAiMode);
+  if (config?.aiMode !== undefined) return Boolean(config.aiMode);
+  return Boolean(fallbackAiMode);
+};
+
+/**
+ * Tính ngưỡng số thẻ tối thiểu an toàn theo từng loại game & nguồn câu hỏi
+ * - Chặn lỗ hổng lọt 0 thẻ ở chế độ Thẻ cá nhân
+ * - Không chặn oan 3 game ngữ cảnh AI (pronunciation, listening, reading) khi không ép sourceMode === 'card'
+ */
+const getMinRequiredCards = (type, config = {}) => {
+  if (isPureAiSource(config)) return 0;
+
+  if (CONTEXT_AI_GAMES.has(type)) {
+    return config?.sourceMode === 'card' ? 1 : 0;
+  }
+
+  if (type === 'oddoneout') {
+    return !config?.sourceMode || config.sourceMode === 'card' ? 4 : 0;
+  }
+
+  if (SINGLE_CARD_GAMES.has(type)) {
+    return !config?.sourceMode || config.sourceMode === 'card' ? 1 : 0;
+  }
+
+  return 2;
+};
+
+/**
+ * Đánh thức luồng âm thanh & Web Audio Context trên iOS/Safari/Mobile
+ */
+const unlockMobileAudio = () => {
+  try {
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      const u = new SpeechSynthesisUtterance('');
+      u.volume = 0;
+      window.speechSynthesis.speak(u);
+    }
+    if (
+      typeof window !== 'undefined' &&
+      window.fc_audioCtx &&
+      window.fc_audioCtx.state === 'suspended' &&
+      typeof window.fc_audioCtx.resume === 'function'
+    ) {
+      Promise.resolve(window.fc_audioCtx.resume()).catch(() => {});
+    }
+  } catch (e) {
+    console.warn('[GameView] Audio unlock warning:', e);
+  }
 };
 
 export const GameView = (props) => {
@@ -63,7 +155,6 @@ export const GameView = (props) => {
   const t = props.t || actionsObj.t || ((k) => k);
   const mainColor = props.mainColor || stateObj.mainColor || 'indigo';
   const isAiMode = props.isAiMode ?? stateObj.isAiModeGame ?? false;
-  const setAiMode = props.setAiMode || settersObj.setIsAiModeGame || (() => {});
   const onMissingKey =
     props.onMissingKey ||
     actionsObj.onMissingKey ||
@@ -72,7 +163,7 @@ export const GameView = (props) => {
   const cards = props.cards || stateObj.cards || [];
   const lang = props.lang || stateObj.lang || 'en';
   const onPlay = props.onPlay || props.speak || actionsObj.speak;
-  const onBookmark = props.onBookmark || actionsObj.handleNotebookSave;
+  const stopSpeakingAction = props.stopSpeaking || actionsObj.stopSpeaking;
   const notebook = props.notebook || stateObj.notebook || [];
   const showToast = props.showToast || actionsObj.showToast;
   const onLogWrong = props.onLogWrong || actionsObj.handleLogWrong;
@@ -81,11 +172,10 @@ export const GameView = (props) => {
   const gameSessions = props.gameSessions || stateObj.gameSessions || {};
   const setGameSessions = props.setGameSessions || settersObj.setGameSessions;
   const settings = props.settings || stateObj.settings || {};
-  const onUpdateCards = props.onUpdateCards || settersObj.setCards;
   const onSaveToHarvest = props.onSaveToHarvest || actionsObj.handleSaveToHarvest;
   const dataMode = props.dataMode || stateObj.dataMode || 'vocab';
-  const currentLevel = props.currentLevel || stateObj.currentLevel;
-  const currentTopic = props.currentTopic || stateObj.currentTopic;
+  const currentLevel = props.currentLevel ?? stateObj.currentLevel;
+  const currentTopic = props.currentTopic ?? stateObj.currentTopic;
   const globalRetryBag = props.globalRetryBag || stateObj.globalRetryBag || {};
   const addToRetryBag = props.addToRetryBag || actionsObj.addToRetryBag;
   const removeFromRetryBag = props.removeFromRetryBag || actionsObj.removeFromRetryBag;
@@ -100,33 +190,125 @@ export const GameView = (props) => {
     (() => settersObj.setShowAiConfigModal && settersObj.setShowAiConfigModal(true));
   const examLogic = props.examLogic || stateObj.examLogic;
 
+  // Helper ngắt hoàn toàn âm thanh TTS & đồng bộ Khiên Bluetooth của useAppLogic
+  const stopAllSpeech = useCallback(() => {
+    try {
+      if (typeof stopSpeakingAction === 'function') {
+        stopSpeakingAction();
+      }
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    } catch (e) {
+      console.warn('[GameView] Stop speech warning:', e);
+    }
+  }, [stopSpeakingAction]);
+
+  // [VÁ BUG 03] Ánh xạ chuẩn onBookmark -> handleSmartBookmark (KHÔNG fallback sang handleNotebookSave)
+  const onBookmark = useCallback(
+    (payload) => {
+      if (typeof props.onBookmark === 'function') {
+        return props.onBookmark(payload);
+      }
+      if (typeof actionsObj.handleSmartBookmark === 'function') {
+        return actionsObj.handleSmartBookmark(payload);
+      }
+      if (typeof actionsObj.handleSaveWords === 'function' && payload) {
+        const wordToSave =
+          typeof payload === 'string'
+            ? payload
+            : payload.save || payload.term || payload.display || '';
+        if (wordToSave) {
+          return actionsObj.handleSaveWords([wordToSave]);
+        }
+      }
+      console.warn('[GameView] Thiếu handler onBookmark / handleSmartBookmark.');
+      return undefined;
+    },
+    [props.onBookmark, actionsObj.handleSmartBookmark, actionsObj.handleSaveWords]
+  );
+
+  // [VÁ BUG 02 + Ver 1.1] Ánh xạ chuẩn onUpdateCards -> handleUpdateCards
+  // Fallback merge an toàn ưu tiên khớp theo card.id trước, sau đó dự phòng theo term chuẩn hóa
+  const onUpdateCards = useCallback(
+    (updatedPayload) => {
+      if (typeof props.onUpdateCards === 'function') {
+        return props.onUpdateCards(updatedPayload);
+      }
+      if (typeof actionsObj.handleUpdateCards === 'function') {
+        return actionsObj.handleUpdateCards(updatedPayload);
+      }
+      if (typeof settersObj.setCards === 'function' && updatedPayload) {
+        const updatesList = Array.isArray(updatedPayload) ? updatedPayload : [updatedPayload];
+        const hasValidId = (val) => val !== undefined && val !== null && String(val).trim() !== '';
+        const validUpdates = updatesList.filter(
+          (item) => item && typeof item === 'object' && (hasValidId(item.id) || item.term)
+        );
+        if (validUpdates.length === 0) return undefined;
+
+        const normalizeKey = (val) => String(val || '').trim().toLowerCase();
+        settersObj.setCards((prevCards) => {
+          if (!Array.isArray(prevCards) || prevCards.length === 0) return prevCards;
+
+          const idMap = new Map();
+          const termMap = new Map();
+          validUpdates.forEach((item) => {
+            if (hasValidId(item.id)) idMap.set(String(item.id), item);
+            if (item.term) termMap.set(normalizeKey(item.term), item);
+          });
+
+          let hasChanged = false;
+          const merged = prevCards.map((card) => {
+            if (!card) return card;
+            const patchById = hasValidId(card.id) ? idMap.get(String(card.id)) : undefined;
+            const patchByTerm = card.term ? termMap.get(normalizeKey(card.term)) : undefined;
+            const patch = patchById || patchByTerm;
+            if (!patch) return card;
+            hasChanged = true;
+            return { ...card, ...patch };
+          });
+          return hasChanged ? merged : prevCards;
+        });
+      }
+      return undefined;
+    },
+    [props.onUpdateCards, actionsObj.handleUpdateCards, settersObj.setCards]
+  );
+
   // ==========================================================================
-  // 2. STATE QUẢN LÝ VÒNG ĐỜI ĐIỀU HƯỚNG (MENU ➔ SETUP ➔ PLAYING ➔ RESULT)
+  // 2. STATE QUẢN LÝ VÒNG ĐỜI ĐIỀU HƯỚNG (MENU -> SETUP -> PLAYING -> RESULT)
   // ==========================================================================
   const [gameState, setGameState] = useState(() => {
     if (typeof window !== 'undefined' && window.__pendingGameRoute) {
       const pending = window.__pendingGameRoute;
       window.__pendingGameRoute = null;
-      return pending;
+      if (VALID_GAME_ROUTES.has(pending)) {
+        return pending;
+      }
+      console.warn('[GameView] Bỏ qua pending route khởi tạo không hợp lệ:', pending);
     }
     return 'menu';
   });
   const [gameType, setGameType] = useState(null);
   const [gameConfig, setGameConfig] = useState({});
-  const [gameSessionId, setGameSessionId] = useState(() => Date.now());
+  const [restoredSession, setRestoredSession] = useState(null);
+  const [gameSessionId, setGameSessionId] = useState(() => `${Date.now()}_0`);
   const [finalStats, setFinalStats] = useState({ score: 0, wrong: 0, total: 0 });
   const [matchAiPreset, setMatchAiPreset] = useState(false);
 
+  const sessionSeqRef = useRef(0);
   const activeSessionIdRef = useRef(null);
   const gameTypeRef = useRef(null);
+  const gameConfigRef = useRef({});
 
-  const apiKey =
-    props.apiKey ||
-    stateObj.apiKey ||
-    (typeof localStorage !== 'undefined'
-      ? localStorage.getItem(STORAGE_KEYS?.API_KEY || 'fc_gemini_api_key')
-      : '') ||
-    '';
+  const nextSessionKey = useCallback(() => {
+    sessionSeqRef.current += 1;
+    return `${Date.now()}_${sessionSeqRef.current}`;
+  }, []);
+
+  // [VÁ BUG 06] Quét đủ 4 tầng API Key (props/state -> fc_apikey -> fc_paid_apikey -> fc_apikey_pool)
+  const preferredApiKey = props.apiKey || stateObj.apiKey || '';
+  const activeApiKey = resolveActiveApiKey(preferredApiKey);
 
   const activeExamLogic = examLogic || {
     examState: { status: 'idle' },
@@ -137,56 +319,90 @@ export const GameView = (props) => {
     exportExamToExcel: () => {}
   };
 
-  // Đồng bộ window.globalShowToast
+  // Đồng bộ window.globalShowToast (an toàn khi unmount)
   useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
+    if (typeof window === 'undefined' || !showToast) return undefined;
     const originalToast = window.globalShowToast;
-    window.globalShowToast = (msg, type = 'success') => {
+    const bridgedToast = (msg, type = 'success') => {
       if (typeof msg === 'object' && msg !== null) {
-        if (showToast) {
-          showToast({ text: msg.text || msg.message || '', type: msg.type || type, id: Date.now() });
-        }
-      } else if (showToast) {
+        showToast({ text: msg.text || msg.message || '', type: msg.type || type, id: Date.now() });
+      } else {
         showToast({ text: String(msg), type, id: Date.now() });
       }
     };
+    window.globalShowToast = bridgedToast;
     return () => {
-      window.globalShowToast = originalToast;
+      if (window.globalShowToast === bridgedToast) {
+        window.globalShowToast = originalToast;
+      }
     };
   }, [showToast]);
 
-  // Lắng nghe tín hiệu chuyển hướng từ Sổ tay / Lỗi sai (nếu phát sinh khi đang ở trong GameView)
-  useEffect(() => {
-    if (typeof window !== 'undefined' && window.__pendingGameRoute) {
-      const targetRoute = window.__pendingGameRoute;
-      window.__pendingGameRoute = null;
-      const timer = setTimeout(() => {
-        setGameState(targetRoute);
-      }, 0);
-      return () => clearTimeout(timer);
+  // Tiêu thụ route chờ an toàn theo danh sách trắng VALID_GAME_ROUTES
+  const consumePendingRoute = useCallback(() => {
+    if (typeof window === 'undefined' || !window.__pendingGameRoute) return;
+    const targetRoute = window.__pendingGameRoute;
+    window.__pendingGameRoute = null;
+    if (!VALID_GAME_ROUTES.has(targetRoute)) {
+      console.warn('[GameView] Bỏ qua pending route không hợp lệ:', targetRoute);
+      return;
     }
-    return undefined;
-  });
+    activeSessionIdRef.current = null;
+    stopAllSpeech();
+    setRestoredSession(null);
+    setGameState(targetRoute);
+  }, [stopAllSpeech]);
 
-  // Lưu tham chiếu loại game hiện tại
+  // [Ver 1.1] Đăng ký custom event 1 lần duy nhất (không tháo/gắn lại mỗi khi mảng cards thay đổi)
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    window.addEventListener('fc-pending-game-route', consumePendingRoute);
+    return () => {
+      window.removeEventListener('fc-pending-game-route', consumePendingRoute);
+    };
+  }, [consumePendingRoute]);
+
+  // Tương thích ngược 100% với useAppLogic.handleReviewWithGame (chỉ gán window.__pendingGameRoute + cập nhật cards)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.__pendingGameRoute) return undefined;
+    const timer = setTimeout(consumePendingRoute, 0);
+    return () => clearTimeout(timer);
+  }, [cards, lang, dataMode, consumePendingRoute]);
+
+  // Đồng bộ tham chiếu loại game & cấu hình hiện tại (chống stale closure)
   useEffect(() => {
     if (gameType) {
       gameTypeRef.current = gameType;
     }
   }, [gameType]);
 
-  // Báo trạng thái đang chơi lên App để ẩn BottomNav
+  useEffect(() => {
+    gameConfigRef.current = gameConfig || {};
+  }, [gameConfig]);
+
+  // Báo trạng thái đang chơi lên App để ẩn BottomNav (không có cleanup để tránh nhấp nháy khi đổi chặng thi)
   useEffect(() => {
     const isExamRunning =
       activeExamLogic?.examState?.status && activeExamLogic.examState.status !== 'idle';
-    const isPlayingNow = gameState === 'playing' || gameState === 'mock_test' || Boolean(isExamRunning);
+    const isPlayingNow =
+      gameState === 'playing' || gameState === 'mock_test' || Boolean(isExamRunning);
     if (setIsGamePlaying) {
       setIsGamePlaying(isPlayingNow);
     }
+  }, [gameState, activeExamLogic?.examState?.status, setIsGamePlaying]);
+
+  // Cleanup độc lập khi unmount GameView: hiện lại BottomNav và ngắt giọng đọc TTS
+  useEffect(() => {
     return () => {
       if (setIsGamePlaying) setIsGamePlaying(false);
     };
-  }, [gameState, activeExamLogic?.examState?.status, setIsGamePlaying]);
+  }, [setIsGamePlaying]);
+
+  useEffect(() => {
+    return () => {
+      stopAllSpeech();
+    };
+  }, [stopAllSpeech]);
 
   // Xóa khóa phiên khi rời trạng thái chơi
   useEffect(() => {
@@ -239,15 +455,13 @@ export const GameView = (props) => {
 
   // Khởi chạy bài thi Khảo thí
   const handleStartMockTest = (profileId) => {
-    const currentKey =
-      apiKey ||
-      (typeof localStorage !== 'undefined'
-        ? localStorage.getItem(STORAGE_KEYS?.API_KEY || 'fc_gemini_api_key')
-        : '');
-    if (!currentKey) {
+    const liveKey = resolveActiveApiKey(preferredApiKey);
+    if (!liveKey) {
       onMissingKey();
       return;
     }
+    unlockMobileAudio();
+    setRestoredSession(null);
     if (activeExamLogic && typeof activeExamLogic.startExam === 'function') {
       activeExamLogic.startExam(profileId, currentLevel, currentTopic);
       setGameState('mock_test');
@@ -258,15 +472,13 @@ export const GameView = (props) => {
 
   // Khôi phục bài thi Khảo thí đang dang dở
   const handleResumeMockTest = (sessionId) => {
-    const currentKey =
-      apiKey ||
-      (typeof localStorage !== 'undefined'
-        ? localStorage.getItem(STORAGE_KEYS?.API_KEY || 'fc_gemini_api_key')
-        : '');
-    if (!currentKey) {
+    const liveKey = resolveActiveApiKey(preferredApiKey);
+    if (!liveKey) {
       onMissingKey();
       return;
     }
+    unlockMobileAudio();
+    setRestoredSession(null);
     if (activeExamLogic && typeof activeExamLogic.resumeExam === 'function') {
       activeExamLogic.resumeExam(sessionId);
       setGameState('mock_test');
@@ -277,66 +489,46 @@ export const GameView = (props) => {
 
   // Bắt đầu ván chơi mới từ màn hình Setup
   const handleStartGame = (type, config = {}) => {
-    // Đánh thức luồng âm thanh trên thiết bị di động
-    try {
-      if (typeof window !== 'undefined' && window.speechSynthesis) {
-        const u = new SpeechSynthesisUtterance('');
-        u.volume = 0;
-        window.speechSynthesis.speak(u);
+    unlockMobileAudio();
+
+    const isPureMode = isPureAiSource(config);
+    const minCards = getMinRequiredCards(type, config);
+    const cardCount = Array.isArray(cards) ? cards.length : 0;
+
+    if (minCards > 0 && cardCount < minCards) {
+      let msg = t('needMoreCards', { n: minCards }) || `Cần ít nhất ${minCards} thẻ để chơi`;
+      if (type === 'oddoneout') {
+        msg = 'Cần ít nhất 4 thẻ để chơi Tìm Từ Khác Loại';
+      } else if (minCards === 1) {
+        msg = 'Cần ít nhất 1 thẻ để chơi chế độ Thẻ cá nhân';
       }
-      if (typeof window !== 'undefined' && window.fc_audioCtx && window.fc_audioCtx.state === 'suspended') {
-        window.fc_audioCtx.resume();
-      }
-    } catch (e) {
-      console.warn('Audio unlock warning:', e);
+      notifyToast(msg, 'error');
+      return;
     }
 
-    const isPureMode = config.sourceMode === 'ai_pure' || config.sourceMode === 'ai';
-    if (!isPureMode) {
-      const nonStrictTypes = [
-        'fillblank',
-        'spotmistake',
-        'oddoneout',
-        'imagequiz',
-        'pronunciation',
-        'listening',
-        'reading'
-      ];
-      const needsAtLeastTwo = !cards || (cards.length < 2 && !nonStrictTypes.includes(type));
-      const needsAtLeastFourForOdd =
-        (!cards || cards.length < 4) && type === 'oddoneout' && config.sourceMode === 'card';
-
-      if (needsAtLeastTwo || needsAtLeastFourForOdd) {
-        const msg =
-          type === 'oddoneout'
-            ? 'Cần ít nhất 4 thẻ để chơi Tìm Từ Khác Loại'
-            : t('needMoreCards', { n: 2 }) || 'Cần ít nhất 2 thẻ để chơi';
-        notifyToast(msg, 'error');
-        return;
-      }
-    }
-
-    const currentKey =
-      apiKey ||
-      (typeof localStorage !== 'undefined'
-        ? localStorage.getItem(STORAGE_KEYS?.API_KEY || 'fc_gemini_api_key')
-        : '');
-    if ((config.isAiMode || config.aiMode || isPureMode) && !currentKey) {
+    const effectiveAiMode = resolveConfigAiMode(config, false);
+    const liveKey = resolveActiveApiKey(preferredApiKey);
+    if ((effectiveAiMode || isPureMode) && !liveKey) {
       onMissingKey();
       return;
     }
 
-    activeSessionIdRef.current = `sess_${Date.now()}`;
+    const sessionKey = nextSessionKey();
+    activeSessionIdRef.current = `sess_${sessionKey}`;
     setGameType(type);
     gameTypeRef.current = type;
 
     const snapshotConfig = {
       ...config,
-      level: config.level || currentLevel,
+      isAiMode: effectiveAiMode,
+      aiMode: isPureMode ? true : Boolean(config.aiMode ?? effectiveAiMode),
+      level: config.level !== undefined ? config.level : currentLevel,
       dataMode: config.dataMode || dataMode,
-      topic: config.topic || currentTopic
+      topic: config.topic !== undefined ? config.topic : currentTopic
     };
     setGameConfig(snapshotConfig);
+    gameConfigRef.current = snapshotConfig;
+    setRestoredSession(null);
 
     if (setGameSessions) {
       setGameSessions((prev) => {
@@ -346,32 +538,35 @@ export const GameView = (props) => {
       });
     }
 
-    setGameSessionId(Date.now());
+    setGameSessionId(sessionKey);
     setGameState('playing');
   };
 
   // Lưu phiên chơi và quay về Menu khi người chơi bấm nút Back
   const handleBack = useCallback(
     (childData = null) => {
-      if (!activeSessionIdRef.current) {
-        setGameState('menu');
-        return;
-      }
-      if (gameState === 'playing' && childData && setGameSessions) {
+      const hadActiveSession = Boolean(activeSessionIdRef.current);
+      // Xóa khóa phiên đồng bộ ngay lập tức để chống bấm đúp hoặc AutoSave chen ngang
+      activeSessionIdRef.current = null;
+      stopAllSpeech();
+      setRestoredSession(null);
+
+      if (hadActiveSession && gameState === 'playing' && childData && setGameSessions) {
         const currentType = gameType || gameTypeRef.current;
         if (currentType) {
           const currentSessionData = {
             type: currentType,
             timestamp: Date.now(),
-            config: gameConfig,
+            config: gameConfigRef.current,
             ...childData
           };
           setGameSessions((prev) => ({ ...(prev || {}), [currentType]: currentSessionData }));
         }
       }
+
       setGameState('menu');
     },
-    [gameState, gameType, gameConfig, setGameSessions]
+    [gameState, gameType, setGameSessions, stopAllSpeech]
   );
 
   // Tự động lưu phiên chơi định kỳ mỗi 5s
@@ -384,14 +579,14 @@ export const GameView = (props) => {
           const currentSessionData = {
             type: currentType,
             timestamp: Date.now(),
-            config: gameConfig,
+            config: gameConfigRef.current,
             ...childData
           };
           setGameSessions((prev) => ({ ...(prev || {}), [currentType]: currentSessionData }));
         }
       }
     },
-    [gameState, gameType, gameConfig, setGameSessions]
+    [gameState, gameType, setGameSessions]
   );
 
   // Khôi phục ván chơi đang dang dở từ Menu
@@ -399,25 +594,51 @@ export const GameView = (props) => {
     (type) => {
       const session = gameSessions?.[type];
       if (!session) return;
-      activeSessionIdRef.current = `sess_${Date.now()}`;
+
+      const restoredConfig = session.config || {};
+      const needsAiKey =
+        resolveConfigAiMode(restoredConfig, false) || isPureAiSource(restoredConfig);
+      if (needsAiKey && !resolveActiveApiKey(preferredApiKey)) {
+        onMissingKey();
+        return;
+      }
+
+      unlockMobileAudio();
+
+      const normalizedConfig = {
+        ...restoredConfig,
+        isAiMode: resolveConfigAiMode(restoredConfig, false),
+        aiMode: isPureAiSource(restoredConfig)
+          ? true
+          : Boolean(restoredConfig.aiMode ?? restoredConfig.isAiMode),
+        level: restoredConfig.level !== undefined ? restoredConfig.level : currentLevel,
+        dataMode: restoredConfig.dataMode || dataMode,
+        topic: restoredConfig.topic !== undefined ? restoredConfig.topic : currentTopic
+      };
+
+      const sessionKey = nextSessionKey();
+      activeSessionIdRef.current = `sess_${sessionKey}`;
       setGameType(session.type || type);
       gameTypeRef.current = session.type || type;
-      setGameConfig(session.config || {});
-      setGameSessionId(Date.now());
+      setGameConfig(normalizedConfig);
+      gameConfigRef.current = normalizedConfig;
+      setRestoredSession(session);
+      setGameSessionId(sessionKey);
       setGameState('playing');
     },
-    [gameSessions]
+    [gameSessions, preferredApiKey, onMissingKey, currentLevel, dataMode, currentTopic, nextSessionKey]
   );
 
   // Kết thúc ván chơi và chuyển sang màn hình Tổng kết (GameResult)
   const handleEndGame = useCallback(
     (stats = { correct: 0, wrong: 0 }) => {
       activeSessionIdRef.current = null;
-      if (typeof window !== 'undefined' && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-      }
-      const correctVal = stats?.correct ?? stats?.score ?? 0;
-      const wrongVal = stats?.wrong ?? 0;
+      stopAllSpeech();
+      setRestoredSession(null);
+
+      const isPlainStats = stats && typeof stats === 'object' && !stats.nativeEvent;
+      const correctVal = Math.max(0, Number(isPlainStats ? stats.correct ?? stats.score : 0) || 0);
+      const wrongVal = Math.max(0, Number(isPlainStats ? stats.wrong : 0) || 0);
       setFinalStats({
         score: correctVal,
         wrong: wrongVal,
@@ -437,14 +658,99 @@ export const GameView = (props) => {
       gameTypeRef.current = null;
       setGameState('result');
     },
-    [gameType, setGameSessions]
+    [gameType, setGameSessions, stopAllSpeech]
   );
+
+  // Bộ chuyển đổi chuẩn hóa cho các game gọi onFinish(score, time, wrongCount) hoặc onFinish(statsObj)
+  const handleFinishGame = useCallback(
+    (arg1, _time, wrongCount) => {
+      if (arg1 && typeof arg1 === 'object' && !arg1.nativeEvent) {
+        handleEndGame(arg1);
+        return;
+      }
+      handleEndGame({ correct: arg1, wrong: wrongCount || 0 });
+    },
+    [handleEndGame]
+  );
+
+  // Callback thoát gọn dùng chung (ổn định tham chiếu)
+  const handleQuitGame = useCallback(() => {
+    handleBack(null);
+  }, [handleBack]);
 
   // Kiểm tra nếu bài thi Khảo thí được kích hoạt trực tiếp từ state bên ngoài
   const isExternalExamActive =
     activeExamLogic?.examState?.status &&
     activeExamLogic.examState.status !== 'idle' &&
     gameState !== 'mock_test';
+
+  // Tính cờ AI thống nhất cho phiên đang chạy
+  const activeGameAiMode = resolveConfigAiMode(gameConfig, isAiMode);
+
+  // Gói props dùng chung đồng bộ cho toàn bộ 10 Mini-Games (dùng restoredSession chống re-render mỗi 5s)
+  const sharedGameProps = useMemo(
+    () => ({
+      cards,
+      t,
+      mainColor,
+      lang,
+      level: gameConfig.level,
+      isAiMode: activeGameAiMode,
+      apiKey: activeApiKey,
+      config: gameConfig,
+      onPlay,
+      onBookmark,
+      notebook,
+      showToast,
+      onLogWrong,
+      onMissingKey,
+      onBack: handleBack,
+      onEndGame: handleEndGame,
+      onFinish: handleFinishGame,
+      onQuit: handleQuitGame,
+      onAutoSave: handleAutoSave,
+      onUpdateCards,
+      onSaveToHarvest,
+      savedState: restoredSession,
+      settings,
+      globalRetryBag,
+      addToRetryBag,
+      removeFromRetryBag
+    }),
+    [
+      cards,
+      t,
+      mainColor,
+      lang,
+      gameConfig,
+      activeGameAiMode,
+      activeApiKey,
+      onPlay,
+      onBookmark,
+      notebook,
+      showToast,
+      onLogWrong,
+      onMissingKey,
+      handleBack,
+      handleEndGame,
+      handleFinishGame,
+      handleQuitGame,
+      handleAutoSave,
+      onUpdateCards,
+      onSaveToHarvest,
+      restoredSession,
+      settings,
+      globalRetryBag,
+      addToRetryBag,
+      removeFromRetryBag
+    ]
+  );
+
+  const handleReturnToMenu = useCallback(() => {
+    stopAllSpeech();
+    setRestoredSession(null);
+    setGameState('menu');
+  }, [stopAllSpeech]);
 
   // ==========================================================================
   // 4. RENDER GIAO DIỆN THEO TRẠNG THÁI
@@ -487,7 +793,9 @@ export const GameView = (props) => {
             examLogic={activeExamLogic}
             mainColor={mainColor}
             onExit={() => {
+              stopAllSpeech();
               if (activeExamLogic.quitExam) activeExamLogic.quitExam();
+              setRestoredSession(null);
               setGameState('menu');
             }}
             onLogWrong={onLogWrong}
@@ -512,9 +820,10 @@ export const GameView = (props) => {
             onOpenAiConfig={onOpenAiConfig}
             onStart={(arg1, arg2) => {
               const { config } = resolveSetupStartArgs('quiz', arg1, arg2);
-              handleStartGame('quiz', { ...config, isAiMode: config.aiMode ?? config.isAiMode });
+              const resolvedAi = resolveConfigAiMode(config, false);
+              handleStartGame('quiz', { ...config, isAiMode: resolvedAi, aiMode: resolvedAi });
             }}
-            onBack={() => setGameState('menu')}
+            onBack={handleReturnToMenu}
           />
         </div>
       )}
@@ -528,7 +837,7 @@ export const GameView = (props) => {
               const { config } = resolveSetupStartArgs('scramble', arg1, arg2);
               handleStartGame('scramble', { ...config, lang });
             }}
-            onBack={() => setGameState('menu')}
+            onBack={handleReturnToMenu}
           />
         </div>
       )}
@@ -543,7 +852,7 @@ export const GameView = (props) => {
               const { config } = resolveSetupStartArgs('match', arg1, arg2);
               handleStartGame('match', config);
             }}
-            onBack={() => setGameState('menu')}
+            onBack={handleReturnToMenu}
           />
         </div>
       )}
@@ -557,7 +866,7 @@ export const GameView = (props) => {
               const { config } = resolveSetupStartArgs('fillblank', arg1, arg2);
               handleStartGame('fillblank', config);
             }}
-            onBack={() => setGameState('menu')}
+            onBack={handleReturnToMenu}
           />
         </div>
       )}
@@ -571,7 +880,7 @@ export const GameView = (props) => {
               const { config } = resolveSetupStartArgs('spotmistake', arg1, arg2);
               handleStartGame('spotmistake', config);
             }}
-            onBack={() => setGameState('menu')}
+            onBack={handleReturnToMenu}
           />
         </div>
       )}
@@ -585,7 +894,7 @@ export const GameView = (props) => {
               const { config } = resolveSetupStartArgs('oddoneout', arg1, arg2);
               handleStartGame('oddoneout', config);
             }}
-            onBack={() => setGameState('menu')}
+            onBack={handleReturnToMenu}
           />
         </div>
       )}
@@ -599,7 +908,7 @@ export const GameView = (props) => {
               const { config } = resolveSetupStartArgs('imagequiz', arg1, arg2);
               handleStartGame('imagequiz', config);
             }}
-            onBack={() => setGameState('menu')}
+            onBack={handleReturnToMenu}
           />
         </div>
       )}
@@ -613,7 +922,7 @@ export const GameView = (props) => {
               const { config } = resolveSetupStartArgs('pronunciation', arg1, arg2);
               handleStartGame('pronunciation', config);
             }}
-            onBack={() => setGameState('menu')}
+            onBack={handleReturnToMenu}
           />
         </div>
       )}
@@ -627,7 +936,7 @@ export const GameView = (props) => {
               const { config } = resolveSetupStartArgs('listening', arg1, arg2);
               handleStartGame('listening', config);
             }}
-            onBack={() => setGameState('menu')}
+            onBack={handleReturnToMenu}
           />
         </div>
       )}
@@ -641,7 +950,7 @@ export const GameView = (props) => {
               const { config } = resolveSetupStartArgs('reading', arg1, arg2);
               handleStartGame('reading', config);
             }}
-            onBack={() => setGameState('menu')}
+            onBack={handleReturnToMenu}
           />
         </div>
       )}
@@ -659,7 +968,7 @@ export const GameView = (props) => {
               sessionTotal={finalStats.total}
               correctCount={finalStats.score}
               wrongCount={finalStats.wrong}
-              onBack={() => setGameState('menu')}
+              onBack={handleReturnToMenu}
             />
           </div>
         </div>
@@ -671,304 +980,62 @@ export const GameView = (props) => {
           {gameType === 'match' && MatchGame && (
             <MatchGame
               key={gameSessionId}
-              cards={cards}
-              t={t}
-              mainColor={mainColor}
-              isAiMode={gameConfig.isAiMode ?? gameConfig.aiMode ?? isAiMode}
+              {...sharedGameProps}
               timerMode={gameConfig.timerMode}
               timeLimit={gameConfig.timeLimit}
               initialDifficulty={gameConfig.hardMode ? 'hard' : 'easy'}
-              level={gameConfig.level}
-              config={gameConfig}
-              lang={lang}
-              onBookmark={onBookmark}
-              notebook={notebook}
-              onLogWrong={onLogWrong}
-              onBack={handleBack}
-              onEndGame={handleEndGame}
-              onAutoSave={handleAutoSave}
-              onUpdateCards={onUpdateCards}
-              savedState={gameSessions?.['match']}
-              settings={settings}
-              onSaveToHarvest={onSaveToHarvest}
-              globalRetryBag={globalRetryBag}
-              addToRetryBag={addToRetryBag}
-              removeFromRetryBag={removeFromRetryBag}
             />
           )}
 
           {gameType === 'scramble' && ScrambleGame && (
             <ScrambleGame
               key={gameSessionId}
-              cards={cards}
-              t={t}
-              mainColor={mainColor}
-              lang={lang}
-              level={gameConfig.level}
-              apiKey={apiKey}
-              config={gameConfig}
-              onPlay={onPlay}
-              onBookmark={onBookmark}
-              notebook={notebook}
-              showToast={showToast}
-              onLogWrong={onLogWrong}
+              {...sharedGameProps}
               timerMode={gameConfig.timerMode}
               timeLimit={gameConfig.timeLimit}
               initialDifficulty={gameConfig.hardMode ? 'hard' : 'easy'}
-              onBack={handleBack}
-              onEndGame={handleEndGame}
-              onAutoSave={handleAutoSave}
-              savedState={gameSessions?.['scramble']}
-              settings={settings}
-              onUpdateCards={onUpdateCards}
-              onSaveToHarvest={onSaveToHarvest}
-              globalRetryBag={globalRetryBag}
-              addToRetryBag={addToRetryBag}
-              removeFromRetryBag={removeFromRetryBag}
             />
           )}
 
           {gameType === 'quiz' && QuizGame && (
             <QuizGame
               key={gameSessionId}
-              cards={cards}
-              t={t}
-              mainColor={mainColor}
-              lang={lang}
-              level={gameConfig.level}
+              {...sharedGameProps}
               timerMode={gameConfig.timerMode}
               listenMode={gameConfig.listenMode}
-              isAiMode={gameConfig.isAiMode ?? gameConfig.aiMode ?? isAiMode}
               timeLimit={gameConfig.timeLimit}
               hardMode={gameConfig.hardMode}
-              config={gameConfig}
-              onPlay={onPlay}
-              onBookmark={onBookmark}
-              notebook={notebook}
-              showToast={showToast}
-              onLogWrong={onLogWrong}
-              onMissingKey={onMissingKey}
               isLoading={isLoading}
               AiModeSwitch={AiModeSwitch}
-              onBack={handleBack}
-              onEndGame={handleEndGame}
-              onAutoSave={handleAutoSave}
-              savedState={gameSessions?.['quiz']}
-              settings={settings}
-              onUpdateCards={onUpdateCards}
-              onSaveToHarvest={onSaveToHarvest}
-              globalRetryBag={globalRetryBag}
-              addToRetryBag={addToRetryBag}
-              removeFromRetryBag={removeFromRetryBag}
             />
           )}
 
           {gameType === 'fillblank' && FillBlankGame && (
-            <FillBlankGame
-              key={gameSessionId}
-              cards={cards}
-              t={t}
-              mainColor={mainColor}
-              lang={lang}
-              isAiMode={gameConfig.aiMode || false}
-              apiKey={apiKey}
-              onFinish={(score, time, wrongCount) =>
-                handleEndGame({ correct: score, wrong: wrongCount || 0 })
-              }
-              onQuit={() => handleBack(null)}
-              onBack={handleBack}
-              onEndGame={handleEndGame}
-              onBookmark={onBookmark}
-              notebook={notebook}
-              onLogWrong={onLogWrong}
-              settings={settings}
-              config={gameConfig}
-              onUpdateCards={onUpdateCards}
-              onSaveToHarvest={onSaveToHarvest}
-              onAutoSave={handleAutoSave}
-              savedState={gameSessions?.['fillblank']}
-              globalRetryBag={globalRetryBag}
-              addToRetryBag={addToRetryBag}
-              removeFromRetryBag={removeFromRetryBag}
-            />
+            <FillBlankGame key={gameSessionId} {...sharedGameProps} />
           )}
 
           {gameType === 'spotmistake' && SpotMistakeGame && (
-            <SpotMistakeGame
-              key={gameSessionId}
-              cards={cards}
-              t={t}
-              mainColor={mainColor}
-              lang={lang}
-              isAiMode={gameConfig.aiMode || false}
-              apiKey={apiKey}
-              onFinish={(score, time, wrongCount) =>
-                handleEndGame({ correct: score, wrong: wrongCount || 0 })
-              }
-              onQuit={() => handleBack(null)}
-              onBack={handleBack}
-              onEndGame={handleEndGame}
-              onBookmark={onBookmark}
-              notebook={notebook}
-              onLogWrong={onLogWrong}
-              settings={settings}
-              config={gameConfig}
-              onUpdateCards={onUpdateCards}
-              onSaveToHarvest={onSaveToHarvest}
-              onAutoSave={handleAutoSave}
-              savedState={gameSessions?.['spotmistake']}
-              globalRetryBag={globalRetryBag}
-              addToRetryBag={addToRetryBag}
-              removeFromRetryBag={removeFromRetryBag}
-            />
+            <SpotMistakeGame key={gameSessionId} {...sharedGameProps} />
           )}
 
           {gameType === 'oddoneout' && OddOneOutGame && (
-            <OddOneOutGame
-              key={gameSessionId}
-              cards={cards}
-              t={t}
-              mainColor={mainColor}
-              lang={lang}
-              isAiMode={gameConfig.aiMode || false}
-              apiKey={apiKey}
-              onFinish={(score, time, wrongCount) =>
-                handleEndGame({ correct: score, wrong: wrongCount || 0 })
-              }
-              onQuit={() => handleBack(null)}
-              onBack={handleBack}
-              onEndGame={handleEndGame}
-              onBookmark={onBookmark}
-              notebook={notebook}
-              onLogWrong={onLogWrong}
-              settings={settings}
-              config={gameConfig}
-              onUpdateCards={onUpdateCards}
-              onSaveToHarvest={onSaveToHarvest}
-              onAutoSave={handleAutoSave}
-              savedState={gameSessions?.['oddoneout']}
-              onPlay={onPlay}
-              globalRetryBag={globalRetryBag}
-              addToRetryBag={addToRetryBag}
-              removeFromRetryBag={removeFromRetryBag}
-            />
+            <OddOneOutGame key={gameSessionId} {...sharedGameProps} />
           )}
 
           {gameType === 'imagequiz' && ImageQuizGame && (
-            <ImageQuizGame
-              key={gameSessionId}
-              cards={cards}
-              t={t}
-              mainColor="emerald"
-              lang={lang}
-              isAiMode={gameConfig.aiMode || false}
-              apiKey={apiKey}
-              onFinish={(score, time, wrongCount) =>
-                handleEndGame({ correct: score, wrong: wrongCount || 0 })
-              }
-              onQuit={() => handleBack(null)}
-              onBack={handleBack}
-              onEndGame={handleEndGame}
-              onBookmark={onBookmark}
-              notebook={notebook}
-              onLogWrong={onLogWrong}
-              settings={settings}
-              config={gameConfig}
-              onUpdateCards={onUpdateCards}
-              onSaveToHarvest={onSaveToHarvest}
-              onAutoSave={handleAutoSave}
-              savedState={gameSessions?.['imagequiz']}
-              globalRetryBag={globalRetryBag}
-              addToRetryBag={addToRetryBag}
-              removeFromRetryBag={removeFromRetryBag}
-            />
+            <ImageQuizGame key={gameSessionId} {...sharedGameProps} mainColor="emerald" />
           )}
 
           {gameType === 'pronunciation' && PronunciationGame && (
-            <PronunciationGame
-              key={gameSessionId}
-              cards={cards}
-              t={t}
-              mainColor="indigo"
-              lang={lang}
-              apiKey={apiKey}
-              onFinish={(score, time, wrongCount) =>
-                handleEndGame({ correct: score, wrong: wrongCount || 0 })
-              }
-              onQuit={() => handleBack(null)}
-              onBack={handleBack}
-              onEndGame={handleEndGame}
-              onBookmark={onBookmark}
-              notebook={notebook}
-              onLogWrong={onLogWrong}
-              settings={settings}
-              config={gameConfig}
-              onUpdateCards={onUpdateCards}
-              onSaveToHarvest={onSaveToHarvest}
-              onAutoSave={handleAutoSave}
-              savedState={gameSessions?.['pronunciation']}
-              onPlay={onPlay}
-              globalRetryBag={globalRetryBag}
-              addToRetryBag={addToRetryBag}
-              removeFromRetryBag={removeFromRetryBag}
-            />
+            <PronunciationGame key={gameSessionId} {...sharedGameProps} mainColor="indigo" />
           )}
 
           {gameType === 'listening' && ListeningGame && (
-            <ListeningGame
-              key={gameSessionId}
-              cards={cards}
-              t={t}
-              mainColor="cyan"
-              lang={lang}
-              apiKey={apiKey}
-              onFinish={(score, time, wrongCount) =>
-                handleEndGame({ correct: score, wrong: wrongCount || 0 })
-              }
-              onQuit={() => handleBack(null)}
-              onBack={handleBack}
-              onEndGame={handleEndGame}
-              onBookmark={onBookmark}
-              notebook={notebook}
-              onLogWrong={onLogWrong}
-              settings={settings}
-              config={gameConfig}
-              onSaveToHarvest={onSaveToHarvest}
-              onAutoSave={handleAutoSave}
-              savedState={gameSessions?.['listening']}
-              onPlay={onPlay}
-              globalRetryBag={globalRetryBag}
-              addToRetryBag={addToRetryBag}
-              removeFromRetryBag={removeFromRetryBag}
-            />
+            <ListeningGame key={gameSessionId} {...sharedGameProps} mainColor="cyan" />
           )}
 
           {gameType === 'reading' && ReadingGame && (
-            <ReadingGame
-              key={gameSessionId}
-              cards={cards}
-              t={t}
-              mainColor="slate"
-              lang={lang}
-              apiKey={apiKey}
-              onFinish={(score, time, wrongCount) =>
-                handleEndGame({ correct: score, wrong: wrongCount || 0 })
-              }
-              onQuit={() => handleBack(null)}
-              onBack={handleBack}
-              onEndGame={handleEndGame}
-              onBookmark={onBookmark}
-              notebook={notebook}
-              onLogWrong={onLogWrong}
-              settings={settings}
-              config={gameConfig}
-              onSaveToHarvest={onSaveToHarvest}
-              onAutoSave={handleAutoSave}
-              savedState={gameSessions?.['reading']}
-              globalRetryBag={globalRetryBag}
-              addToRetryBag={addToRetryBag}
-              removeFromRetryBag={removeFromRetryBag}
-            />
+            <ReadingGame key={gameSessionId} {...sharedGameProps} mainColor="slate" />
           )}
         </div>
       )}
