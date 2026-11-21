@@ -1,15 +1,16 @@
 // ============================================================================
 // FILE 21/85: src/engines/aiFactory.js
 // NGUỒN GỐC: Tầng 2 - Block 2.6 (AI Factory Engine V1.55)
-// PHIÊN BẢN: Ver 1.1
-// NGÀY GIỜ NÂNG CẤP: 19/11/2026 - 22:32 (GMT+7)
+// PHIÊN BẢN: Ver 1.2
+// NGÀY GIỜ NÂNG CẤP: 21/11/2026 - 17:49 (GMT+7)
 // NHIỆM VỤ: Nhà máy 3 Lò đúc AI 1-Shot (Đúc thẻ cơ sở, Đúc ma trận 4 lựa chọn,
 //           Đúc ngữ cảnh Nghe/Đọc) và Làm giàu hàng loạt (Batch Enrich);
-//           vá ngưỡng cấp độ 7-9, hợp nhất _executeForgeCall (null-safety),
-//           nới biên timeout Cascade và làm sạch tuyệt đối image_keyword/image.
+//           vá dứt điểm lỗi ghi đè isReverse bởi fc_quiz_config/fc_settings,
+//           chuẩn hóa Array Armor cho topic, đồng nhất definition câu văn
+//           và bảo vệ an toàn ghi nhận fc_total_tokens.
 // ============================================================================
 
-import { STORAGE_KEYS, IoeEnumRegistry } from '../config/constants.js';
+import { IoeEnumRegistry } from '../config/constants.js';
 import {
   safeJsonParse,
   parseAiJson,
@@ -124,6 +125,34 @@ const resolveDynamicTimeout = (defaultMs = 32000, extraMs = 0) => {
     // Bỏ qua lỗi đọc cấu hình
   }
   return defaultMs + extraMs;
+};
+
+// [VER 1.2] Ghi nhận Token an toàn tuyệt đối (chống QuotaExceededError & NaN)
+const safeAddTotalTokens = (tokenMetadata) => {
+  if (!tokenMetadata || typeof localStorage === 'undefined') return;
+  const used = Number(tokenMetadata.totalTokenCount || 0);
+  if (!Number.isFinite(used) || used <= 0) return;
+  try {
+    const prevRaw = parseInt(localStorage.getItem('fc_total_tokens') || '0', 10);
+    const prevSafe = Number.isFinite(prevRaw) && prevRaw >= 0 ? prevRaw : 0;
+    localStorage.setItem('fc_total_tokens', String(prevSafe + used));
+  } catch (e) {
+    console.warn('[AiFactoryEngine] Không thể cập nhật fc_total_tokens:', e?.message || e);
+  }
+};
+
+// [VER 1.2] Chuẩn hóa chủ đề hỗ trợ Multi-select Array Armor
+const normalizeTopicInput = (topic) => {
+  const isWildcard = (val) => {
+    const low = String(val || '').trim().toLowerCase();
+    return !low || low === 'any' || low === 'all' || low === 'tất cả';
+  };
+  if (Array.isArray(topic)) {
+    const cleaned = [...new Set(topic.map((t) => String(t || '').trim()).filter((t) => !isWildcard(t)))];
+    return cleaned.join(', ');
+  }
+  const single = String(topic || '').trim();
+  return isWildcard(single) ? '' : single;
 };
 
 // Helper nội bộ: Ma trận Chuyển hóa Thị giác tách nhánh theo ngôn ngữ (en vs zh)
@@ -246,12 +275,7 @@ export const AiFactoryEngine = {
             updatedCards[b.idx] = { ...updatedCards[b.idx], definition: parsed.translations[i] };
           }
           hasUpdates = true;
-
-          if (res.tokenMetadata) {
-            const used = res.tokenMetadata.totalTokenCount || 0;
-            const currentTotal = parseInt(localStorage.getItem('fc_total_tokens') || '0', 10);
-            localStorage.setItem('fc_total_tokens', String(currentTotal + used));
-          }
+          safeAddTotalTokens(res?.tokenMetadata);
         }
       } catch (e) {
         console.warn('Pre-flight Batch enrich error:', e);
@@ -309,27 +333,9 @@ export const AiFactoryEngine = {
     dataMode = 'vocab',
     isReverse = false
   ) {
-    let actualIsReverse = isReverse;
-    try {
-      const settingsStr = localStorage.getItem(STORAGE_KEYS?.SETTINGS || 'fc_settings');
-      if (settingsStr) {
-        const settings = JSON.parse(settingsStr);
-        if (settings.startSide === 'def') actualIsReverse = true;
-      }
-      if (subType === 'vocab_mcq' || subType === 'grammar_mcq') {
-        const quizConfigStr = localStorage.getItem('fc_quiz_config');
-        if (quizConfigStr) {
-          const quizConfig = JSON.parse(quizConfigStr);
-          if (quizConfig.askMode === 'def') {
-            actualIsReverse = true;
-          } else if (quizConfig.askMode === 'term') {
-            actualIsReverse = false;
-          }
-        }
-      }
-    } catch (e) {
-      // Bỏ qua lỗi đọc cài đặt cục bộ
-    }
+    // [VER 1.2] Tôn trọng tuyệt đối tham số isReverse truyền tường minh từ ExamEngine / QuizGame / Mock Test.
+    // Đã gỡ bỏ hoàn toàn việc đọc lén localStorage (fc_settings.startSide & fc_quiz_config.askMode) gây nhiễm chéo chiều đáp án.
+    const actualIsReverse = Boolean(isReverse);
 
     const activePedagogyEngine =
       IoeDataEngine || (typeof window !== 'undefined' ? window.IoeDataEngine : null);
@@ -383,15 +389,16 @@ export const AiFactoryEngine = {
       prompt += `GẮN NHÃN CẤP ĐỘ: Vui lòng khai báo đúng cấp độ CEFR vào trường 'cefr_level' (ví dụ: 'B1').\n`;
     }
 
+    const cleanTopic = normalizeTopicInput(topic);
     const isTopicFree =
-      topic === 'ANY' ||
+      !cleanTopic ||
       subType === 'pronunciation' ||
       subType === 'odd_one_out' ||
       subType === 'spot_mistake';
     if (isTopicFree) {
       prompt += `TỰ DO CHỦ ĐỀ: Bạn có thể tùy ý chọn từ các chủ đề ${lang === 'zh' ? 'đời sống hàng ngày' : 'Cambridge'} phổ biến.\n`;
-    } else if (topic) {
-      prompt += `TẬP TRUNG CHỦ ĐỀ: Vui lòng tạo nội dung liên quan chặt chẽ đến chủ đề: "${topic}".\n`;
+    } else {
+      prompt += `TẬP TRUNG CHỦ ĐỀ: Vui lòng tạo nội dung liên quan chặt chẽ đến chủ đề: "${cleanTopic}".\n`;
     }
 
     if (forgeType === 'base_card') {
@@ -462,7 +469,7 @@ export const AiFactoryEngine = {
         prompt += `NHIỆM VỤ: Tạo một câu hỏi 'Tìm Từ Khác Loại' gồm 4 từ ${targetLangName} ở cấp độ ${cefrLevel}.\n`;
         prompt += `MỒI NGỮ NGHĨA: Hãy chọn 3 từ thuộc nhóm [${shuffledTopics[0]}] và 1 từ khác loại thuộc nhóm [${shuffledTopics[1]}].\n`;
         const oddRule = activePedagogyEngine?.getMicroTierOddRule
-          ? activePedagogyEngine.getMicroTierOddRule(lang, dataMode, level, topic)
+          ? activePedagogyEngine.getMicroTierOddRule(lang, dataMode, level, cleanTopic || 'ANY')
           : '';
         if (oddRule) prompt += oddRule + '\n';
         prompt += `QUY TẮC BẮT BUỘC: Trường 'explanation' PHẢI BẰNG TIẾNG VIỆT.\n`;
@@ -475,7 +482,7 @@ export const AiFactoryEngine = {
         prompt += `NHIỆM VỤ: Tạo một câu văn ${targetLangName} ở cấp độ ${cefrLevel}. Chọn MỘT từ vựng quan trọng làm 'targetWord'.\n`;
         prompt += `TỐI QUAN TRỌNG: KHÔNG ĐƯỢC chèn '[__________]' vào trong câu. Trường 'displaySentence' BẮT BUỘC phải chứa nguyên văn toàn bộ câu không bị chỉnh sửa.\n`;
         const clozeRule = activePedagogyEngine?.getMicroTierClozeRule
-          ? activePedagogyEngine.getMicroTierClozeRule(lang, dataMode, level, topic)
+          ? activePedagogyEngine.getMicroTierClozeRule(lang, dataMode, level, cleanTopic || 'ANY')
           : '';
         if (clozeRule) prompt += clozeRule + '\n';
         prompt += `QUY TẮC: Trường 'hint' chính là bản dịch Tiếng Việt của toàn bộ câu văn đó.\n`;
@@ -490,8 +497,8 @@ export const AiFactoryEngine = {
             prompt += `- 'definition': BẢN DỊCH TIẾNG VIỆT HOÀN CHỈNH của 'displaySentence' (Điều này cực kỳ quan trọng đối với Chế độ Đảo ngược để dùng làm câu hỏi).\n`;
             prompt += `- 'options': 4 câu văn hoàn chỉnh bằng ${targetLangName} (1 câu đúng, 3 câu nhiễu). TỐI QUAN TRỌNG: 1 đáp án đúng BẮT BUỘC PHẢI SAO CHÉP GIỐNG HỆT nội dung của trường 'displaySentence'.\n`;
           } else {
-            prompt += `- 'definition': ${pedagogyRules.definition}\n`;
-            prompt += `- 'options': 4 câu văn hoàn chỉnh bằng TIẾNG VIỆT dịch nghĩa cho 'displaySentence' (1 đáp án dịch đúng, 3 đáp án nhiễu). TỐI QUAN TRỌNG: 1 đáp án đúng BẮT BUỘC PHẢI SAO CHÉP GIỐNG HỆT bản dịch tiếng Việt của 'displaySentence'.\n`;
+            prompt += `- 'definition': BẢN DỊCH TIẾNG VIỆT HOÀN CHỈNH, tự nhiên của câu 'displaySentence'.\n`;
+            prompt += `- 'options': 4 câu văn hoàn chỉnh bằng TIẾNG VIỆT dịch nghĩa cho 'displaySentence' (1 đáp án dịch đúng, 3 đáp án nhiễu). TỐI QUAN TRỌNG: 1 đáp án đúng BẮT BUỘC PHẢI SAO CHÉP GIỐNG HỆT nội dung của trường 'definition'.\n`;
           }
         } else {
           prompt += `- 'definition': ${pedagogyRules.definition}\n`;

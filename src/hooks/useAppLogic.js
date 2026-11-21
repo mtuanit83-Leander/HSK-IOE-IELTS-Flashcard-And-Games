@@ -1,12 +1,27 @@
 // ============================================================================
 // FILE 82/85: src/hooks/useAppLogic.js
 // NGUỒN GỐC: Tầng 6 - Block 6.4 (Main Controller - Version 1.09)
+// PHIÊN BẢN: Ver 1.1
+// NGÀY GIỜ NÂNG CẤP: 21/11/2026 - 10:09 (GMT+7)
 // NHIỆM VỤ: "Switchboard" điều phối toàn cục. Hợp nhất AI Logic (6.2),
 //           Data I/O (6.3), Study Progress (6.5), AI Curator (6.6),
 //           Mock Test Logic (6.7) và Exam Pool Logic (6.8).
+//           Nâng cấp Ver 1.1 theo Phác đồ 6 Hạng mục (DanhGiaCode.md):
+//           1. Đồng bộ khóa phiên mySessionId === speakSessionIdRef.current
+//              cho safeOnEnd() ở cả u.onend, u.onerror và catch (0% zombie).
+//           2. Tự động dừng Auto-Play & TTS khi chuyển ngữ cảnh (handleReviewWithGame,
+//              handleExitStudyMode, tắt Shuffle và chuyển tab rời Learn qua BottomNav).
+//           3. Chặn lặp phím (e.repeat) cho phím công tắc (gọi e.preventDefault()
+//              trước e.repeat với Space để chống cuộn trang khi giữ phím).
+//           4. Bọc try/catch đầy đủ cho toggleBatterySaver (WakeLock an toàn).
+//           5. Nâng cấp extractRetryKey & removeFromRetryBag theo từng gameType
+//              khớp 1:1 Validator của db.js (listening, reading, fillblank, oddoneout).
+//           6. Thay cờ đơn bằng pendingRetryPersistMapRef (Map<lang, bag>) chống
+//              race condition ghi đè chéo phân vùng ngôn ngữ trên IndexedDB.
 // ============================================================================
 
-import { useRef, useEffect, useCallback } from 'react';
+
+import { useRef, useEffect, useCallback, useMemo } from 'react';
 import { UI_TEXT } from '@/config/i18n';
 import { STORAGE_KEYS } from '@/config/constants';
 import { Utils } from '@/utils/helpers';
@@ -18,8 +33,181 @@ import { useAiCurator } from './useAiCurator';
 import { useExamLogic } from './useExamLogic';
 import { useExamPoolLogic } from './useExamPoolLogic';
 
+
 // ============================================================================
-// [V1.09 AUDIO WAKE LOCK FIX] KHIÊN SƯỞI ẤM ÂM THANH LIÊN TỤC (15s WAV LOOP)
+// MODULE HELPERS: CHUẨN HÓA UNICODE NFC & BỘ KHÓA TÚI NHÁP 10/10 MINI-GAMES
+// ============================================================================
+const HANZI_REGEX = /[\u4e00-\u9fff]/;
+
+
+const SPECIALIZED_RETRY_GAMES = new Set([
+  'oddoneout',
+  'fillblank',
+  'spotmistake',
+  'listening',
+  'reading'
+]);
+
+
+const normalizeKey = (val) => {
+  if (val === undefined || val === null) return '';
+  const str = String(val).trim().toLowerCase();
+  return typeof str.normalize === 'function' ? str.normalize('NFC') : str;
+};
+
+
+const normalizeWordSignature = (words) => {
+  if (!Array.isArray(words)) return '';
+  return words.map((w) => normalizeKey(w)).join('|');
+};
+
+
+const pickFirstNonEmptyString = (candidates) => {
+  for (const val of candidates) {
+    if (typeof val === 'string' && val.trim()) {
+      return val.trim();
+    }
+  }
+  return '';
+};
+
+
+// Trích xuất khóa định danh chính theo từng gameType — khớp 1:1 với db.js
+const extractRetryKey = (item, gameType = '') => {
+  if (!item || typeof item !== 'object') return '';
+
+
+  switch (gameType) {
+    case 'listening':
+      return pickFirstNonEmptyString([
+        item.audioScript,
+        item.questionText,
+        item.term,
+        item.origin?.term,
+        item.question?.term
+      ]);
+    case 'reading': {
+      const qText =
+        typeof item.questionText === 'string' ? item.questionText.trim() : '';
+      const pCtx =
+        typeof item.passageContext === 'string'
+          ? item.passageContext.trim()
+          : '';
+      if (qText && pCtx) return `${qText}::${pCtx}`;
+      return pickFirstNonEmptyString([
+        qText,
+        pCtx,
+        item.term,
+        item.origin?.term,
+        item.question?.term
+      ]);
+    }
+    case 'fillblank':
+      return pickFirstNonEmptyString([
+        item.displaySentence,
+        item.targetWord,
+        item.term,
+        item.origin?.term,
+        item.question?.term
+      ]);
+    case 'spotmistake':
+      return pickFirstNonEmptyString([
+        item.wrongSentence,
+        item.term,
+        item.origin?.term,
+        item.question?.term
+      ]);
+    case 'oddoneout':
+      return pickFirstNonEmptyString([
+        item.oddWord,
+        item.term,
+        item.origin?.term,
+        item.question?.term
+      ]);
+    default:
+      return pickFirstNonEmptyString([
+        item.term,
+        item.origin?.term,
+        item.question?.term,
+        item.displaySentence,
+        item.wrongSentence,
+        item.oddWord,
+        item.audioScript,
+        item.questionText
+      ]);
+  }
+};
+
+
+// Lấy tập toàn bộ khóa ứng viên chuẩn hóa NFC để removeFromRetryBag không bao giờ lệch khóa
+const getRetryCandidateKeys = (item, gameType = '') => {
+  if (!item || typeof item !== 'object') return [];
+  const rawList = [
+    extractRetryKey(item, gameType),
+    item.term,
+    item.origin?.term,
+    item.question?.term,
+    item.displaySentence,
+    item.targetWord,
+    item.wrongSentence,
+    item.oddWord,
+    item.audioScript,
+    item.questionText,
+    item.passageContext
+  ];
+  const keySet = new Set();
+  for (const val of rawList) {
+    const k = normalizeKey(val);
+    if (k) keySet.add(k);
+  }
+  return Array.from(keySet);
+};
+
+
+// Tự động đẩy (hoist) top-level term & definition để tương thích 100% Validator dòng 41 của db.js
+const normalizeRetryItem = (gameType, questionData) => {
+  const cloned = { ...questionData };
+  const nestedOrigin =
+    cloned.origin && typeof cloned.origin === 'object' ? cloned.origin : null;
+  const nestedQuestion =
+    cloned.question && typeof cloned.question === 'object' ? cloned.question : null;
+
+
+  if (!SPECIALIZED_RETRY_GAMES.has(gameType)) {
+    const rawTerm =
+      cloned.term ||
+      nestedQuestion?.term ||
+      nestedOrigin?.term ||
+      cloned.displaySentence ||
+      '';
+    const rawDef =
+      cloned.definition ||
+      nestedQuestion?.definition ||
+      nestedOrigin?.definition ||
+      cloned.meaning ||
+      nestedQuestion?.meaning ||
+      nestedOrigin?.meaning ||
+      '';
+
+
+    if (typeof rawTerm === 'string' && rawTerm.trim()) {
+      cloned.term = rawTerm.trim();
+    }
+    if (typeof rawDef === 'string' && rawDef.trim()) {
+      cloned.definition = rawDef.trim();
+    } else if (cloned.term) {
+      // Bảo vệ trường hợp thẻ khuyết nghĩa không bị db.js từ chối rút ra câm lặng
+      cloned.definition = cloned.term;
+    }
+  }
+
+
+  return cloned;
+};
+
+
+// ============================================================================
+// [AUDIO WAKE LOCK] KHIÊN SƯỞI ẤM ÂM THANH LIÊN TỤC (15s WAV LOOP)
 // ============================================================================
 const createTingAudio = () => {
   if (typeof window !== 'undefined' && window.fc_tingAudio) {
@@ -32,11 +220,13 @@ const createTingAudio = () => {
     const buffer = new ArrayBuffer(44 + numSamples * 2);
     const view = new DataView(buffer);
 
+
     const writeString = (dataView, offset, string) => {
       for (let i = 0; i < string.length; i++) {
         dataView.setUint8(offset + i, string.charCodeAt(i));
       }
     };
+
 
     // Viết Header chuẩn cho file .WAV
     writeString(view, 0, 'RIFF');
@@ -53,6 +243,7 @@ const createTingAudio = () => {
     writeString(view, 36, 'data');
     view.setUint32(40, numSamples * 2, true);
 
+
     // Tạo sóng Sine 10Hz với âm lượng không đổi 5% (không fade-out)
     for (let i = 0; i < numSamples; i++) {
       const timeSec = i / sampleRate;
@@ -61,12 +252,13 @@ const createTingAudio = () => {
       view.setInt16(44 + i * 2, sample, true);
     }
 
+
     const blob = new Blob([buffer], { type: 'audio/wav' });
     const audio = new Audio(URL.createObjectURL(blob));
     audio.setAttribute('playsinline', 'true');
     audio.setAttribute('webkit-playsinline', 'true');
     audio.preload = 'auto';
-    audio.loop = true; // [BẢN VÁ V1.09] Lặp vô tận tạo lớp Khiên bền vững
+    audio.loop = true; // Lặp vô tận tạo lớp Khiên bền vững
     if (typeof window !== 'undefined') {
       window.fc_tingAudio = audio;
     }
@@ -77,11 +269,12 @@ const createTingAudio = () => {
   }
 };
 
+
 const playTing = () => {
   try {
     const audio = createTingAudio();
     if (audio) {
-      // [BẢN VÁ V1.09] Hủy đồng hồ hẹn giờ tắt khiên (nếu có)
+      // Hủy đồng hồ hẹn giờ tắt khiên (nếu có)
       if (typeof window !== 'undefined' && window.fc_tingAudioTimeout) {
         clearTimeout(window.fc_tingAudioTimeout);
         window.fc_tingAudioTimeout = null;
@@ -92,7 +285,7 @@ const playTing = () => {
         const playPromise = audio.play();
         if (playPromise !== undefined) {
           playPromise.catch(() => {
-            /* Bỏ qua lỗi Auto-play */
+            /* Bỏ qua lỗi Auto-play của trình duyệt */
           });
         }
       }
@@ -102,15 +295,38 @@ const playTing = () => {
   }
 };
 
+
 // Hàm đóng khiên an toàn bằng kỹ thuật Debounce 3.5 giây
 const releaseShieldDebounced = () => {
   if (typeof window === 'undefined') return;
   if (window.fc_tingAudioTimeout) clearTimeout(window.fc_tingAudioTimeout);
   window.fc_tingAudioTimeout = setTimeout(() => {
+    window.fc_tingAudioTimeout = null;
     if (window.fc_tingAudio) window.fc_tingAudio.pause();
   }, 3500);
 };
 
+
+// Cắt khiên tức thời (dùng khi người dùng chủ động bấm Dừng / Mute / Unmount)
+const stopShieldImmediately = () => {
+  if (typeof window === 'undefined') return;
+  if (window.fc_tingAudioTimeout) {
+    clearTimeout(window.fc_tingAudioTimeout);
+    window.fc_tingAudioTimeout = null;
+  }
+  if (window.fc_tingAudio) {
+    try {
+      window.fc_tingAudio.pause();
+    } catch {
+      // Bỏ qua an toàn
+    }
+  }
+};
+
+
+// ============================================================================
+// MAIN HOOK: useAppLogic
+// ============================================================================
 export const useAppLogic = (core) => {
   // 1. LẤY CORE STATE & STABLE SETTERS
   const {
@@ -130,6 +346,7 @@ export const useAppLogic = (core) => {
     voices,
     globalRetryBag,
     aiHarvestPool,
+    isDbReady,
     // Setters ổn định từ useState (không bao giờ đổi tham chiếu khi re-render)
     setToast,
     setIsFlipped,
@@ -166,14 +383,46 @@ export const useAppLogic = (core) => {
     autoPlayTimeoutRef
   } = core;
 
+
   // Derived State
   const mainColor = lang === 'zh' ? 'red' : 'sky';
-  const isCurrentCardInNotebookDerived = Boolean(
-    cards?.[currentCardIndex] &&
-      notebook?.some((n) => n.term === cards[currentCardIndex].term)
+  const isCurrentCardInNotebookDerived = useMemo(() => {
+    const currentTermKey = normalizeKey(cards?.[currentCardIndex]?.term);
+    if (!currentTermKey || !Array.isArray(notebook)) return false;
+    return notebook.some((n) => normalizeKey(n?.term) === currentTermKey);
+  }, [cards, currentCardIndex, notebook]);
+
+
+  // Ref nội bộ quản lý phiên đọc đơn điệu, dừng chủ động, timer điều hướng & hàng đợi ghi Túi Nháp
+  const speakSessionIdRef = useRef(0);
+  const explicitStopRef = useRef(false);
+  const navTimeoutsRef = useRef(new Set());
+  const pendingRetryPersistMapRef = useRef(new Map());
+  const prevViewModeRef = useRef(viewMode);
+
+
+  // Theo dõi trạng thái mở Modal qua Ref để không phải gỡ/gắn lại keydown listener liên tục
+  const isAnyModalOpenRef = useRef(false);
+  isAnyModalOpenRef.current = Boolean(
+    core.showSettings ||
+      core.showApiKeyModal ||
+      core.showNotebook ||
+      core.showManual ||
+      core.showLinkManager ||
+      core.showWordSelect ||
+      core.showMastered ||
+      core.showIncorrectModal ||
+      core.showHelp ||
+      core.showHanziSelector ||
+      core.showHanziWriter ||
+      core.showSaveLoadModal ||
+      core.showAiChat ||
+      core.showExamPoolManager ||
+      core.showAiConfigModal
   );
 
-  // [VÁ LỖI ĐỨT CÁP THU HOẠCH] Sử dụng Proxy Pattern để truyền hàm thu hoạch vào useExamLogic
+
+  // [VÁ LỖI ĐỨT CÁP THU HOẠCH] Proxy Pattern truyền hàm thu hoạch vào useExamLogic
   const handleAutoHarvestToPoolRef = useRef(null);
   const harvestProxy = useCallback(
     (item, targetLang, level, topic, typeToHarvest) => {
@@ -190,10 +439,12 @@ export const useAppLogic = (core) => {
     []
   );
 
+
   // [MOCK TEST ERA] Khởi tạo ExamLogic tại cấp cao nhất để giữ State khi chuyển Tab
   const examLogic = useExamLogic(apiKey, harvestProxy);
 
-  // Ref Isolation Pattern: Phong ấn State để dùng trong các hàm Async (Đồng bộ tức thời)
+
+  // Ref Isolation Pattern: Phong ấn State để dùng trong các hàm Async (Đồng bộ tức thời 0ms)
   const latestStateRef = useRef({
     cards,
     currentCardIndex,
@@ -208,13 +459,15 @@ export const useAppLogic = (core) => {
     isStudyingNotebook: core.isStudyingNotebook,
     studySourceName: core.studySourceName,
     isMuted: core.isMuted,
-    isShuffle: core.isShuffle,
+    isShuffle,
+    isBatterySaverMode: core.isBatterySaverMode,
     aiHarvestPool,
     globalRetryBag,
+    isDbReady,
     lang
   });
 
-  // Cập nhật ngay trong thân render để mọi callback async luôn đọc được giá trị mới nhất 0ms
+
   latestStateRef.current = {
     cards,
     currentCardIndex,
@@ -229,13 +482,35 @@ export const useAppLogic = (core) => {
     isStudyingNotebook: core.isStudyingNotebook,
     studySourceName: core.studySourceName,
     isMuted: core.isMuted,
-    isShuffle: core.isShuffle,
+    isShuffle,
+    isBatterySaverMode: core.isBatterySaverMode,
     aiHarvestPool,
     globalRetryBag,
+    isDbReady,
     lang
   };
 
-  // 2. UTILITY FUNCTIONS
+
+  // Helper quản lý bộ hẹn giờ điều hướng thẻ 150ms (chống rò rỉ & stale snapshot)
+  const clearPendingNavTimeouts = useCallback(() => {
+    navTimeoutsRef.current.forEach((id) => clearTimeout(id));
+    navTimeoutsRef.current.clear();
+  }, []);
+
+
+  const scheduleNavTimeout = useCallback((fn, delay = 150) => {
+    const id = setTimeout(() => {
+      navTimeoutsRef.current.delete(id);
+      fn();
+    }, delay);
+    navTimeoutsRef.current.add(id);
+    return id;
+  }, []);
+
+
+  // ==========================================================================
+  // 2. UTILITY FUNCTIONS (t, showToast, getCardStyle, speak, stopSpeaking)
+  // ==========================================================================
   const t = useCallback(
     (key, params = {}) => {
       const textDict =
@@ -243,9 +518,9 @@ export const useAppLogic = (core) => {
       if (!textDict) return key;
       const dict = textDict[uiLang] || textDict.en || {};
       let text = dict[key] || key;
-      if (typeof text === 'string') {
+      if (typeof text === 'string' && params && typeof params === 'object') {
         Object.keys(params).forEach((p) => {
-          text = text.replace(`{${p}}`, params[p]);
+          text = text.split(`{${p}}`).join(String(params[p] ?? ''));
         });
       }
       return text;
@@ -253,20 +528,45 @@ export const useAppLogic = (core) => {
     [uiLang]
   );
 
+
+  // Chuẩn hóa Toast: luôn đảm bảo `text` là String thuần (diệt 100% bẫy Object crash React)
   const showToast = useCallback(
     (message, type = 'success') => {
-      setToast({ text: message, type, id: Date.now() });
+      let normalizedText = 'Thông báo';
+      let normalizedType = typeof type === 'string' && type.trim() ? type : 'success';
+
+
+      if (typeof message === 'string') {
+        normalizedText = message;
+      } else if (message && typeof message === 'object') {
+        normalizedText = String(message.text ?? message.message ?? 'Thông báo');
+        if (typeof message.type === 'string' && message.type.trim()) {
+          normalizedType = message.type;
+        }
+      } else if (message !== null && message !== undefined) {
+        normalizedText = String(message);
+      }
+
+
+      setToast({ text: normalizedText, type: normalizedType, id: Date.now() });
     },
     [setToast]
   );
 
+
   const getCardStyle = useCallback(
     (isBack = false) => {
-      const rawSize = isBack
-        ? settings?.backFontSize || 1.25
-        : settings?.fontSize || 3;
-      // Chốt chặn an toàn chống cỡ chữ 26rem/36rem từ dữ liệu lệch
-      const size = rawSize > 10 ? (isBack ? 1.25 : 3) : rawSize;
+      const fallbackSize = isBack ? 1.25 : 3;
+      const rawSize = Number(
+        isBack ? settings?.backFontSize : settings?.fontSize
+      );
+      // Chốt chặn an toàn chống NaN, số âm hoặc cỡ chữ lệch 26rem/36rem
+      const size =
+        Number.isFinite(rawSize) && rawSize > 0 && rawSize <= 10
+          ? rawSize
+          : fallbackSize;
+
+
       const style = {
         fontSize: `${size}rem`,
         fontWeight: settings?.fontWeight || 'bold'
@@ -290,83 +590,206 @@ export const useAppLogic = (core) => {
     [settings]
   );
 
-  // Hàm speak tối ưu cho nền tảng di động & Bluetooth
+
+  // Đại phẫu speak(): chốt chặn safeRate/safePitch, smart overload callback & khóa phiên đơn điệu
   const speak = useCallback(
     (text, rate = null, voice = null, onEnd = null) => {
+      // Tương thích ngược thông minh: nếu bất kỳ Mini-Game nào truyền nhầm callback vào vị trí 2/3
+      let resolvedRate = rate;
+      let resolvedVoice = voice;
+      let resolvedOnEnd = onEnd;
+
+
+      if (typeof resolvedRate === 'function') {
+        resolvedOnEnd = resolvedRate;
+        resolvedRate = null;
+        resolvedVoice = null;
+      } else if (typeof resolvedVoice === 'function') {
+        resolvedOnEnd = resolvedVoice;
+        resolvedVoice = null;
+      }
+
+
+      let ended = false;
       const safeOnEnd = () => {
-        if (onEnd) onEnd();
+        if (ended) return;
+        ended = true;
+        if (typeof resolvedOnEnd === 'function') {
+          try {
+            resolvedOnEnd();
+          } catch (err) {
+            console.warn('[useAppLogic] speak onEnd error:', err);
+          }
+        }
       };
+
+
+      explicitStopRef.current = false;
+      const mySessionId = ++speakSessionIdRef.current;
+
+
       if (audioTimeoutRef?.current) {
         clearTimeout(audioTimeoutRef.current);
+        audioTimeoutRef.current = null;
       }
-      if (!text || text.trim() === '') {
+
+
+      const cleanText =
+        typeof text === 'string'
+          ? text.trim()
+          : typeof text === 'number' && Number.isFinite(text)
+          ? String(text)
+          : '';
+
+
+      if (!cleanText) {
         safeOnEnd();
         return;
       }
-      if (core.isMuted) {
-        const simulatedDuration = 1200 + text.length * 80;
-        if (audioTimeoutRef) {
-          audioTimeoutRef.current = setTimeout(() => {
+
+
+      if (latestStateRef.current.isMuted) {
+        const simulatedDuration = 1200 + cleanText.length * 80;
+        const onSimDone = () => {
+          if (audioTimeoutRef) audioTimeoutRef.current = null;
+          if (!explicitStopRef.current && mySessionId === speakSessionIdRef.current) {
             safeOnEnd();
-          }, simulatedDuration);
+          }
+        };
+        if (audioTimeoutRef) {
+          audioTimeoutRef.current = setTimeout(onSimDone, simulatedDuration);
         } else {
-          setTimeout(safeOnEnd, simulatedDuration);
+          setTimeout(onSimDone, simulatedDuration);
         }
         return;
       }
+
+
       if (typeof window === 'undefined' || !window.speechSynthesis) {
         safeOnEnd();
         return;
       }
 
-      // [BẢN VÁ V1.09] Kích hoạt "Khiên Sưởi Ấm Liên Tục" trước khi đọc TTS
+
+      // Kích hoạt "Khiên Sưởi Ấm Liên Tục" trước khi đọc TTS
       playTing();
-      window.speechSynthesis.cancel();
-      if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+      try {
+        window.speechSynthesis.cancel();
+        if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+      } catch {
+        // Bỏ qua an toàn
+      }
+
 
       const createAndSpeak = () => {
-        const u = new SpeechSynthesisUtterance(text);
+        if (audioTimeoutRef) audioTimeoutRef.current = null;
+        if (explicitStopRef.current || mySessionId !== speakSessionIdRef.current) {
+          return;
+        }
+
+
+        const currentSettings = latestStateRef.current.settings || {};
+        const defaultRate =
+          typeof currentSettings.rate === 'number' &&
+          Number.isFinite(currentSettings.rate) &&
+          currentSettings.rate >= 0.3 &&
+          currentSettings.rate <= 2.5
+            ? currentSettings.rate
+            : 0.9;
+
+
+        const safeRate =
+          typeof resolvedRate === 'number' &&
+          Number.isFinite(resolvedRate) &&
+          resolvedRate >= 0.3 &&
+          resolvedRate <= 2.5
+            ? resolvedRate
+            : defaultRate;
+
+
+        const safePitch =
+          typeof currentSettings.pitch === 'number' &&
+          Number.isFinite(currentSettings.pitch) &&
+          currentSettings.pitch >= 0.5 &&
+          currentSettings.pitch <= 2.0
+            ? currentSettings.pitch
+            : 1;
+
+
+        const u = new SpeechSynthesisUtterance(cleanText);
         window.fc_currentUtterance = u;
-        const detectLang = (str) => {
-          if (/[\u4e00-\u9fa5]/.test(str)) return 'zh-CN';
-          return 'en-US';
-        };
-        const detectedLang = detectLang(text);
+
+
+        const detectedLang = HANZI_REGEX.test(cleanText) ? 'zh-CN' : 'en-US';
         u.lang = detectedLang;
 
-        let v = voice;
-        if (!v) {
-          if (settings?.selectedVoice) {
-            const pref = voices.find((vo) => vo.name === settings.selectedVoice);
-            if (pref && pref.lang.startsWith(detectedLang.split('-')[0])) {
+
+        const availableVoices =
+          Array.isArray(voices) && voices.length > 0
+            ? voices
+            : typeof window.speechSynthesis.getVoices === 'function'
+            ? window.speechSynthesis.getVoices() || []
+            : [];
+
+
+        let v =
+          resolvedVoice &&
+          typeof resolvedVoice === 'object' &&
+          typeof resolvedVoice.lang === 'string'
+            ? resolvedVoice
+            : null;
+
+
+        if (!v && availableVoices.length > 0) {
+          const langPrefix = detectedLang.split('-')[0];
+          if (currentSettings.selectedVoice) {
+            const pref = availableVoices.find(
+              (vo) => vo && vo.name === currentSettings.selectedVoice
+            );
+            if (pref && typeof pref.lang === 'string' && pref.lang.startsWith(langPrefix)) {
               v = pref;
             }
           }
           if (!v) {
             v =
-              voices.find((x) => x.lang === detectedLang) ||
-              voices.find((x) => x.lang.startsWith(detectedLang.split('-')[0]));
+              availableVoices.find((x) => x && x.lang === detectedLang) ||
+              availableVoices.find(
+                (x) => x && typeof x.lang === 'string' && x.lang.startsWith(langPrefix)
+              ) ||
+              null;
           }
         }
+
+
         if (v) u.voice = v;
-        u.rate = rate || settings?.rate || 0.9;
-        u.pitch = settings?.pitch || 1;
+        u.rate = safeRate;
+        u.pitch = safePitch;
 
-        u.onend = () => {
-          window.fc_currentUtterance = null;
-          releaseShieldDebounced(); // [BẢN VÁ V1.09] Hẹn giờ 3.5s thu hồi khiên
-          safeOnEnd();
+
+        const handleSpeechSettled = () => {
+          // Chỉ thu hồi Khiên WAV 15s & bắn callback nếu đây đúng là phiên đọc mới nhất!
+          if (mySessionId === speakSessionIdRef.current) {
+            window.fc_currentUtterance = null;
+            releaseShieldDebounced();
+            if (!explicitStopRef.current) {
+              safeOnEnd();
+            }
+          }
         };
 
-        u.onerror = () => {
-          window.fc_currentUtterance = null;
-          releaseShieldDebounced(); // [BẢN VÁ V1.09] Hẹn giờ 3.5s thu hồi khiên
-          // [BẢN VÁ V1.09] LUÔN LUÔN gọi safeOnEnd() kể cả khi bị interrupted để Game/AutoPlay không bị đơ
-          safeOnEnd();
-        };
 
-        window.speechSynthesis.speak(u);
+        u.onend = handleSpeechSettled;
+        u.onerror = handleSpeechSettled;
+
+
+        try {
+          window.speechSynthesis.speak(u);
+        } catch (err) {
+          console.warn('[useAppLogic] speechSynthesis.speak error:', err);
+          handleSpeechSettled();
+        }
       };
+
 
       if (audioTimeoutRef) {
         audioTimeoutRef.current = setTimeout(createAndSpeak, 300);
@@ -374,36 +797,92 @@ export const useAppLogic = (core) => {
         setTimeout(createAndSpeak, 300);
       }
     },
-    [voices, settings, lang, core.isMuted, audioTimeoutRef]
+    [voices, audioTimeoutRef]
   );
 
+
   const stopSpeaking = useCallback(() => {
+    explicitStopRef.current = true;
+    speakSessionIdRef.current += 1;
+    stopShieldImmediately();
+
+
     if (typeof window !== 'undefined') {
-      if (window.fc_tingAudioTimeout) clearTimeout(window.fc_tingAudioTimeout);
-      if (window.fc_tingAudio) window.fc_tingAudio.pause(); // Cắt ngay lập tức nếu user chủ động bấm dừng
-      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      try {
+        if (window.speechSynthesis) window.speechSynthesis.cancel();
+      } catch {
+        // Bỏ qua an toàn
+      }
       window.fc_currentUtterance = null;
     }
     if (audioTimeoutRef?.current) {
       clearTimeout(audioTimeoutRef.current);
+      audioTimeoutRef.current = null;
     }
     if (autoPlayTimeoutRef?.current) {
       clearTimeout(autoPlayTimeoutRef.current);
+      autoPlayTimeoutRef.current = null;
     }
   }, [audioTimeoutRef, autoPlayTimeoutRef]);
 
-  // 3. NAVIGATION (ĐIỀU HƯỚNG THẺ - KHÔI PHỤC NGUYÊN BẢN BLOCK 6.4)
-  const handleNext = useCallback(() => {
-    const {
-      cards: currentCards,
-      isShuffle: currentShuffle,
-      currentCardIndex: idx
-    } = latestStateRef.current;
+
+  // Dọn đồng bộ toàn bộ trạng thái Auto-Play / Lật thẻ / TTS của màn hình Học Thẻ
+  const resetLearnPlaybackState = useCallback(() => {
+    clearPendingNavTimeouts();
+    setIsAutoPlaying(false);
+    setIsAutoMode(false);
     setIsFlipped(false);
     setIsContentHidden(false);
     stopSpeaking();
-    setTimeout(() => {
-      if (!currentCards || currentCards.length === 0) return;
+  }, [
+    clearPendingNavTimeouts,
+    setIsAutoMode,
+    setIsAutoPlaying,
+    setIsContentHidden,
+    setIsFlipped,
+    stopSpeaking
+  ]);
+
+
+  // Tự động dừng Auto-Play & TTS của màn hình Học Thẻ khi người dùng chuyển tab qua BottomNav
+  useEffect(() => {
+    if (prevViewModeRef.current === 'learn' && viewMode !== 'learn') {
+      resetLearnPlaybackState();
+    }
+    prevViewModeRef.current = viewMode;
+  }, [viewMode, resetLearnPlaybackState]);
+
+
+  // Cleanup toàn bộ timer & Khiên âm thanh khi unmount
+  useEffect(() => {
+    return () => {
+      clearPendingNavTimeouts();
+      stopSpeaking();
+    };
+  }, [clearPendingNavTimeouts, stopSpeaking]);
+
+
+  // ==========================================================================
+  // 3. NAVIGATION (ĐIỀU HƯỚNG THẺ & PLAYBACK CONTROLS)
+  // ==========================================================================
+  const handleNext = useCallback(() => {
+    clearPendingNavTimeouts();
+    setIsFlipped(false);
+    setIsContentHidden(false);
+    stopSpeaking();
+
+
+    scheduleNavTimeout(() => {
+      const {
+        cards: currentCards,
+        isShuffle: currentShuffle,
+        currentCardIndex: idx
+      } = latestStateRef.current;
+
+
+      if (!Array.isArray(currentCards) || currentCards.length === 0) return;
+
+
       if (currentShuffle) {
         if (idx >= currentCards.length - 1) {
           const reshuffled = Utils.shuffleArray([...currentCards]);
@@ -411,34 +890,57 @@ export const useAppLogic = (core) => {
           setCurrentCardIndex(0);
           showToast('Đã đi hết 1 vòng! Đang xáo trộn lại bộ bài.', 'info');
         } else {
-          setCurrentCardIndex((prev) => prev + 1);
+          setCurrentCardIndex((prev) =>
+            Math.min(prev + 1, currentCards.length - 1)
+          );
         }
       } else {
         setCurrentCardIndex((prev) => (prev + 1) % currentCards.length);
       }
     }, 150);
-  }, [setCards, setCurrentCardIndex, setIsContentHidden, setIsFlipped, showToast, stopSpeaking]);
+  }, [
+    clearPendingNavTimeouts,
+    scheduleNavTimeout,
+    setCards,
+    setCurrentCardIndex,
+    setIsContentHidden,
+    setIsFlipped,
+    showToast,
+    stopSpeaking
+  ]);
+
 
   const handlePrev = useCallback(() => {
-    const { cards: currentCards } = latestStateRef.current;
+    clearPendingNavTimeouts();
     setIsFlipped(false);
     setIsContentHidden(false);
     stopSpeaking();
-    setTimeout(() => {
-      if (!currentCards || currentCards.length === 0) return;
-      setCurrentCardIndex(
-        (prev) => (prev - 1 + currentCards.length) % currentCards.length
-      );
+
+
+    scheduleNavTimeout(() => {
+      const { cards: currentCards } = latestStateRef.current;
+      if (!Array.isArray(currentCards) || currentCards.length === 0) return;
+      const len = currentCards.length;
+      setCurrentCardIndex((prev) => (((prev - 1) % len) + len) % len);
     }, 150);
-  }, [setCurrentCardIndex, setIsContentHidden, setIsFlipped, stopSpeaking]);
+  }, [
+    clearPendingNavTimeouts,
+    scheduleNavTimeout,
+    setCurrentCardIndex,
+    setIsContentHidden,
+    setIsFlipped,
+    stopSpeaking
+  ]);
+
 
   const handleJumpToCard = useCallback(
     (inputNumber) => {
+      clearPendingNavTimeouts();
       const { cards: currentCards } = latestStateRef.current;
-      if (!currentCards || currentCards.length === 0) return;
+      if (!Array.isArray(currentCards) || currentCards.length === 0) return;
       const targetIndex = parseInt(inputNumber, 10) - 1;
       if (
-        !isNaN(targetIndex) &&
+        !Number.isNaN(targetIndex) &&
         targetIndex >= 0 &&
         targetIndex < currentCards.length
       ) {
@@ -448,183 +950,280 @@ export const useAppLogic = (core) => {
         stopSpeaking();
       }
     },
-    [setCurrentCardIndex, setIsContentHidden, setIsFlipped, stopSpeaking]
+    [
+      clearPendingNavTimeouts,
+      setCurrentCardIndex,
+      setIsContentHidden,
+      setIsFlipped,
+      stopSpeaking
+    ]
   );
+
 
   const toggleAutoPlay = useCallback(() => {
     if (latestStateRef.current.isAutoPlaying) {
+      clearPendingNavTimeouts();
       setIsAutoPlaying(false);
       setIsContentHidden(false);
       stopSpeaking();
     } else {
-      speak('');
+      // Đánh thức trực tiếp Khiên âm thanh HTML5 trên iOS/Safari ngay trong user gesture
+      if (!latestStateRef.current.isMuted) {
+        playTing();
+      }
       setIsAutoMode(true);
       setIsAutoPlaying(true);
       setIsContentHidden(false);
       showToast('Bắt đầu tự động phát', 'success');
     }
-  }, [setIsAutoMode, setIsAutoPlaying, setIsContentHidden, showToast, speak, stopSpeaking]);
+  }, [
+    clearPendingNavTimeouts,
+    setIsAutoMode,
+    setIsAutoPlaying,
+    setIsContentHidden,
+    showToast,
+    stopSpeaking
+  ]);
+
 
   const handleStopAutoPlay = useCallback(() => {
-    setIsAutoPlaying(false);
-    setIsAutoMode(false);
-    setIsContentHidden(false);
-    stopSpeaking();
+    resetLearnPlaybackState();
     setCurrentCardIndex(0);
     showToast('Đã dừng và quay về đầu!', 'info');
-  }, [setCurrentCardIndex, setIsAutoMode, setIsAutoPlaying, setIsContentHidden, showToast, stopSpeaking]);
+  }, [resetLearnPlaybackState, setCurrentCardIndex, showToast]);
+
 
   const toggleBatterySaver = useCallback(async () => {
-    if (!core.isBatterySaverMode) {
-      await Utils.requestWakeLock();
-      setIsBatterySaverMode(true);
-      showToast('Đã bật Chế độ Rảnh tay (Màn hình luôn sáng)', 'success');
-    } else {
-      await Utils.releaseWakeLock();
-      setIsBatterySaverMode(false);
-    }
-  }, [core.isBatterySaverMode, setIsBatterySaverMode, showToast]);
-
-  const handleToggleMute = useCallback(() => {
-    setIsMuted((prev) => {
-      const newState = !prev;
-      showToast(
-        newState ? 'Đã tắt tiếng (Giả lập thời gian đọc)' : 'Đã bật tiếng',
-        'info'
-      );
-      if (newState && typeof window !== 'undefined' && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
+    try {
+      if (!latestStateRef.current.isBatterySaverMode) {
+        await Utils.requestWakeLock();
+        setIsBatterySaverMode(true);
+        showToast('Đã bật Chế độ Rảnh tay (Màn hình luôn sáng)', 'success');
+      } else {
+        await Utils.releaseWakeLock();
+        setIsBatterySaverMode(false);
       }
-      return newState;
-    });
-  }, [setIsMuted, showToast]);
+    } catch (err) {
+      console.warn('[useAppLogic] WakeLock error:', err);
+      showToast(
+        'Trình duyệt không hỗ trợ hoặc từ chối giữ sáng màn hình',
+        'warning'
+      );
+    }
+  }, [setIsBatterySaverMode, showToast]);
 
+
+  // Loại bỏ 100% side-effect khỏi React state updater & cắt Khiên âm thanh đầy đủ khi Mute
+  const handleToggleMute = useCallback(() => {
+    const newState = !latestStateRef.current.isMuted;
+    setIsMuted(newState);
+    if (newState) {
+      stopSpeaking();
+    }
+    showToast(
+      newState ? 'Đã tắt tiếng (Giả lập thời gian đọc)' : 'Đã bật tiếng',
+      'info'
+    );
+  }, [setIsMuted, showToast, stopSpeaking]);
+
+
+  // Tham chiếu ổn định vĩnh viễn (đọc từ latestStateRef chống re-bind keydown)
   const handleToggleShuffle = useCallback(() => {
-    const nextState = !core.isShuffle;
+    const s = latestStateRef.current;
+    const nextState = !s.isShuffle;
     setIsShuffle(nextState);
+
+
     if (nextState) {
       showToast('Đã bật trộn bài', 'info');
     } else {
+      resetLearnPlaybackState();
       let originalData = [];
-      if (
-        core.studySourceName &&
-        core.studySourceName.includes('Sổ tay cần nhớ')
-      ) {
-        originalData = core.incorrectList;
+      if (s.studySourceName && s.studySourceName.includes('Sổ tay cần nhớ')) {
+        originalData = Array.isArray(s.incorrectList) ? s.incorrectList : [];
       } else if (
-        (core.studySourceName &&
-          core.studySourceName.includes('Sổ tay từ vựng')) ||
-        core.isStudyingNotebook
+        (s.studySourceName && s.studySourceName.includes('Sổ tay từ vựng')) ||
+        s.isStudyingNotebook
       ) {
-        originalData = core.notebook;
+        originalData = Array.isArray(s.notebook) ? s.notebook : [];
       } else {
-        originalData = Utils?.safeJsonParse('fc_data_' + core.lang, []) || [];
+        const savedList = Utils?.safeJsonParse('fc_data_' + s.lang, []);
+        originalData = Array.isArray(savedList) ? savedList : [];
       }
       setCards(originalData);
       setCurrentCardIndex(0);
       showToast('Đã tắt trộn bài (Về thứ tự gốc)', 'info');
     }
   }, [
-    core.incorrectList,
-    core.isShuffle,
-    core.isStudyingNotebook,
-    core.lang,
-    core.notebook,
-    core.studySourceName,
+    resetLearnPlaybackState,
     setCards,
     setCurrentCardIndex,
     setIsShuffle,
     showToast
   ]);
 
-  // ==================================================================================
-  // 4. RETRY BAG APIS (QUẢN LÝ TÚI NHÁP TOÀN CỤC)
-  // ==================================================================================
+
+  // ==========================================================================
+  // 4. RETRY BAG APIS (QUẢN LÝ TÚI NHÁP TOÀN CỤC — KHỚP 1:1 VỚI db.js)
+  // ==========================================================================
+  // Hàng đợi Map đa phân vùng ngôn ngữ: chống tuyệt đối race condition khi đổi ngôn ngữ trong cùng 1 tick
+  useEffect(() => {
+    if (!isDbReady || pendingRetryPersistMapRef.current.size === 0) return;
+
+
+    const dbInstance =
+      FcDB || (typeof window !== 'undefined' ? window.FcDB : null);
+    if (!dbInstance || typeof dbInstance.set !== 'function') return;
+
+
+    const entries = Array.from(pendingRetryPersistMapRef.current.entries());
+    pendingRetryPersistMapRef.current.clear();
+
+
+    entries.forEach(([targetLang, bagSnapshot]) => {
+      const safeTargetLang = targetLang === 'zh' ? 'zh' : 'en';
+      dbInstance
+        .set('fc_global_retry_bag_' + safeTargetLang, bagSnapshot)
+        .catch(() => {});
+    });
+  }, [globalRetryBag, isDbReady]);
+
+
   const addToRetryBag = useCallback(
     (gameType, questionData) => {
-      if (!gameType || !questionData) return;
+      if (!gameType || !questionData || typeof questionData !== 'object') return;
+      const normalizedItem = normalizeRetryItem(gameType, questionData);
+      const termToCheck = extractRetryKey(normalizedItem, gameType);
+      const targetKey = normalizeKey(termToCheck);
+      if (!targetKey) return;
+
+
+      const safeLang = latestStateRef.current.lang === 'zh' ? 'zh' : 'en';
+
+
       setGlobalRetryBag((prev) => {
-        const currentBag = prev[gameType] || [];
-        const termToCheck =
-          questionData.term ||
-          questionData.origin?.term ||
-          questionData.displaySentence ||
-          questionData.wrongSentence ||
-          questionData.oddWord;
-        if (!termToCheck) return prev;
+        const safePrev = prev && typeof prev === 'object' ? prev : {};
+        const currentBag = Array.isArray(safePrev[gameType])
+          ? safePrev[gameType]
+          : [];
+
+
         const isDup = currentBag.some((item) => {
-          const itemTerm =
-            item.term ||
-            item.origin?.term ||
-            item.displaySentence ||
-            item.wrongSentence ||
-            item.oddWord;
-          if (gameType === 'oddoneout' && item.words && questionData.words) {
+          const itemKey = normalizeKey(extractRetryKey(item, gameType));
+          if (!itemKey) return false;
+          if (
+            gameType === 'oddoneout' &&
+            Array.isArray(item.words) &&
+            Array.isArray(normalizedItem.words)
+          ) {
             return (
-              itemTerm === termToCheck &&
-              item.words.join() === questionData.words.join()
+              itemKey === targetKey &&
+              normalizeWordSignature(item.words) ===
+                normalizeWordSignature(normalizedItem.words)
             );
           }
-          return itemTerm === termToCheck;
+          return itemKey === targetKey;
         });
-        if (isDup) return prev;
+
+
+        if (isDup) return safePrev;
+
+
+        // Giới hạn 100 thẻ gần nhất / loại game chống phình IndexedDB
+        const updatedList = [...currentBag, normalizedItem].slice(-100);
         const nextBag = {
-          ...prev,
-          [gameType]: [...currentBag, questionData]
+          ...safePrev,
+          [gameType]: updatedList
         };
-        const dbInstance =
-          FcDB || (typeof window !== 'undefined' ? window.FcDB : null);
-        if (dbInstance && core.isDbReady) {
-          dbInstance.set('fc_global_retry_bag_' + core.lang, nextBag);
-          dbInstance.set('fc_global_retry_bag', nextBag);
-        }
+        pendingRetryPersistMapRef.current.set(safeLang, nextBag);
         return nextBag;
       });
     },
-    [setGlobalRetryBag, core.isDbReady, core.lang]
+    [setGlobalRetryBag]
   );
+
 
   const removeFromRetryBag = useCallback(
     (gameType, termToRemove, extraData = null) => {
       if (!gameType || !termToRemove) return;
+      const targetKey = normalizeKey(termToRemove);
+      if (!targetKey) return;
+
+
+      const safeLang = latestStateRef.current.lang === 'zh' ? 'zh' : 'en';
+      const extraPassageKey =
+        gameType === 'reading' && typeof extraData === 'string'
+          ? normalizeKey(extraData)
+          : '';
+      const extraOddWordsSig =
+        gameType === 'oddoneout' && Array.isArray(extraData)
+          ? normalizeWordSignature(extraData)
+          : '';
+
+
       setGlobalRetryBag((prev) => {
-        const currentBag = prev[gameType] || [];
+        const safePrev = prev && typeof prev === 'object' ? prev : {};
+        const currentBag = Array.isArray(safePrev[gameType])
+          ? safePrev[gameType]
+          : [];
+        if (currentBag.length === 0) return safePrev;
+
+
         const newBag = currentBag.filter((item) => {
-          const itemTerm =
-            item.term ||
-            item.origin?.term ||
-            item.displaySentence ||
-            item.wrongSentence ||
-            item.oddWord;
-          if (gameType === 'oddoneout' && extraData && item.words) {
+          const primaryKey = normalizeKey(extractRetryKey(item, gameType));
+
+
+          if (
+            gameType === 'oddoneout' &&
+            extraOddWordsSig &&
+            Array.isArray(item?.words)
+          ) {
             if (
-              itemTerm === termToRemove &&
-              item.words.join() === extraData.join()
+              primaryKey === targetKey &&
+              normalizeWordSignature(item.words) === extraOddWordsSig
             ) {
               return false;
             }
             return true;
           }
-          return itemTerm !== termToRemove;
+
+
+          if (gameType === 'reading' && extraPassageKey) {
+            const itemQuestionKey = normalizeKey(item?.questionText);
+            const itemPassageKey = normalizeKey(item?.passageContext);
+            if (
+              itemQuestionKey === targetKey &&
+              itemPassageKey === extraPassageKey
+            ) {
+              return false;
+            }
+            return true;
+          }
+
+
+          const candidateKeys = getRetryCandidateKeys(item, gameType);
+          return !candidateKeys.includes(targetKey);
         });
-        if (newBag.length === currentBag.length) return prev;
-        const nextBag = { ...prev, [gameType]: newBag };
-        const dbInstance =
-          FcDB || (typeof window !== 'undefined' ? window.FcDB : null);
-        if (dbInstance && core.isDbReady) {
-          dbInstance.set('fc_global_retry_bag_' + core.lang, nextBag);
-          dbInstance.set('fc_global_retry_bag', nextBag);
-        }
+
+
+        if (newBag.length === currentBag.length) return safePrev;
+
+
+        const nextBag = {
+          ...safePrev,
+          [gameType]: newBag
+        };
+        pendingRetryPersistMapRef.current.set(safeLang, nextBag);
         return nextBag;
       });
     },
-    [setGlobalRetryBag, core.isDbReady, core.lang]
+    [setGlobalRetryBag]
   );
 
-  // ==================================================================================
+
+  // ==========================================================================
   // 5. LẮP RÁP CÁC MODULE (SUB-HOOKS ASSEMBLY)
-  // ==================================================================================
-  // Khởi tạo AI Logic (Block 6.2)
+  // ==========================================================================
   const aiLogic = useAiLogic(core, latestStateRef, {
     speak,
     handleNext,
@@ -632,7 +1231,7 @@ export const useAppLogic = (core) => {
     stopSpeaking
   });
 
-  // Gom các callback chung cho các module dữ liệu
+
   const sharedCallbacks = {
     t,
     showToast,
@@ -640,143 +1239,248 @@ export const useAppLogic = (core) => {
     processAiQueue: aiLogic.processAiQueue
   };
 
-  // Mảnh 1: Quản lý I/O & File System (Block 6.3)
+
   const dataIO = useDataIO(core, latestStateRef, { t, showToast });
-
-  // Mảnh 2: Quản lý Tiến độ học tập & SRS (Block 6.5)
   const studyProgress = useStudyProgress(core, latestStateRef, sharedCallbacks);
-
-  // Mảnh 3: Quản lý Kho AI (Block 6.6)
   const aiCurator = useAiCurator(core, latestStateRef, { t, showToast });
-
-  // Mảnh 4: Quản lý Kho Khảo thí (Block 6.8)
   const examPoolLogic = useExamPoolLogic(core, sharedCallbacks);
+
 
   // Đồng bộ hàm thu hoạch vào Ref Proxy
   handleAutoHarvestToPoolRef.current = examPoolLogic.handleAutoHarvestToPool;
 
-  // ==================================================================================
-  // 6. UI ORCHESTRATION & ROUTER (HÀM ĐIỀU PHỐI GIAO DIỆN & ÔN TẬP)
-  // ==================================================================================
-  const handleOpenIncorrect = () => setShowIncorrectModal(true);
-  const handleCloseIncorrect = () => setShowIncorrectModal(false);
 
-  const handleRemoveAllIncorrect = () => {
+  // ==========================================================================
+  // 6. UI ORCHESTRATION & UNIVERSAL REVIEW ROUTER (MEMOIZED)
+  // ==========================================================================
+  const handleOpenSettings = useCallback(() => setShowSettings(true), [setShowSettings]);
+  const handleCloseSettings = useCallback(() => setShowSettings(false), [setShowSettings]);
+  const handleOpenAiConfig = useCallback(() => setShowAiConfigModal(true), [setShowAiConfigModal]);
+
+
+  const onMissingKey = useCallback(() => {
+    showToast('Cần Google Gemini API Key', 'warning');
+    setShowApiKeyModal(true);
+  }, [setShowApiKeyModal, showToast]);
+
+
+  const handleOpenWordSelector = useCallback(
+    (payload) => {
+      let targetData;
+      if (payload && typeof payload === 'object' && payload.isSmartTarget) {
+        targetData = payload;
+      } else if (typeof payload === 'string' && payload.trim() !== '') {
+        targetData = payload;
+      } else {
+        const s = latestStateRef.current;
+        targetData = s.cards?.[s.currentCardIndex]?.term || '';
+      }
+      setWordSelectTarget(targetData);
+      setShowWordSelect(true);
+    },
+    [setShowWordSelect, setWordSelectTarget]
+  );
+
+
+  const handleOpenIncorrect = useCallback(
+    () => setShowIncorrectModal(true),
+    [setShowIncorrectModal]
+  );
+  const handleCloseIncorrect = useCallback(
+    () => setShowIncorrectModal(false),
+    [setShowIncorrectModal]
+  );
+
+
+  const handleRemoveAllIncorrect = useCallback(() => {
+    const safeLang = latestStateRef.current.lang === 'zh' ? 'zh' : 'en';
     setIncorrectList([]);
     const incorrectKey =
-      (STORAGE_KEYS?.INCORRECT_LIST || 'fc_incorrect_list') + '_' + lang;
+      (STORAGE_KEYS?.INCORRECT_LIST || 'fc_incorrect_list') + '_' + safeLang;
     const dbInstance =
       FcDB || (typeof window !== 'undefined' ? window.FcDB : null);
-    if (dbInstance) dbInstance.set(incorrectKey, []);
+    if (dbInstance && typeof dbInstance.set === 'function') {
+      dbInstance.set(incorrectKey, []).catch(() => {});
+    }
     showToast('Đã xóa toàn bộ danh sách cần nhớ', 'success');
     setShowIncorrectModal(false);
-  };
+  }, [setIncorrectList, setShowIncorrectModal, showToast]);
 
-  // [NEW V1.04] ROUTER ÔN TẬP VẠN NĂNG (UNIVERSAL REVIEW ROUTER)
-  const handleReviewWithGame = (gameType, sourceData, sourceName) => {
-    if (!sourceData || sourceData.length === 0) {
-      showToast('Không có dữ liệu để ôn tập!', 'warning');
-      return;
-    }
-    let targetList = [...sourceData];
-    if (core.isShuffle) targetList = Utils.shuffleArray(targetList);
-    setCards(targetList);
-    setIsStudyingNotebook(true);
 
-    // Đóng các Modal
-    setShowNotebook(false);
-    setShowIncorrectModal(false);
-
-    if (gameType === 'flashcard') {
-      setStudySourceName(sourceName);
-      setViewMode('learn');
-      setCurrentCardIndex(0);
-      showToast(
-        core.isShuffle
-          ? `Đã trộn ngẫu nhiên ${sourceName}!`
-          : `Đang học ${sourceName}!`
-      );
-    } else {
-      const gameNames = {
-        match: 'Nối Ô',
-        scramble: 'Ghép Câu',
-        quiz: 'Trắc Nghiệm',
-        fillblank: 'Điền Từ',
-        spotmistake: 'Tìm Lỗi Sai',
-        oddoneout: 'Từ Khác Loại',
-        imagequiz: 'Đoán Hình',
-        pronunciation: 'Ngữ Âm',
-        listening: 'Nghe Hiểu',
-        reading: 'Đọc Hiểu'
-      };
-      const suffix = gameNames[gameType] || gameType;
-      setStudySourceName(`${sourceName} (${suffix})`);
-      setViewMode('game');
-      // Đặt cờ toàn cục để Tầng 5 (GameView) có thể bắt được và nhảy thẳng vào Setup
-      if (typeof window !== 'undefined') {
-        window.__pendingGameRoute = `${gameType}_setup`;
+  // ROUTER ÔN TẬP VẠN NĂNG (UNIVERSAL REVIEW ROUTER — ĐỒNG BỘ GameView Ver 1.1)
+  const handleReviewWithGame = useCallback(
+    (gameType, sourceData, sourceName) => {
+      if (!Array.isArray(sourceData) || sourceData.length === 0) {
+        showToast('Không có dữ liệu để ôn tập!', 'warning');
+        return;
       }
-      showToast(`Chuyển sang Game để ôn tập ${sourceName}!`);
-    }
-  };
 
-  const handleExitStudyMode = () => {
-    const savedData = Utils?.safeJsonParse('fc_data_' + core.lang, []);
-    let targetList = savedData || [];
-    if (core.isShuffle) targetList = Utils.shuffleArray([...targetList]);
+
+      resetLearnPlaybackState();
+
+
+      const currentShuffle = latestStateRef.current.isShuffle;
+      let targetList = [...sourceData];
+      if (currentShuffle) targetList = Utils.shuffleArray(targetList);
+      setCards(targetList);
+      setIsStudyingNotebook(true);
+
+
+      setShowNotebook(false);
+      setShowIncorrectModal(false);
+
+
+      if (gameType === 'flashcard') {
+        setStudySourceName(sourceName);
+        setViewMode('learn');
+        setCurrentCardIndex(0);
+        showToast(
+          currentShuffle
+            ? `Đã trộn ngẫu nhiên ${sourceName}!`
+            : `Đang học ${sourceName}!`
+        );
+      } else {
+        const gameNames = {
+          match: 'Nối Ô',
+          scramble: 'Ghép Câu',
+          quiz: 'Trắc Nghiệm',
+          fillblank: 'Điền Từ',
+          spotmistake: 'Tìm Lỗi Sai',
+          oddoneout: 'Từ Khác Loại',
+          imagequiz: 'Đoán Hình',
+          pronunciation: 'Ngữ Âm',
+          listening: 'Nghe Hiểu',
+          reading: 'Đọc Hiểu'
+        };
+        const suffix = gameNames[gameType] || gameType;
+        setStudySourceName(`${sourceName} (${suffix})`);
+        setViewMode('game');
+
+
+        if (typeof window !== 'undefined') {
+          const route = `${gameType}_setup`;
+          window.__pendingGameRoute = route;
+          try {
+            window.dispatchEvent(
+              new CustomEvent('fc-pending-game-route', { detail: route })
+            );
+          } catch {
+            // Fallback an toàn cho trình duyệt cũ
+          }
+        }
+        showToast(`Chuyển sang Game để ôn tập ${sourceName}!`);
+      }
+    },
+    [
+      resetLearnPlaybackState,
+      setCards,
+      setCurrentCardIndex,
+      setIsStudyingNotebook,
+      setShowIncorrectModal,
+      setShowNotebook,
+      setStudySourceName,
+      setViewMode,
+      showToast
+    ]
+  );
+
+
+  const handleExitStudyMode = useCallback(() => {
+    resetLearnPlaybackState();
+    const s = latestStateRef.current;
+    const savedData = Utils?.safeJsonParse('fc_data_' + s.lang, []);
+    let targetList = Array.isArray(savedData) ? savedData : [];
+    if (s.isShuffle) targetList = Utils.shuffleArray([...targetList]);
     setCards(targetList);
     setStudySourceName(null);
     setIsStudyingNotebook(false);
     setCurrentCardIndex(0);
     showToast('Đã thoát chế độ ôn tập, quay lại danh sách gốc', 'info');
-  };
+  }, [
+    resetLearnPlaybackState,
+    setCards,
+    setCurrentCardIndex,
+    setIsStudyingNotebook,
+    setStudySourceName,
+    showToast
+  ]);
 
-  const handleOpenHelp = () => setShowHelp(true);
-  const handleCloseHelp = () => setShowHelp(false);
 
-  const handleOpenHanziStudy = (textOrEvent) => {
-    const text =
-      typeof textOrEvent === 'string'
-        ? textOrEvent
-        : cards?.[currentCardIndex]?.term || '';
-    setWordSelectTarget(text);
-    setShowHanziSelector(true);
-  };
+  const handleOpenHelp = useCallback(() => setShowHelp(true), [setShowHelp]);
+  const handleCloseHelp = useCallback(() => setShowHelp(false), [setShowHelp]);
+  const handleOpenSaveLoad = useCallback(
+    () => setShowSaveLoadModal(true),
+    [setShowSaveLoadModal]
+  );
+  const handleCloseSaveLoad = useCallback(
+    () => setShowSaveLoadModal(false),
+    [setShowSaveLoadModal]
+  );
 
-  const handleCloseHanziSelector = () => setShowHanziSelector(false);
-  const handleStartWriting = (char) => {
-    setCurrentHanziChar(char);
-    setShowHanziSelector(false);
-    setShowHanziWriter(true);
-  };
-  const handleCloseHanziWriter = () => setShowHanziWriter(false);
 
-  // 7. KEYBOARD SHORTCUTS (Khớp nguyên bản Block 6.4)
+  const handleOpenHanziStudy = useCallback(
+    (textOrEvent) => {
+      const s = latestStateRef.current;
+      const text =
+        typeof textOrEvent === 'string'
+          ? textOrEvent
+          : s.cards?.[s.currentCardIndex]?.term || '';
+      setWordSelectTarget(text);
+      setShowHanziSelector(true);
+    },
+    [setShowHanziSelector, setWordSelectTarget]
+  );
+
+
+  const handleCloseHanziSelector = useCallback(
+    () => setShowHanziSelector(false),
+    [setShowHanziSelector]
+  );
+  const handleStartWriting = useCallback(
+    (char) => {
+      setCurrentHanziChar(char);
+      setShowHanziSelector(false);
+      setShowHanziWriter(true);
+    },
+    [setCurrentHanziChar, setShowHanziSelector, setShowHanziWriter]
+  );
+  const handleCloseHanziWriter = useCallback(
+    () => setShowHanziWriter(false),
+    [setShowHanziWriter]
+  );
+
+
+  const handleOpenExamPoolManager = useCallback(
+    () => setShowExamPoolManager(true),
+    [setShowExamPoolManager]
+  );
+  const handleCloseExamPoolManager = useCallback(
+    () => setShowExamPoolManager(false),
+    [setShowExamPoolManager]
+  );
+
+
+  // ==========================================================================
+  // 7. KEYBOARD SHORTCUTS (CHẶN CƯỚP PHÍM HỆ THỐNG, CHỐNG LẶP PHÍM GIỮ)
+  // ==========================================================================
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (viewMode !== 'learn') return; // Chặn phím tắt tác động vào Exam Mode (Chỉ chạy ở Learn Mode)
+      if (viewMode !== 'learn') return; // Chỉ chạy ở Learn Mode
+      if (isAnyModalOpenRef.current) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+
+      const target = e.target;
+      const tagName = target?.tagName;
       if (
-        core.showSettings ||
-        core.showApiKeyModal ||
-        core.showNotebook ||
-        core.showManual ||
-        core.showLinkManager ||
-        core.showWordSelect ||
-        core.showMastered ||
-        core.showIncorrectModal ||
-        core.showHelp ||
-        core.showHanziSelector ||
-        core.showHanziWriter ||
-        core.showSaveLoadModal ||
-        core.showAiChat ||
-        core.showExamPoolManager ||
-        core.showAiConfigModal
+        tagName === 'INPUT' ||
+        tagName === 'TEXTAREA' ||
+        tagName === 'SELECT' ||
+        target?.isContentEditable
       ) {
         return;
       }
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
-        return;
-      }
+
 
       switch (e.key) {
         case 'ArrowRight':
@@ -790,30 +1494,38 @@ export const useAppLogic = (core) => {
           handlePrev();
           break;
         case ' ':
+          // Luôn preventDefault trước khi chặn e.repeat để chống cuộn trang khi giữ phím Space
           e.preventDefault();
+          if (e.repeat) break;
           setIsFlipped((prev) => !prev);
           break;
         case 's':
         case 'S': {
-          const card = cards?.[currentCardIndex];
-          if (card) speak(card.term);
+          if (e.repeat) break;
+          const s = latestStateRef.current;
+          const card = s.cards?.[s.currentCardIndex];
+          if (card?.term) speak(card.term);
           break;
         }
         case 'p':
         case 'P':
+          if (e.repeat) break;
           toggleAutoPlay();
           break;
         case 'm':
         case 'M':
+          if (e.repeat) break;
           handleToggleMute();
           break;
         case 'r':
         case 'R':
+          if (e.repeat) break;
           handleToggleShuffle();
           break;
         case 'Escape':
         case 'x':
         case 'X':
+          if (e.repeat) break;
           if (
             latestStateRef.current.isAutoPlaying ||
             latestStateRef.current.isAutoMode
@@ -823,15 +1535,14 @@ export const useAppLogic = (core) => {
           break;
         case 'l':
         case 'L':
+          if (e.repeat) break;
           if (latestStateRef.current.isAutoMode) {
-            setIsFlipLocked((prev) => {
-              const newState = !prev;
-              showToast(
-                newState ? 'Đã khóa lật' : 'Đã mở khóa lật',
-                'info'
-              );
-              return newState;
-            });
+            const nextLocked = !latestStateRef.current.isFlipLocked;
+            setIsFlipLocked(nextLocked);
+            showToast(
+              nextLocked ? 'Đã khóa lật' : 'Đã mở khóa lật',
+              'info'
+            );
           }
           break;
         default:
@@ -839,29 +1550,13 @@ export const useAppLogic = (core) => {
       }
     };
 
+
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
     viewMode,
-    core.showSettings,
-    core.showApiKeyModal,
-    core.showNotebook,
-    core.showManual,
-    core.showLinkManager,
-    core.showWordSelect,
-    core.showMastered,
-    core.showIncorrectModal,
-    core.showHelp,
-    core.showHanziSelector,
-    core.showHanziWriter,
-    core.showSaveLoadModal,
-    core.showAiChat,
-    core.showExamPoolManager,
-    core.showAiConfigModal,
     handleNext,
     handlePrev,
-    cards,
-    currentCardIndex,
     speak,
     toggleAutoPlay,
     handleStopAutoPlay,
@@ -872,9 +1567,11 @@ export const useAppLogic = (core) => {
     showToast
   ]);
 
-  // 8. RETURN MERGED ACTIONS (Lắp ráp API cho Tầng 7)
+
+  // ==========================================================================
+  // 8. RETURN MERGED ACTIONS (BẢO TOÀN 100% HỢP ĐỒNG API CHO TẦNG 7)
+  // ==========================================================================
   return {
-    // [MOCK TEST ERA] Bơm examLogic ra ngoài state tổng để GameView truy cập được
     state: {
       ...core,
       mainColor,
@@ -894,26 +1591,12 @@ export const useAppLogic = (core) => {
       toggleAutoPlay,
       handleStopAutoPlay,
       handleJumpToCard,
-      handleOpenSettings: () => setShowSettings(true),
-      handleCloseSettings: () => setShowSettings(false),
-      handleCancelSettings: () => setShowSettings(false),
-      handleOpenAiConfig: () => setShowAiConfigModal(true),
-      onMissingKey: () => {
-        showToast('Cần Google Gemini API Key', 'warning');
-        setShowApiKeyModal(true);
-      },
-      handleOpenWordSelector: (payload) => {
-        let targetData;
-        if (payload && typeof payload === 'object' && payload.isSmartTarget) {
-          targetData = payload;
-        } else if (typeof payload === 'string' && payload.trim() !== '') {
-          targetData = payload;
-        } else {
-          targetData = cards?.[currentCardIndex]?.term || '';
-        }
-        setWordSelectTarget(targetData);
-        setShowWordSelect(true);
-      },
+      handleOpenSettings,
+      handleCloseSettings,
+      handleCancelSettings: handleCloseSettings,
+      handleOpenAiConfig,
+      onMissingKey,
+      handleOpenWordSelector,
       handleNextWithToast: handleNext,
       ...aiLogic,
       toggleBatterySaver,
@@ -925,14 +1608,14 @@ export const useAppLogic = (core) => {
       handleExitStudyMode,
       handleOpenHelp,
       handleCloseHelp,
-      handleOpenSaveLoad: () => setShowSaveLoadModal(true),
-      handleCloseSaveLoad: () => setShowSaveLoadModal(false),
+      handleOpenSaveLoad,
+      handleCloseSaveLoad,
       handleOpenHanziStudy,
       handleCloseHanziSelector,
       handleStartWriting,
       handleCloseHanziWriter,
-      handleOpenExamPoolManager: () => setShowExamPoolManager(true),
-      handleCloseExamPoolManager: () => setShowExamPoolManager(false),
+      handleOpenExamPoolManager,
+      handleCloseExamPoolManager,
       setIsGamePlaying,
       addToRetryBag,
       removeFromRetryBag,
@@ -946,11 +1629,15 @@ export const useAppLogic = (core) => {
   };
 };
 
+
 export const Block6_4_useAppLogic = useAppLogic;
+
 
 if (typeof window !== 'undefined') {
   window.Block6_4_useAppLogic = useAppLogic;
   window.useAppLogic = useAppLogic;
 }
 
+
 export default useAppLogic;
+
