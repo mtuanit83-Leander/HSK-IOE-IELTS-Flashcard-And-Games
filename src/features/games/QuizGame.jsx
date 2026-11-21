@@ -1,16 +1,20 @@
 // ============================================================================
 // FILE 57/85: src/features/games/QuizGame.jsx
 // NGUỒN GỐC: tang_5.js (Block 5.6 - Quiz Game Logic V1.45)
-// PHIÊN BẢN: Ver 1.0
-// NGÀY GIỜ NÂNG CẤP: 20/11/2026 - 22:53 (GMT+7)
+// PHIÊN BẢN: Ver 1.1
+// NGÀY GIỜ NÂNG CẤP: 21/11/2026 - 06:13 (GMT+7)
 // NHIỆM VỤ: Động cơ Logic trung tâm cho trò chơi Trắc Nghiệm (Multiple Choice).
-//           Nâng cấp Ver 1.0: Vá toàn diện 15 lỗi từ Deep Scan (report.md) —
-//           dùng mergePendingAmmoToDeck & resolveActiveApiKey 4 tầng, bảo vệ
-//           fc_ai_memory 400 từ, chuẩn hóa ExamEngine + Array Armor (level/topic),
-//           gọi đủ 7 tham số fillCardWithAi, vá đóng băng Timer khi sai lần 1,
-//           diệt race-condition đọc đè bằng audioSessionIdRef, vá listenMode +
-//           timerMode, chặn lỗ hổng cày điểm vô hạn khi Back/Resume, bỏ cộng đúp
-//           token và chuẩn hóa ghi lỗi sai qua createMistakePayload.
+//           Nâng cấp Ver 1.1 theo Master Blueprint (report1.md):
+//           1. Sửa chí mạng onPlay(text, null, null, done) diệt lỗi tua nhanh TTS,
+//              bảo vệ Khiên WAV 15s, khôi phục xướng nhãn A/B/C/D cho isReverseListen
+//              và chống treo nút "Đang đọc..." 8s khi bấm loa đáp án giữa chừng.
+//           2. Khôi phục 100% Túi Nháp (top-level term + origin) & diệt stale closure
+//              trong QueueCoordinator bằng fetchNextQuizQuestionRef & globalRetryBagRef.
+//           3. Chuẩn hóa 100% hợp đồng ExamEngine (mode, grammarId, difficulty, history,
+//              localDeck, fallbackIndexRef) + 3 lớp tự phục hồi Chế độ Đảo ngược.
+//           4. Đồng bộ chuẩn AiMemoryManager (get/add), chuẩn hóa onSaveToHarvest,
+//              showToast(string, type), loại bỏ 100% side-effect trong state updater,
+//              tương thích ngược savedState.stats & hoàn thiện 0 Problems.
 // ============================================================================
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
@@ -24,7 +28,6 @@ import { QueueEngine } from '../../engines/queueEngine';
 import { ExamEngine } from '../../engines/exam';
 import { GamePlayScreen } from './QuizUI';
 import {
-  getSafeLevelString,
   normalizeLevelAndTopic,
   applyAntiStreak,
   createMistakePayload,
@@ -35,11 +38,24 @@ import {
   resolveActiveApiKey
 } from './common/gameHelpers';
 
+const VIETNAMESE_DIACRITIC_REGEX =
+  /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i;
+const HANZI_REGEX = /[\u4e00-\u9fff]/;
+
 // Chuẩn hóa khóa so khớp Unicode NFC (không phân biệt hoa/thường & khoảng trắng)
 const normalizeKey = (val) => {
   if (val === undefined || val === null) return '';
   const str = String(val).trim().toLowerCase();
   return typeof str.normalize === 'function' ? str.normalize('NFC') : str;
+};
+
+// Kiểm tra chuỗi có mang hình thái Ngoại ngữ mục tiêu hay không (hỗ trợ tự phục hồi Đảo ngược)
+const looksLikeForeignOption = (text, targetLang) => {
+  const clean = String(text || '').trim();
+  if (!clean) return false;
+  if (VIETNAMESE_DIACRITIC_REGEX.test(clean)) return false;
+  if (targetLang === 'zh') return HANZI_REGEX.test(clean);
+  return /[a-zA-Z]/.test(clean);
 };
 
 // Đọc cấu hình lưu trữ an toàn từ LocalStorage
@@ -82,46 +98,103 @@ const getAiCoreConfig = () => {
   }
 };
 
+// Khởi tạo bộ nhớ chống lặp 400 từ (đọc chuẩn AiMemoryManager.get() -> fallback)
+const readInitialAiMemory = () => {
+  try {
+    if (AiMemoryManager) {
+      if (typeof AiMemoryManager.get === 'function') {
+        const mem = AiMemoryManager.get();
+        if (Array.isArray(mem) && mem.length > 0) return [...mem];
+      }
+      if (typeof AiMemoryManager.getMemory === 'function') {
+        const mem = AiMemoryManager.getMemory();
+        if (Array.isArray(mem) && mem.length > 0) return [...mem];
+      }
+    }
+  } catch {
+    // Fallback sang localStorage
+  }
+  const savedMem = Utils.safeJsonParse('fc_ai_memory', []);
+  return Array.isArray(savedMem) ? savedMem : [];
+};
+
 // Đồng bộ thêm từ vào bộ nhớ chống lặp 400 từ (tuyệt đối KHÔNG xóa trắng lịch sử cũ)
 const pushTermToAiMemory = (term, historyRef) => {
   const cleanTerm = term ? String(term).trim() : '';
   if (!cleanTerm) return;
 
+  let syncedViaManager = false;
   try {
-    if (AiMemoryManager && typeof AiMemoryManager.addTerm === 'function') {
-      AiMemoryManager.addTerm(cleanTerm);
+    if (AiMemoryManager) {
+      if (typeof AiMemoryManager.add === 'function') {
+        AiMemoryManager.add(cleanTerm);
+        syncedViaManager = true;
+      } else if (typeof AiMemoryManager.push === 'function') {
+        AiMemoryManager.push(cleanTerm);
+        syncedViaManager = true;
+      } else if (typeof AiMemoryManager.addTerm === 'function') {
+        AiMemoryManager.addTerm(cleanTerm);
+        syncedViaManager = true;
+      }
     }
   } catch {
-    // Fallback sang bộ đệm cục bộ bên dưới
+    syncedViaManager = false;
   }
 
-  const currentList = Array.isArray(historyRef.current) ? historyRef.current : [];
+  const baseList =
+    Array.isArray(historyRef.current) && historyRef.current.length > 0
+      ? historyRef.current
+      : readInitialAiMemory();
   const cleanKey = normalizeKey(cleanTerm);
-  const filtered = currentList.filter((item) => normalizeKey(item) !== cleanKey);
+  const filtered = baseList.filter((item) => normalizeKey(item) !== cleanKey);
   filtered.push(cleanTerm);
   const nextList = filtered.slice(-400);
   historyRef.current = nextList;
 
-  try {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('fc_ai_memory', JSON.stringify(nextList));
+  // Chỉ tự ghi trực tiếp xuống localStorage nếu AiMemoryManager không có phương thức quản lý
+  if (!syncedViaManager) {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('fc_ai_memory', JSON.stringify(nextList));
+      }
+    } catch {
+      // Bỏ qua lỗi đầy bộ nhớ trình duyệt
     }
-  } catch {
-    // Bỏ qua lỗi đầy bộ nhớ trình duyệt
   }
 };
 
-// Chuẩn hóa linh hoạt dữ liệu câu hỏi từ ExamEngine (chống lồng 2 lớp question.question)
+// Đóng gói payload chuẩn cho Túi Nháp (khớp 100% yêu cầu top-level term/origin của useAppLogic.addToRetryBag)
+const buildRetryBagPayload = (questionData) => {
+  if (!questionData || typeof questionData !== 'object') return null;
+  const qObj = questionData.question && typeof questionData.question === 'object'
+    ? questionData.question
+    : questionData.origin || questionData;
+  const term = qObj?.term ? String(qObj.term).trim() : '';
+  if (!term) return null;
+
+  return {
+    ...questionData,
+    term,
+    origin: qObj
+  };
+};
+
+// Chuẩn hóa cấu trúc dữ liệu câu hỏi từ ExamEngine (chống lồng 2 lớp question.question)
 const normalizeExamQuizPayload = (rawPayload, { isReverse = false, isRescued = false } = {}) => {
   if (!rawPayload || typeof rawPayload !== 'object') return null;
 
-  const content = rawPayload.content && typeof rawPayload.content === 'object' ? rawPayload.content : rawPayload;
+  const content =
+    rawPayload.content && typeof rawPayload.content === 'object' ? rawPayload.content : rawPayload;
   let questionObj = null;
   let rawOptions = [];
 
   if (content.question && typeof content.question === 'object') {
-    questionObj = content.question;
-    rawOptions = Array.isArray(content.options) ? content.options : [];
+    questionObj = { ...content.question };
+    rawOptions = Array.isArray(content.options)
+      ? content.options
+      : Array.isArray(content.question.options)
+      ? content.question.options
+      : [];
   } else if (content.term || content.definition || content.displaySentence) {
     questionObj = {
       term: content.term || content.displaySentence || '',
@@ -132,6 +205,7 @@ const normalizeExamQuizPayload = (rawPayload, { isReverse = false, isRescued = f
       topic: content.topic || rawPayload.topic || '',
       partOfSpeech: content.partOfSpeech || '',
       language: content.language || rawPayload.lang || '',
+      questionText: content.questionText || '',
       _isRescued: Boolean(isRescued || content._isRescued || rawPayload._isRescued)
     };
     rawOptions = Array.isArray(content.options) ? content.options : [];
@@ -145,7 +219,7 @@ const normalizeExamQuizPayload = (rawPayload, { isReverse = false, isRescued = f
       if (typeof opt === 'string') {
         const expected = isReverse ? questionObj.term : questionObj.definition;
         return {
-          text: opt,
+          text: opt.trim(),
           meaning: '',
           isCorrect: normalizeKey(opt) === normalizeKey(expected)
         };
@@ -163,7 +237,9 @@ const normalizeExamQuizPayload = (rawPayload, { isReverse = false, isRescued = f
   // Đảm bảo luôn có ít nhất 1 đáp án đúng
   if (!normalizedOptions.some((o) => o.isCorrect)) {
     const expectedText = isReverse ? questionObj.term : questionObj.definition;
-    const matchIdx = normalizedOptions.findIndex((o) => normalizeKey(o.text) === normalizeKey(expectedText));
+    const matchIdx = normalizedOptions.findIndex(
+      (o) => normalizeKey(o.text) === normalizeKey(expectedText)
+    );
     if (matchIdx >= 0) {
       normalizedOptions[matchIdx].isCorrect = true;
     } else {
@@ -224,7 +300,8 @@ export const QuizGame = ({
   // ==========================================================================
   const resolvedConfig = useMemo(() => {
     const stored = readStoredQuizConfig();
-    const resumeCfg = savedState?.config && typeof savedState.config === 'object' ? savedState.config : {};
+    const resumeCfg =
+      savedState?.config && typeof savedState.config === 'object' ? savedState.config : {};
     const incomingCfg = propConfig && typeof propConfig === 'object' ? propConfig : {};
 
     const sourceMode =
@@ -319,30 +396,31 @@ export const QuizGame = ({
     timerMode,
     timeLimit,
     showPronun,
-    autoReadAnswer,
-    suddenDeath,
-    dataMode,
-    grammarFocus,
     isAiMode
   } = resolvedConfig;
 
-  const isReverse = askMode === 'def';
-  const isPureAi = sourceMode === 'ai_pure';
-
   // ==========================================================================
-  // 2. STATE & REFS QUẢN LÝ VÒNG ĐỜI VÁN CHƠI
+  // 2. STATE & REFS QUẢN LÝ VÒNG ĐỜI VÁN CHƠI (TƯƠNG THÍCH NGƯỢC savedState.stats)
   // ==========================================================================
   const [currentQuestionData, setCurrentQuestionData] = useState(
     () => savedState?.currentQuestionData || null
   );
-  const [streak, setStreak] = useState(() => Number(savedState?.streak) || 0);
-  const [correctCount, setCorrectCount] = useState(() => Number(savedState?.correctCount) || 0);
-  const [wrongCount, setWrongCount] = useState(() => Number(savedState?.wrongCount) || 0);
+  const [streak, setStreak] = useState(
+    () => Number(savedState?.streak ?? savedState?.stats?.streak) || 0
+  );
+  const [correctCount, setCorrectCount] = useState(
+    () => Number(savedState?.correctCount ?? savedState?.stats?.correct) || 0
+  );
+  const [wrongCount, setWrongCount] = useState(
+    () => Number(savedState?.wrongCount ?? savedState?.stats?.wrong) || 0
+  );
 
   const [gameMode, setGameMode] = useState(() => (listenMode ? 'listen' : 'read'));
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [hasStartedListening, setHasStartedListening] = useState(() => !listenMode);
-  const [listenPlayCount, setListenPlayCount] = useState(() => Number(savedState?.listenPlayCount) || 0);
+  const [listenPlayCount, setListenPlayCount] = useState(
+    () => Number(savedState?.listenPlayCount) || 0
+  );
 
   const [selectedOptionIndex, setSelectedOptionIndex] = useState(null);
   const [isChecking, setIsChecking] = useState(false);
@@ -367,40 +445,31 @@ export const QuizGame = ({
   const [isResultPaused, setIsResultPaused] = useState(false);
   const [aiAmmoCount, setAiAmmoCount] = useState(0);
 
-  // Refs ổn định tránh Stale Closure trong các tiến trình bất đồng bộ
+  // Refs ổn định chống Stale Closure (cập nhật đồng bộ trong thân render)
   const isMountedRef = useRef(true);
   const configRef = useRef(resolvedConfig);
   const cardsRef = useRef(cards);
+  const globalRetryBagRef = useRef(globalRetryBag);
   const deckRef = useRef([]);
   const coordinatorRef = useRef(null);
   const streakTrackerRef = useRef([]);
+  const fallbackIndexRef = useRef(0);
   const isNextTransitioningRef = useRef(false);
 
-  // Bộ nhớ chống lặp 400 từ: khởi tạo từ dữ liệu có sẵn trong localStorage / AiMemoryManager
-  const historyQueueRef = useRef(
-    (() => {
-      try {
-        if (AiMemoryManager && typeof AiMemoryManager.getMemory === 'function') {
-          const mem = AiMemoryManager.getMemory();
-          if (Array.isArray(mem) && mem.length > 0) return [...mem];
-        }
-      } catch {
-        // Fallback sang safeJsonParse
-      }
-      const savedMem = Utils.safeJsonParse('fc_ai_memory', []);
-      return Array.isArray(savedMem) ? savedMem : [];
-    })()
-  );
+  // Bộ nhớ chống lặp 400 từ: đồng bộ với AiMemoryManager & fc_ai_memory
+  const historyQueueRef = useRef(readInitialAiMemory());
 
-  // Refs phản chiếu state mới nhất cho AutoSave, Timer & Audio
+  // Refs phản chiếu state mới nhất cho AutoSave, Timers (StrictMode-safe) & Audio
   const currentQuestionDataRef = useRef(currentQuestionData);
   const isCheckingRef = useRef(isChecking);
+  const isRoundStartedRef = useRef(isRoundStarted);
   const isPausedRef = useRef(isPaused);
   const isResultPausedRef = useRef(isResultPaused);
   const correctCountRef = useRef(correctCount);
   const wrongCountRef = useRef(wrongCount);
   const streakRef = useRef(streak);
   const timeLeftRef = useRef(timeLeft);
+  const resultTimerValRef = useRef(resultTimer);
   const listenPlayCountRef = useRef(listenPlayCount);
   const clickedWrongIndicesRef = useRef(clickedWrongIndices);
   const singleOptionPlaysRef = useRef(0);
@@ -411,54 +480,46 @@ export const QuizGame = ({
   const safetyFallbackRef = useRef(null);
   const chanceToastTimerRef = useRef(null);
   const audioStepTimerRef = useRef(null);
+  const audioStepResolveRef = useRef(null);
   const audioSessionIdRef = useRef(0);
 
-  useEffect(() => {
-    configRef.current = resolvedConfig;
-  }, [resolvedConfig]);
-  useEffect(() => {
-    cardsRef.current = cards;
-  }, [cards]);
-  useEffect(() => {
-    currentQuestionDataRef.current = currentQuestionData;
-  }, [currentQuestionData]);
-  useEffect(() => {
-    isCheckingRef.current = isChecking;
-  }, [isChecking]);
-  useEffect(() => {
-    isPausedRef.current = isPaused;
-  }, [isPaused]);
-  useEffect(() => {
-    isResultPausedRef.current = isResultPaused;
-  }, [isResultPaused]);
-  useEffect(() => {
-    correctCountRef.current = correctCount;
-  }, [correctCount]);
-  useEffect(() => {
-    wrongCountRef.current = wrongCount;
-  }, [wrongCount]);
-  useEffect(() => {
-    streakRef.current = streak;
-  }, [streak]);
-  useEffect(() => {
-    timeLeftRef.current = timeLeft;
-  }, [timeLeft]);
-  useEffect(() => {
-    listenPlayCountRef.current = listenPlayCount;
-  }, [listenPlayCount]);
-  useEffect(() => {
-    clickedWrongIndicesRef.current = clickedWrongIndices;
-  }, [clickedWrongIndices]);
+  // Đồng bộ tức thời (0ms) trong thân render
+  configRef.current = resolvedConfig;
+  cardsRef.current = cards;
+  globalRetryBagRef.current = globalRetryBag;
+  currentQuestionDataRef.current = currentQuestionData;
+  isCheckingRef.current = isChecking;
+  isRoundStartedRef.current = isRoundStarted;
+  isPausedRef.current = isPaused;
+  isResultPausedRef.current = isResultPaused;
+  correctCountRef.current = correctCount;
+  wrongCountRef.current = wrongCount;
+  streakRef.current = streak;
+  listenPlayCountRef.current = listenPlayCount;
+  clickedWrongIndicesRef.current = clickedWrongIndices;
 
   // ==========================================================================
-  // 3. QUẢN LÝ TIMERS & ÂM THANH AN TOÀN (ZERO RACE CONDITION)
+  // 3. QUẢN LÝ TIMERS & ÂM THANH AN TOÀN (CHUẨN HỢP ĐỒNG useAppLogic.speak)
   // ==========================================================================
-  const stopAllAudio = useCallback(() => {
+  // Tăng phiên âm thanh và xả các bước chờ chuỗi đọc (KHÔNG cancel speechSynthesis
+  // trước khi gọi onPlay để bảo vệ Khiên WAV 15s của useAppLogic.speak)
+  const bumpAudioSession = useCallback(() => {
     audioSessionIdRef.current += 1;
     if (audioStepTimerRef.current) {
       clearTimeout(audioStepTimerRef.current);
       audioStepTimerRef.current = null;
     }
+    if (audioStepResolveRef.current) {
+      const resolveWait = audioStepResolveRef.current;
+      audioStepResolveRef.current = null;
+      resolveWait();
+    }
+    return audioSessionIdRef.current;
+  }, []);
+
+  // Dừng hẳn âm thanh (dùng khi Pause, chuyển câu, thoát game hoặc unmount)
+  const stopAllAudio = useCallback(() => {
+    bumpAudioSession();
     try {
       if (typeof window !== 'undefined' && window.speechSynthesis) {
         window.speechSynthesis.cancel();
@@ -469,6 +530,18 @@ export const QuizGame = ({
     if (isMountedRef.current) {
       setIsAudioPlaying(false);
     }
+  }, [bumpAudioSession]);
+
+  // Chờ giữa các nhịp đọc trong chuỗi A/B/C/D (có thể giải phóng ngay khi hủy phiên)
+  const waitAudioStep = useCallback((ms) => {
+    return new Promise((resolve) => {
+      audioStepResolveRef.current = resolve;
+      audioStepTimerRef.current = setTimeout(() => {
+        audioStepTimerRef.current = null;
+        audioStepResolveRef.current = null;
+        resolve();
+      }, ms);
+    });
   }, []);
 
   const cleanupTimers = useCallback(() => {
@@ -490,7 +563,51 @@ export const QuizGame = ({
     }
   }, []);
 
-  // Hàm phát âm thanh 1 chuỗi có hỗ trợ callback hoàn tất và kiểm soát phiên
+  // Ref trỏ tới handleNext & startResultCountdown để dùng an toàn trong mọi callback
+  const handleNextRef = useRef(null);
+
+  // Bắt đầu đếm ngược thời gian chuyển câu (KHÔNG có side-effect trong React state updater)
+  const startResultCountdown = useCallback((onDoneCallback) => {
+    if (resultTimerRef.current) {
+      clearInterval(resultTimerRef.current);
+      resultTimerRef.current = null;
+    }
+
+    const cfg = configRef.current;
+    const baseDelay = getAutoNextDelaySeconds();
+    const cooldownSec =
+      cfg.isAiMode || cfg.sourceMode === 'ai_pure'
+        ? getConfiguredUiCooldown(baseDelay)
+        : baseDelay;
+    const initialSec = Math.max(
+      baseDelay,
+      cfg.isAiMode ? Math.min(cooldownSec, baseDelay + 2) : baseDelay
+    );
+
+    resultTimerValRef.current = initialSec;
+    setResultTimer(initialSec);
+
+    resultTimerRef.current = setInterval(() => {
+      if (!isMountedRef.current || isPausedRef.current || isResultPausedRef.current) return;
+      const nextVal = resultTimerValRef.current - 1;
+      if (nextVal <= 0) {
+        if (resultTimerRef.current) {
+          clearInterval(resultTimerRef.current);
+          resultTimerRef.current = null;
+        }
+        resultTimerValRef.current = 0;
+        setResultTimer(0);
+        if (typeof onDoneCallback === 'function') {
+          onDoneCallback();
+        }
+        return;
+      }
+      resultTimerValRef.current = nextVal;
+      setResultTimer(nextVal);
+    }, 1000);
+  }, []);
+
+  // Hàm phát âm thanh 1 chuỗi — VÁ CHÍ MẠNG: gọi chuẩn 4 tham số onPlay(text, null, null, done)
   const speakOnce = useCallback(
     (textToSpeak, sessionId) => {
       return new Promise((resolve) => {
@@ -517,7 +634,8 @@ export const QuizGame = ({
 
         try {
           if (typeof onPlay === 'function') {
-            const ret = onPlay(textToSpeak, done);
+            // HỢP ĐỒNG useAppLogic.speak(text, rate = null, voice = null, onEnd = null)
+            const ret = onPlay(String(textToSpeak), null, null, done);
             if (ret && typeof ret.then === 'function') {
               ret.then(done).catch(done);
             }
@@ -532,7 +650,7 @@ export const QuizGame = ({
     [onPlay]
   );
 
-  // Phát âm thanh cho câu hỏi hiện tại (hỗ trợ cả chế độ xuôi và Đảo ngược + Luyện Nghe)
+  // Phát âm thanh cho câu hỏi hiện tại (hỗ trợ cả xuôi và Đảo ngược + Luyện Nghe xướng A/B/C/D)
   const triggerAudio = useCallback(
     async (questionData = currentQuestionDataRef.current, { countAsPlay = true } = {}) => {
       if (!questionData || !isMountedRef.current) return;
@@ -543,15 +661,12 @@ export const QuizGame = ({
         return;
       }
 
-      stopAllAudio();
-      const mySessionId = audioSessionIdRef.current;
+      const mySessionId = bumpAudioSession();
 
       if (countAsPlay && cfg.listenMode) {
-        setListenPlayCount((prev) => {
-          const next = prev + 1;
-          listenPlayCountRef.current = next;
-          return next;
-        });
+        const nextCount = listenPlayCountRef.current + 1;
+        listenPlayCountRef.current = nextCount;
+        setListenPlayCount(nextCount);
       }
 
       setHasStartedListening(true);
@@ -559,22 +674,27 @@ export const QuizGame = ({
 
       try {
         if (cfg.askMode === 'def') {
-          // Chế độ Đảo ngược + Luyện Nghe: đọc lần lượt 4 đáp án A -> B -> C -> D
+          // Chế độ Đảo ngược + Luyện Nghe: xướng nhãn A/B/C/D rồi đọc lần lượt 4 đáp án
           const opts = Array.isArray(questionData.options) ? questionData.options : [];
+          const optionLabels = ['A', 'B', 'C', 'D'];
           for (let idx = 0; idx < opts.length; idx++) {
             if (mySessionId !== audioSessionIdRef.current || !isMountedRef.current) return;
             const optText = opts[idx]?.text;
-            if (optText) {
-              await speakOnce(optText, mySessionId);
+            if (!optText) continue;
+
+            const label = optionLabels[idx];
+            if (label) {
+              await speakOnce(label, mySessionId);
+              if (mySessionId !== audioSessionIdRef.current || !isMountedRef.current) return;
+              await waitAudioStep(250);
             }
+
+            if (mySessionId !== audioSessionIdRef.current || !isMountedRef.current) return;
+            await speakOnce(optText, mySessionId);
+
             if (mySessionId !== audioSessionIdRef.current || !isMountedRef.current) return;
             if (idx < opts.length - 1) {
-              await new Promise((resolve) => {
-                audioStepTimerRef.current = setTimeout(() => {
-                  audioStepTimerRef.current = null;
-                  resolve();
-                }, 850);
-              });
+              await waitAudioStep(800);
             }
           }
         } else {
@@ -590,10 +710,10 @@ export const QuizGame = ({
         }
       }
     },
-    [speakOnce, stopAllAudio]
+    [bumpAudioSession, speakOnce, waitAudioStep]
   );
 
-  // Phát âm thanh trên từng đáp án (tương thích hoàn hảo với QuizUI.jsx Ver 1.1)
+  // Phát âm thanh trên từng đáp án (khớp QuizUI.jsx Ver 1.1 & chống treo "Đang đọc...")
   const handlePlayOption = useCallback(
     (textToSpeak, _optIndex, meta = {}) => {
       if (!textToSpeak || !isMountedRef.current) return;
@@ -603,22 +723,32 @@ export const QuizGame = ({
       const isLimited = cfg.listenMode && cfg.hardMode && !cfg.timerMode;
 
       // Chặn spam vô hạn ở Hard Mode khi bấm loa lẻ trước lúc trả lời:
-      // 4 lần nghe đáp án lẻ tương đương 1 lượt nghe tổng (nghe đủ cả 4 đáp án x 2 lượt)
+      // 4 lần nghe đáp án lẻ = 1 lượt nghe tổng (nghe đủ cả 4 đáp án x 2 lượt)
       if (isReverseListenActive && isLimited) {
         if (listenPlayCountRef.current >= 2) return;
         singleOptionPlaysRef.current += 1;
         if (singleOptionPlaysRef.current >= 4) {
           singleOptionPlaysRef.current = 0;
-          setListenPlayCount((prev) => {
-            const next = prev + 1;
-            listenPlayCountRef.current = next;
-            return next;
-          });
+          const nextCount = listenPlayCountRef.current + 1;
+          listenPlayCountRef.current = nextCount;
+          setListenPlayCount(nextCount);
         }
       }
 
-      stopAllAudio();
-      const mySessionId = audioSessionIdRef.current;
+      // Chống treo nút "Đang đọc..." (8s) nếu người dùng bấm loa nghe lại giữa lúc autoReadAnswer
+      if (isCheckingRef.current && resultTimerValRef.current === -1) {
+        if (safetyFallbackRef.current) {
+          clearTimeout(safetyFallbackRef.current);
+          safetyFallbackRef.current = null;
+        }
+        startResultCountdown(() => {
+          if (isMountedRef.current && handleNextRef.current) {
+            handleNextRef.current();
+          }
+        });
+      }
+
+      const mySessionId = bumpAudioSession();
       setHasStartedListening(true);
       setIsAudioPlaying(true);
 
@@ -628,11 +758,11 @@ export const QuizGame = ({
         }
       });
     },
-    [speakOnce, stopAllAudio]
+    [bumpAudioSession, speakOnce, startResultCountdown]
   );
 
   // ==========================================================================
-  // 4. TRA CỨU NGHĨA GỐC & CỨU HỘ KHẨN CẤP (HỖ TRỢ SONG NGỮ EN/ZH + NFC)
+  // 4. TRA CỨU NGHĨA GỐC & DỰNG CÂU HỎI TỪ THẺ (SONG NGỮ EN/ZH + NFC)
   // ==========================================================================
   const lookupCardMetadata = useCallback(
     (textVal, isForeignText) => {
@@ -658,7 +788,7 @@ export const QuizGame = ({
         if (found) return found;
       }
 
-      // Fallback về kho dữ liệu tĩnh đúng ngôn ngữ (vá lỗi hardcode en_level_1 cho tiếng Trung)
+      // Fallback về kho dữ liệu tĩnh đúng ngôn ngữ
       try {
         if (FallbackDataEngine && typeof FallbackDataEngine.getFallbackData === 'function') {
           const fallbackLevel = safeLang === 'zh' ? 'zh_level_1' : 'en_level_1';
@@ -688,7 +818,7 @@ export const QuizGame = ({
 
   // Dựng câu hỏi hoàn chỉnh từ 1 thẻ gốc (Online AI + Offline Fallback + Anti-Streak)
   const buildQuestionFromCard = useCallback(
-    async (rawCard) => {
+    async (rawCard, { skipMemoryPush = false, forceOffline = false } = {}) => {
       if (!rawCard || !rawCard.term) return null;
 
       const cfg = configRef.current;
@@ -698,9 +828,9 @@ export const QuizGame = ({
       const itemType =
         cfg.dataMode === 'sentence' || detectSentence(card.term) ? 'sentence' : 'word';
 
-      // Tự động điền nghĩa nếu thẻ khuyết definition (truyền đủ 7 tham số chuẩn Ver 1.1)
+      // Tự động điền nghĩa nếu thẻ khuyết definition (đủ 7 tham số chuẩn, không mutate prop cards)
       if (!card.definition || !String(card.definition).trim()) {
-        if (currentApiKey && typeof fillCardWithAi === 'function') {
+        if (!forceOffline && currentApiKey && typeof fillCardWithAi === 'function') {
           try {
             const enriched = await fillCardWithAi(
               card.term,
@@ -727,7 +857,9 @@ export const QuizGame = ({
       }
 
       // Ghi nhận từ đã dùng vào bộ nhớ 400 từ (không xóa lịch sử cũ)
-      pushTermToAiMemory(card.term, historyQueueRef);
+      if (!skipMemoryPush) {
+        pushTermToAiMemory(card.term, historyQueueRef);
+      }
 
       const reverseMode = cfg.askMode === 'def';
       const correctText = reverseMode ? card.term : card.definition;
@@ -737,7 +869,12 @@ export const QuizGame = ({
       let isAiGenerated = false;
 
       // Nhánh 1: Tạo đáp án nhiễu bằng AI (khi bật isAiMode và có API Key)
-      if (cfg.isAiMode && currentApiKey && GameAlgoEngine?.OptionsEngine?.ai_generateOptions) {
+      if (
+        !forceOffline &&
+        cfg.isAiMode &&
+        currentApiKey &&
+        GameAlgoEngine?.OptionsEngine?.ai_generateOptions
+      ) {
         let timeoutId = null;
         try {
           const aiCallPromise = GameAlgoEngine.OptionsEngine.ai_generateOptions(
@@ -824,7 +961,7 @@ export const QuizGame = ({
       ];
 
       const shuffledOptions = Utils.shuffleArray(rawOptions);
-      const questionPayload = applyAntiStreak(
+      return applyAntiStreak(
         {
           question: card,
           options: shuffledOptions,
@@ -833,10 +970,121 @@ export const QuizGame = ({
         },
         streakTrackerRef
       );
-
-      return questionPayload;
     },
     [apiKey, lookupCardMetadata, onUpdateCards, safeLang]
+  );
+
+  // ==========================================================================
+  // 4.5. TẦNG TỰ PHỤC HỒI 3 LỚP CHO DỮ LIỆU TỪ EXAM ENGINE (VÁ BUG E1/E2/E4)
+  // ==========================================================================
+  const repairAndNormalizeExamQuizPayload = useCallback(
+    async (rawPayload, { isReverse = false, isRescued = false } = {}) => {
+      const normalized = normalizeExamQuizPayload(rawPayload, { isReverse, isRescued });
+      if (!normalized) return null;
+
+      let question = { ...normalized.question };
+      let options = normalized.options.map((opt) => ({ ...opt }));
+      let isAiGenerated = normalized.isAiGenerated;
+
+      if (isReverse) {
+        // LỚP 1: Khôi phục question.term nếu getEmergencyFallback đã ghi đè Tiếng Việt vào .term
+        const termStr = String(question.term || '');
+        const defStr = String(question.definition || '');
+        const correctOpt = options.find((o) => o.isCorrect);
+
+        if (
+          correctOpt &&
+          correctOpt.text &&
+          (normalizeKey(termStr) === normalizeKey(defStr) ||
+            termStr.includes('(Thẻ khuyết nghĩa)') ||
+            !termStr.trim())
+        ) {
+          if (normalizeKey(correctOpt.text) !== normalizeKey(defStr)) {
+            question.term = correctOpt.text;
+            if (!defStr.trim() || normalizeKey(defStr) === normalizeKey(correctOpt.text)) {
+              question.definition = question.questionText || termStr || defStr;
+            }
+          }
+        }
+
+        // LỚP 2: Phát hiện & tự tái tạo 4 đáp án Ngoại ngữ khi ExamEngine 1-Shot/2-Shot trả nhầm chiều
+        const termKey = normalizeKey(question.term);
+        const defKey = normalizeKey(question.definition);
+        const currentCorrect = options.find((o) => o.isCorrect);
+        const correctMatchesDef = Boolean(
+          currentCorrect &&
+            defKey &&
+            termKey &&
+            termKey !== defKey &&
+            normalizeKey(currentCorrect.text) === defKey
+        );
+        const missingForeignAnswer = Boolean(
+          termKey &&
+            !options.some((o) => normalizeKey(o.text) === termKey) &&
+            looksLikeForeignOption(question.term, safeLang) &&
+            currentCorrect &&
+            !looksLikeForeignOption(currentCorrect.text, safeLang)
+        );
+
+        if (correctMatchesDef || missingForeignAnswer) {
+          const wrongOpts = options.filter((o) => !o.isCorrect);
+          const wrongOptsAreValidForeign =
+            wrongOpts.length >= 2 &&
+            wrongOpts.every((o) => looksLikeForeignOption(o.text, safeLang)) &&
+            !wrongOpts.some((o) => normalizeKey(o.text) === termKey);
+
+          if (wrongOptsAreValidForeign) {
+            // Nhánh Legacy 2-Shot: chỉ đáp án đúng bị nhầm sang Tiếng Việt -> đổi lại sang Foreign term
+            options = options.map((opt) =>
+              opt.isCorrect
+                ? { ...opt, text: question.term, meaning: question.definition || '' }
+                : opt
+            );
+          } else {
+            // Nhánh Fast 1-Shot vocab_mcq: cả 4 đáp án đều là Tiếng Việt -> tái tạo 4 đáp án Ngoại ngữ
+            const rebuilt = await buildQuestionFromCard(question, {
+              skipMemoryPush: true,
+              forceOffline: Boolean(isRescued)
+            });
+            if (rebuilt && Array.isArray(rebuilt.options) && rebuilt.options.length >= 2) {
+              question = { ...question, ...rebuilt.question, _isRescued: Boolean(isRescued) };
+              options = rebuilt.options;
+              isAiGenerated = Boolean(!isRescued && (isAiGenerated || rebuilt.isAiGenerated));
+            }
+          }
+        }
+      }
+
+      // LỚP 3: Bổ sung meaning cho đáp án cứu hộ còn trống & kiểm duyệt tối thiểu 2 đáp án hợp lệ
+      const enrichedOptions = options
+        .filter((opt) => opt && opt.text)
+        .map((opt) => {
+          if (opt.meaning) return opt;
+          if (opt.isCorrect) {
+            return {
+              ...opt,
+              meaning: isReverse ? question.definition || '' : question.term || ''
+            };
+          }
+          const matched = lookupCardMetadata(opt.text, isReverse);
+          const inferredMeaning = matched
+            ? isReverse
+              ? matched.definition || ''
+              : matched.term || ''
+            : '';
+          return { ...opt, meaning: inferredMeaning };
+        });
+
+      if (enrichedOptions.length < 2) return null;
+
+      return {
+        ...normalized,
+        question,
+        options: enrichedOptions,
+        isAiGenerated
+      };
+    },
+    [buildQuestionFromCard, lookupCardMetadata, safeLang]
   );
 
   // Dựng câu hỏi cứu hộ khẩn cấp khi ExamEngine AI Pure gặp sự cố mạng/API
@@ -845,23 +1093,32 @@ export const QuizGame = ({
     const { pickedLevel, pickedTopic } = normalizeLevelAndTopic(cfg.level, cfg.topic, safeLang);
     const reverseMode = cfg.askMode === 'def';
 
-    // Ưu tiên 1: Xin cứu hộ đồng cấp từ ExamEngine
+    // Ưu tiên 1: Xin cứu hộ đồng cấp từ ExamEngine (truyền đủ localDeck & fallbackIndex tuyến tính)
     try {
       if (ExamEngine && typeof ExamEngine.getEmergencyFallback === 'function') {
-        const fbRaw = ExamEngine.getEmergencyFallback({
+        const fbMeta = {
+          id: `quiz_rescue_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          mode: 'minigame',
           type: 'quiz',
           lang: safeLang,
           level: pickedLevel,
           topic: pickedTopic,
           dataMode: cfg.dataMode,
-          askMode: cfg.askMode
-        });
-        const normalized = normalizeExamQuizPayload(fbRaw, {
+          askMode: cfg.askMode,
+          hardMode: cfg.hardMode,
+          difficulty: cfg.hardMode ? 'hard' : 'easy'
+        };
+        const fbRaw = ExamEngine.getEmergencyFallback(
+          fbMeta,
+          cardsRef.current,
+          fallbackIndexRef.current++
+        );
+        const repaired = await repairAndNormalizeExamQuizPayload(fbRaw, {
           isReverse: reverseMode,
           isRescued: true
         });
-        if (normalized) {
-          return applyAntiStreak(normalized, streakTrackerRef);
+        if (repaired) {
+          return applyAntiStreak(repaired, streakTrackerRef);
         }
       }
     } catch (e) {
@@ -879,10 +1136,10 @@ export const QuizGame = ({
         );
         if (Array.isArray(fbCards) && fbCards.length > 0) {
           const picked = {
-            ...fbCards[Math.floor(Math.random() * fbCards.length)],
+            ...fbCards[fallbackIndexRef.current++ % fbCards.length],
             _isRescued: true
           };
-          const built = await buildQuestionFromCard(picked);
+          const built = await buildQuestionFromCard(picked, { forceOffline: true });
           if (built) return { ...built, isAiGenerated: false, _isRescued: true };
         }
       }
@@ -891,10 +1148,10 @@ export const QuizGame = ({
     }
 
     return null;
-  }, [buildQuestionFromCard, safeLang]);
+  }, [buildQuestionFromCard, repairAndNormalizeExamQuizPayload, safeLang]);
 
   // ==========================================================================
-  // 5. HÀM TÁC VỤ NẠP ĐẠN CHO QUEUE ENGINE (FETCH TASK)
+  // 5. HÀM TÁC VỤ NẠP ĐẠN CHO QUEUE ENGINE (ZERO STALE CLOSURE)
   // ==========================================================================
   const fetchNextQuizQuestion = useCallback(async () => {
     const cfg = configRef.current;
@@ -902,20 +1159,22 @@ export const QuizGame = ({
     const currentApiKey = resolveActiveApiKey(apiKey);
     const reverseMode = cfg.askMode === 'def';
 
-    // 1. Ưu tiên bốc 30% thẻ từ Túi Nháp (Global Retry Bag) với khóa nguyên tử
+    // 1. Ưu tiên bốc 30% thẻ từ Túi Nháp (đọc từ globalRetryBagRef.current mới nhất 0ms)
     try {
-      if (typeof pullRetryCardWithLock === 'function' && globalRetryBag) {
-        const retryItem = pullRetryCardWithLock('quiz', globalRetryBag, safeLang);
+      const latestRetryBag = globalRetryBagRef.current;
+      if (typeof pullRetryCardWithLock === 'function' && latestRetryBag) {
+        const retryItem = pullRetryCardWithLock('quiz', latestRetryBag, safeLang);
         if (retryItem) {
-          // Nếu Túi Nháp lưu sẵn cấu trúc câu hỏi hoàn chỉnh
-          const readyQuiz = normalizeExamQuizPayload(retryItem, { isReverse: reverseMode });
+          const readyQuiz = await repairAndNormalizeExamQuizPayload(retryItem, {
+            isReverse: reverseMode,
+            isRescued: Boolean(retryItem._isRescued)
+          });
           if (readyQuiz && readyQuiz.options.length >= 2) {
             return applyAntiStreak(
               { ...readyQuiz, _fromRetryBag: true },
               streakTrackerRef
             );
           }
-          // Nếu Túi Nháp lưu đối tượng Card
           const retryCard = retryItem.question || retryItem.origin || retryItem;
           if (retryCard && retryCard.term) {
             const builtRetry = await buildQuestionFromCard(retryCard);
@@ -927,12 +1186,13 @@ export const QuizGame = ({
       console.warn('[QuizGame] Retry bag pull warning:', e);
     }
 
-    // 2. Nhánh AI Tự Sinh (ai_pure) thông qua ExamEngine
+    // 2. Nhánh AI Tự Sinh (ai_pure) thông qua ExamEngine (đủ hợp đồng chuẩn)
     if (cfg.sourceMode === 'ai_pure') {
       if (currentApiKey && ExamEngine && typeof ExamEngine.hydrateQuestion === 'function') {
         try {
           const meta = {
             id: `quiz_pure_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            mode: 'minigame',
             type: 'quiz',
             lang: safeLang,
             level: pickedLevel,
@@ -940,25 +1200,52 @@ export const QuizGame = ({
             dataMode: cfg.dataMode,
             askMode: cfg.askMode,
             hardMode: cfg.hardMode,
-            grammarFocus: cfg.grammarFocus
+            difficulty: cfg.hardMode ? 'hard' : 'easy',
+            grammarId:
+              cfg.grammarFocus && cfg.grammarFocus !== 'random' ? cfg.grammarFocus : null
           };
 
-          const qData = await ExamEngine.hydrateQuestion(meta, currentApiKey);
-          const normalized = normalizeExamQuizPayload(qData, { isReverse: reverseMode });
+          const qData = await ExamEngine.hydrateQuestion(
+            meta,
+            currentApiKey,
+            historyQueueRef.current
+          );
+          const repaired = await repairAndNormalizeExamQuizPayload(qData, {
+            isReverse: reverseMode,
+            isRescued: Boolean(qData?.content?._isRescued)
+          });
 
-          if (normalized) {
-            pushTermToAiMemory(normalized.question?.term, historyQueueRef);
-            if (typeof onSaveToHarvest === 'function' && normalized.question?.term) {
+          if (repaired) {
+            pushTermToAiMemory(repaired.question?.term, historyQueueRef);
+
+            // Thu hoạch câu hỏi AI sinh mới với đầy đủ siêu dữ liệu 12 cột Excel
+            if (
+              !repaired._isRescued &&
+              typeof onSaveToHarvest === 'function' &&
+              repaired.question?.term
+            ) {
               try {
-                onSaveToHarvest(normalized.question, safeLang, cfg.dataMode);
+                const harvestPayload = {
+                  ...repaired.question,
+                  options: repaired.options,
+                  level: repaired.question.level || pickedLevel,
+                  topic: repaired.question.topic || pickedTopic,
+                  language: repaired.question.language || safeLang,
+                  dataMode: repaired.question.dataMode || cfg.dataMode,
+                  type: 'quiz'
+                };
+                onSaveToHarvest(harvestPayload, safeLang, cfg.dataMode);
               } catch {
                 // Không chặn luồng game nếu harvest lỗi
               }
             }
-            return applyAntiStreak(normalized, streakTrackerRef);
+            return applyAntiStreak(repaired, streakTrackerRef);
           }
         } catch (err) {
-          console.warn('[QuizGame] ExamEngine.hydrateQuestion failed, rescuing:', err?.message || err);
+          console.warn(
+            '[QuizGame] ExamEngine.hydrateQuestion failed, rescuing:',
+            err?.message || err
+          );
         }
       }
       return await getEmergencyQuizFallback();
@@ -975,10 +1262,21 @@ export const QuizGame = ({
     if (!nextCard) return null;
 
     return await buildQuestionFromCard(nextCard);
-  }, [apiKey, buildQuestionFromCard, getEmergencyQuizFallback, globalRetryBag, onSaveToHarvest, safeLang]);
+  }, [
+    apiKey,
+    buildQuestionFromCard,
+    getEmergencyQuizFallback,
+    onSaveToHarvest,
+    repairAndNormalizeExamQuizPayload,
+    safeLang
+  ]);
+
+  // Khóa wrapper ổn định cho QueueCoordinator (không bao giờ giữ closure cũ)
+  const fetchNextQuizQuestionRef = useRef(fetchNextQuizQuestion);
+  fetchNextQuizQuestionRef.current = fetchNextQuizQuestion;
 
   // ==========================================================================
-  // 6. CƠ CHẾ CHUYỂN CÂU, ĐỒNG HỒ KẾT QUẢ & CHẤM ĐIỂM
+  // 6. CƠ CHẾ CHUYỂN CÂU & CHẤM ĐIỂM
   // ==========================================================================
   const syncAmmoCount = useCallback(() => {
     if (!isMountedRef.current) return;
@@ -989,40 +1287,6 @@ export const QuizGame = ({
     setAiAmmoCount(len);
   }, []);
 
-  // Bắt đầu đếm ngược thời gian chuyển câu sau khi đã kiểm tra đáp án
-  const startResultCountdown = useCallback(
-    (onDoneCallback) => {
-      if (resultTimerRef.current) {
-        clearInterval(resultTimerRef.current);
-        resultTimerRef.current = null;
-      }
-
-      const cfg = configRef.current;
-      const baseDelay = getAutoNextDelaySeconds();
-      const cooldownSec = cfg.isAiMode || cfg.sourceMode === 'ai_pure' ? getConfiguredUiCooldown(baseDelay) : baseDelay;
-      const initialSec = Math.max(baseDelay, cfg.isAiMode ? Math.min(cooldownSec, baseDelay + 2) : baseDelay);
-
-      setResultTimer(initialSec);
-      resultTimerRef.current = setInterval(() => {
-        if (!isMountedRef.current || isPausedRef.current || isResultPausedRef.current) return;
-        setResultTimer((prev) => {
-          if (prev <= 1) {
-            if (resultTimerRef.current) {
-              clearInterval(resultTimerRef.current);
-              resultTimerRef.current = null;
-            }
-            if (typeof onDoneCallback === 'function') {
-              onDoneCallback();
-            }
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    },
-    []
-  );
-
   // Chuyển sang câu hỏi tiếp theo
   const handleNext = useCallback(async () => {
     if (!isMountedRef.current || isNextTransitioningRef.current) return;
@@ -1031,23 +1295,25 @@ export const QuizGame = ({
     cleanupTimers();
     stopAllAudio();
 
-    setIsChecking(false);
     isCheckingRef.current = false;
+    setIsChecking(false);
     setSelectedOptionIndex(null);
-    setClickedWrongIndices(new Set());
-    clickedWrongIndicesRef.current = new Set();
+    const emptyWrong = new Set();
+    clickedWrongIndicesRef.current = emptyWrong;
+    setClickedWrongIndices(emptyWrong);
     setFeedbackType(null);
     setShowChanceToast(false);
-    setIsResultPaused(false);
     isResultPausedRef.current = false;
+    setIsResultPaused(false);
+    resultTimerValRef.current = 0;
     setResultTimer(0);
-    setListenPlayCount(0);
     listenPlayCountRef.current = 0;
+    setListenPlayCount(0);
     singleOptionPlaysRef.current = 0;
 
     const cfg = configRef.current;
-    setTimeLeft(cfg.timeLimit);
     timeLeftRef.current = cfg.timeLimit;
+    setTimeLeft(cfg.timeLimit);
     setHasStartedListening(!cfg.listenMode);
 
     try {
@@ -1070,23 +1336,21 @@ export const QuizGame = ({
           syncAmmoCount();
         }
         if (!nextQ) {
-          nextQ = await fetchNextQuizQuestion();
+          nextQ = await fetchNextQuizQuestionRef.current();
         }
       } else if (coord && typeof coord.maintain === 'function') {
-        // Nạp đạn ngầm bổ sung băng đạn
         const isOfflineFastTrack = cfg.sourceMode === 'card' && !cfg.isAiMode;
         coord.maintain(false, 22000, isOfflineFastTrack).then(syncAmmoCount).catch(() => {});
       }
 
       if (!isMountedRef.current) return;
 
-      setCurrentQuestionData(nextQ || null);
       currentQuestionDataRef.current = nextQ || null;
+      setCurrentQuestionData(nextQ || null);
       setIsGenerating(false);
 
-      // Vá BUG 10: Từ câu 2 trở đi (hoặc khi vòng chơi đã bắt đầu), luôn tự phát âm thanh
-      // nếu đang ở chế độ Luyện nghe (kể cả khi bật timerMode!)
-      if (nextQ && cfg.listenMode && (!cfg.timerMode || isRoundStarted)) {
+      // Tự phát âm thanh từ câu 2 trở đi khi đang ở Luyện Nghe (kể cả khi bật timerMode)
+      if (nextQ && cfg.listenMode && (!cfg.timerMode || isRoundStartedRef.current)) {
         triggerAudio(nextQ, { countAsPlay: false });
       }
     } catch (err) {
@@ -1097,15 +1361,11 @@ export const QuizGame = ({
     } finally {
       isNextTransitioningRef.current = false;
     }
-  }, [cleanupTimers, fetchNextQuizQuestion, isRoundStarted, stopAllAudio, syncAmmoCount, triggerAudio]);
+  }, [cleanupTimers, stopAllAudio, syncAmmoCount, triggerAudio]);
 
-  // Ref trỏ tới handleNext để các callback timer luôn gọi phiên bản mới nhất
-  const handleNextRef = useRef(handleNext);
-  useEffect(() => {
-    handleNextRef.current = handleNext;
-  }, [handleNext]);
+  handleNextRef.current = handleNext;
 
-  // Ghi nhận lỗi sai chuẩn hóa bằng createMistakePayload & Túi Nháp
+  // Ghi nhận lỗi sai chuẩn hóa bằng createMistakePayload & Túi Nháp (có đủ top-level term)
   const recordMistake = useCallback(
     (questionData) => {
       if (!questionData) return;
@@ -1121,7 +1381,10 @@ export const QuizGame = ({
           }
         }
         if (typeof addToRetryBag === 'function') {
-          addToRetryBag('quiz', questionData);
+          const retryPayload = buildRetryBagPayload(questionData);
+          if (retryPayload) {
+            addToRetryBag('quiz', retryPayload);
+          }
         }
       } catch (e) {
         console.warn('[QuizGame] recordMistake error:', e);
@@ -1139,7 +1402,7 @@ export const QuizGame = ({
       const questionData = currentQuestionDataRef.current;
 
       // Trường hợp SAI LẦN 1 ở chế độ Cơ hội thứ 2 (!suddenDeath):
-      // VÁ BUG 09: KHÔNG gọi cleanupTimers() để đồng hồ timerMode không bị đóng băng!
+      // Tuyệt đối KHÔNG gọi cleanupTimers() để đồng hồ timerMode chạy liên tục!
       if (
         !isCorrect &&
         !isTimeout &&
@@ -1164,18 +1427,24 @@ export const QuizGame = ({
 
       // ĐÃ CHỐT KẾT QUẢ CÂU HỎI -> Dừng đồng hồ đếm giờ & âm thanh đang phát
       cleanupTimers();
-      stopAllAudio();
+      if (!cfg.autoReadAnswer) {
+        stopAllAudio();
+      }
 
       setSelectedOptionIndex(index);
-      setIsChecking(true);
       isCheckingRef.current = true;
+      setIsChecking(true);
       setShowChanceToast(false);
 
       if (isCorrect) {
         playGameSFX('correct', settings?.isMuted);
         setFeedbackType('correct');
-        setCorrectCount((prev) => prev + 1);
-        setStreak((prev) => prev + 1);
+        const nextCorrect = correctCountRef.current + 1;
+        correctCountRef.current = nextCorrect;
+        setCorrectCount(nextCorrect);
+        const nextStreak = streakRef.current + 1;
+        streakRef.current = nextStreak;
+        setStreak(nextStreak);
 
         // Xóa khỏi Túi Nháp nếu trả lời đúng
         if (typeof removeFromRetryBag === 'function' && questionData.question?.term) {
@@ -1188,7 +1457,10 @@ export const QuizGame = ({
       } else {
         playGameSFX('wrong', settings?.isMuted);
         setFeedbackType(isTimeout ? 'timeout' : 'wrong');
-        setWrongCount((prev) => prev + 1);
+        const nextWrongCount = wrongCountRef.current + 1;
+        wrongCountRef.current = nextWrongCount;
+        setWrongCount(nextWrongCount);
+        streakRef.current = 0;
         setStreak(0);
         recordMistake(questionData);
       }
@@ -1201,13 +1473,20 @@ export const QuizGame = ({
 
       // Chế độ "Đọc lại đáp án" trước khi đếm ngược chuyển câu
       if (cfg.autoReadAnswer && questionData.question?.term) {
+        resultTimerValRef.current = -1;
         setResultTimer(-1); // Khớp QuizUI Ver 1.1: hiển thị "Đang đọc..."
-        const mySessionId = audioSessionIdRef.current + 1;
-        audioSessionIdRef.current = mySessionId;
+        const mySessionId = bumpAudioSession();
 
         let movedToCountdown = false;
         const beginCountdown = () => {
-          if (movedToCountdown || !isMountedRef.current || !isCheckingRef.current) return;
+          if (
+            movedToCountdown ||
+            !isMountedRef.current ||
+            !isCheckingRef.current ||
+            resultTimerValRef.current !== -1
+          ) {
+            return;
+          }
           movedToCountdown = true;
           if (safetyFallbackRef.current) {
             clearTimeout(safetyFallbackRef.current);
@@ -1216,7 +1495,7 @@ export const QuizGame = ({
           startResultCountdown(proceedNext);
         };
 
-        // Safety fallback 8000ms được lưu vào ref để hủy ngay nếu bấm "Tiếp theo" sớm
+        // Safety fallback 8000ms được lưu vào ref để hủy ngay nếu chuyển câu hoặc bấm loa lẻ
         safetyFallbackRef.current = setTimeout(beginCountdown, 8000);
         speakOnce(questionData.question.term, mySessionId).then(beginCountdown);
       } else {
@@ -1224,6 +1503,7 @@ export const QuizGame = ({
       }
     },
     [
+      bumpAudioSession,
       cleanupTimers,
       recordMistake,
       removeFromRetryBag,
@@ -1235,7 +1515,7 @@ export const QuizGame = ({
   );
 
   // ==========================================================================
-  // 7. ĐỒNG HỒ ĐẾM NGƯỢC GIỚI HẠN THỜI GIAN (TIMER MODE)
+  // 7. ĐỒNG HỒ ĐẾM NGƯỢC GIỚI HẠN THỜI GIAN (REACT 18 STRICTMODE SAFE)
   // ==========================================================================
   useEffect(() => {
     if (timerRef.current) {
@@ -1243,26 +1523,32 @@ export const QuizGame = ({
       timerRef.current = null;
     }
 
-    if (!timerMode || !isRoundStarted || isPaused || isChecking || isGenerating || !currentQuestionData) {
+    if (
+      !timerMode ||
+      !isRoundStarted ||
+      isPaused ||
+      isChecking ||
+      isGenerating ||
+      !currentQuestionData
+    ) {
       return undefined;
     }
 
     timerRef.current = setInterval(() => {
       if (!isMountedRef.current || isPausedRef.current || isCheckingRef.current) return;
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          if (timerRef.current) {
-            clearInterval(timerRef.current);
-            timerRef.current = null;
-          }
-          timeLeftRef.current = 0;
-          handleAnswer(999, false, true, false);
-          return 0;
+      const nextVal = timeLeftRef.current - 1;
+      if (nextVal <= 0) {
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
         }
-        const nextVal = prev - 1;
-        timeLeftRef.current = nextVal;
-        return nextVal;
-      });
+        timeLeftRef.current = 0;
+        setTimeLeft(0);
+        handleAnswer(999, false, true, false);
+        return;
+      }
+      timeLeftRef.current = nextVal;
+      setTimeLeft(nextVal);
     }, 1000);
 
     return () => {
@@ -1283,21 +1569,22 @@ export const QuizGame = ({
     const initGameSession = async () => {
       const cfg = configRef.current;
 
-      // VÁ BUG 12: Chống treo màn hình trắng khi bộ thẻ < 2 ở chế độ Thẻ cá nhân
-      if (cfg.sourceMode === 'card' && (!Array.isArray(cardsRef.current) || cardsRef.current.length < 2)) {
+      // Chống treo màn hình trắng khi bộ thẻ < 2 ở chế độ Thẻ cá nhân
+      // Khớp hợp đồng useAppLogic.showToast(messageString, type) — tuyệt đối không truyền Object
+      if (
+        cfg.sourceMode === 'card' &&
+        (!Array.isArray(cardsRef.current) || cardsRef.current.length < 2)
+      ) {
         setIsGenerating(false);
         if (typeof showToast === 'function') {
-          showToast({
-            text: t ? t('needMoreCards', { n: 2 }) : 'Cần ít nhất 2 thẻ để chơi Trắc Nghiệm',
-            type: 'error',
-            id: Date.now()
-          });
+          const msg = t ? t('needMoreCards', { n: 2 }) : 'Cần ít nhất 2 thẻ để chơi Trắc Nghiệm';
+          showToast(String(msg), 'error');
         }
         if (typeof onBack === 'function') onBack(null);
         return;
       }
 
-      // Kiểm tra API Key nếu là chế độ AI Tự sinh
+      // Kiểm tra API Key 4 tầng nếu là chế độ AI Tự sinh
       if (cfg.sourceMode === 'ai_pure' && !resolveActiveApiKey(apiKey)) {
         if (typeof onMissingKey === 'function') onMissingKey();
       }
@@ -1309,11 +1596,11 @@ export const QuizGame = ({
         deckRef.current = Utils.shuffleArray([...(cardsRef.current || [])]);
       }
 
-      // Khởi tạo QueueCoordinator
+      // Khởi tạo QueueCoordinator với wrapper ổn định (diệt Stale Closure 100%)
       const { maxAmmo, loadingTime } = getAiCoreConfig();
       const coord =
         QueueEngine && typeof QueueEngine.createQueueCoordinator === 'function'
-          ? QueueEngine.createQueueCoordinator(fetchNextQuizQuestion, maxAmmo)
+          ? QueueEngine.createQueueCoordinator(() => fetchNextQuizQuestionRef.current(), maxAmmo)
           : null;
       coordinatorRef.current = coord;
 
@@ -1321,11 +1608,10 @@ export const QuizGame = ({
 
       // Trường hợp 1: Resume và câu hiện tại vẫn chưa trả lời xong
       if (savedState?.currentQuestionData && !savedState?._needsNextOnResume) {
-        setCurrentQuestionData(savedState.currentQuestionData);
         currentQuestionDataRef.current = savedState.currentQuestionData;
+        setCurrentQuestionData(savedState.currentQuestionData);
         setIsGenerating(false);
 
-        // Chỉ gọi maintain() 1 lần duy nhất để nạp ngầm câu tiếp theo
         if (coord && typeof coord.maintain === 'function') {
           coord.maintain(false, loadingTime * 1000, isOfflineFastTrack).then(syncAmmoCount).catch(() => {});
         }
@@ -1346,21 +1632,21 @@ export const QuizGame = ({
         if (cancelled) return;
         firstQuestion = coord.pop();
         syncAmmoCount();
-        // Kích hoạt nạp đạn bổ sung ngầm (không chặn UI)
+        // Kích hoạt nạp đạn bổ sung ngầm (chỉ 1 luồng duy nhất)
         coord.maintain(false, loadingTime * 1000, isOfflineFastTrack).then(syncAmmoCount).catch(() => {});
       }
 
       if (!firstQuestion && !cancelled) {
-        firstQuestion = await fetchNextQuizQuestion();
+        firstQuestion = await fetchNextQuizQuestionRef.current();
       }
 
       if (cancelled || !isMountedRef.current) return;
 
-      setCurrentQuestionData(firstQuestion || null);
       currentQuestionDataRef.current = firstQuestion || null;
+      setCurrentQuestionData(firstQuestion || null);
       setIsGenerating(false);
 
-      // VÁ BUG 10: Không phát trộm âm thanh câu 1 khi timerMode đang khóa màn hình chờ bấm BẮT ĐẦU
+      // Không phát trộm âm thanh câu 1 khi timerMode đang khóa màn hình chờ bấm BẮT ĐẦU
       if (firstQuestion && cfg.listenMode && !cfg.timerMode) {
         triggerAudio(firstQuestion, { countAsPlay: false });
       }
@@ -1390,8 +1676,8 @@ export const QuizGame = ({
     const alreadyChecked = isCheckingRef.current;
 
     return {
-      // VÁ BUG 11 (Chống cày điểm vô hạn): Nếu câu hiện tại đã chấm điểm xong (isChecking === true),
-      // đánh dấu _needsNextOnResume = true để lần Resume sau tự chuyển sang câu mới!
+      // Nếu câu hiện tại đã chấm điểm xong (isChecking === true), đánh dấu _needsNextOnResume = true
+      // để lần Resume sau tự chuyển sang câu mới, chặn 100% lỗi cày điểm vô hạn!
       currentQuestionData: alreadyChecked ? null : currentQuestionDataRef.current,
       _needsNextOnResume: alreadyChecked,
       deck: mergedDeck,
@@ -1431,7 +1717,7 @@ export const QuizGame = ({
     }
   }, [buildSessionSnapshot, cleanupTimers, onBack, stopAllAudio]);
 
-  // Nút Kết thúc ván chơi: áp dụng kỷ luật thoát ngang (nếu chưa trả lời câu hiện tại) & báo kết quả
+  // Nút Kết thúc ván chơi: áp dụng kỷ luật thoát ngang & báo kết quả
   const handleEndGameInternal = useCallback(
     (statsOverride) => {
       cleanupTimers();
@@ -1439,11 +1725,12 @@ export const QuizGame = ({
 
       const totalAnswered = correctCountRef.current + wrongCountRef.current;
       if (currentQuestionDataRef.current && !isCheckingRef.current && totalAnswered > 0) {
+        const retryPayload = buildRetryBagPayload(currentQuestionDataRef.current);
         handleExitDiscipline({
           isPlaying: true,
           isAnswered: false,
           currentCard: currentQuestionDataRef.current,
-          rawQuestionData: currentQuestionDataRef.current,
+          rawQuestionData: retryPayload || currentQuestionDataRef.current,
           gameType: 'quiz',
           extraTags: ['early_exit'],
           onLogWrong,
@@ -1468,45 +1755,49 @@ export const QuizGame = ({
     [addToRetryBag, cleanupTimers, onEndGame, onLogWrong, stopAllAudio]
   );
 
-  // Nút "BẮT ĐẦU" khi dùng timerMode: mở khóa màn hình & tự phát âm thanh nếu đang ở chế độ Luyện nghe
+  // Nút "BẮT ĐẦU" khi dùng timerMode: mở khóa màn hình & tự phát âm thanh nếu đang Luyện nghe
   const handleStartRound = useCallback(() => {
+    isRoundStartedRef.current = true;
     setIsRoundStarted(true);
     if (configRef.current.listenMode && currentQuestionDataRef.current) {
       triggerAudio(currentQuestionDataRef.current, { countAsPlay: false });
     }
   }, [triggerAudio]);
 
-  // Nút Tạm dừng / Tiếp tục
+  // Nút Tạm dừng / Tiếp tục (không đặt side-effect trong updater)
   const handleTogglePause = useCallback(() => {
-    setIsPaused((prev) => {
-      const next = !prev;
-      isPausedRef.current = next;
-      if (next) {
-        stopAllAudio();
-      }
-      return next;
-    });
+    const next = !isPausedRef.current;
+    isPausedRef.current = next;
+    setIsPaused(next);
+    if (next) {
+      stopAllAudio();
+    }
   }, [stopAllAudio]);
 
   // Nút Dừng đếm ngược tự chuyển câu sau khi trả lời
   const handleToggleResultPause = useCallback(() => {
-    setIsResultPaused((prev) => {
-      const next = !prev;
-      isResultPausedRef.current = next;
-      return next;
-    });
+    const next = !isResultPausedRef.current;
+    isResultPausedRef.current = next;
+    setIsResultPaused(next);
   }, []);
 
-  // Nút Bỏ qua câu này (tính là bỏ qua, ghi nhận vào Túi Nháp để ôn lại)
+  // Nút Bỏ qua câu này (ghi nhận vào Túi Nháp, tăng wrongCount +1, reset streak về 0)
   const handleSkip = useCallback(() => {
     if (isCheckingRef.current || isGenerating || isPausedRef.current) return;
     if (currentQuestionDataRef.current && typeof addToRetryBag === 'function') {
       try {
-        addToRetryBag('quiz', currentQuestionDataRef.current);
+        const retryPayload = buildRetryBagPayload(currentQuestionDataRef.current);
+        if (retryPayload) {
+          addToRetryBag('quiz', retryPayload);
+        }
       } catch {
         // Bỏ qua an toàn
       }
     }
+    const nextWrong = wrongCountRef.current + 1;
+    wrongCountRef.current = nextWrong;
+    setWrongCount(nextWrong);
+    streakRef.current = 0;
     setStreak(0);
     handleNext();
   }, [addToRetryBag, handleNext, isGenerating]);
