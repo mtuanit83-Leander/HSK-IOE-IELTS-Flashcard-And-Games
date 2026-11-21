@@ -1,1156 +1,1643 @@
 // ============================================================================
-// FILE 17/85: src/engines/gameAiEngine.js
-// NGUỒN GỐC: tang_2.js (Block 2.3A - Game AI Engine V2.13)
+// FILE 82/85: src/hooks/useAppLogic.js
+// NGUỒN GỐC: Tầng 6 - Block 6.4 (Main Controller - Version 1.09)
 // PHIÊN BẢN: Ver 1.1
-// NGÀY GIỜ NÂNG CẤP: 20/11/2026 - 19:07 (GMT+7)
-// NHIỆM VỤ: Chuyên trách giao tiếp API sinh dữ liệu nhiễu bằng AI cho Mini-Games
-//           (Spot Mistake, Quiz Options, Scramble Noise, Cloze Mask) kèm nhận diện
-//           song ngữ 4 tầng đồng bộ cả 4 động cơ, Trạm gác Độc bản 2 chiều (NFC),
-//           Tường lửa ký tự nâng cao và lớp Hậu kiểm toàn diện (Gatekeeper).
+// NGÀY GIỜ NÂNG CẤP: 21/11/2026 - 10:09 (GMT+7)
+// NHIỆM VỤ: "Switchboard" điều phối toàn cục. Hợp nhất AI Logic (6.2),
+//           Data I/O (6.3), Study Progress (6.5), AI Curator (6.6),
+//           Mock Test Logic (6.7) và Exam Pool Logic (6.8).
+//           Nâng cấp Ver 1.1 theo Phác đồ 6 Hạng mục (DanhGiaCode.md):
+//           1. Đồng bộ khóa phiên mySessionId === speakSessionIdRef.current
+//              cho safeOnEnd() ở cả u.onend, u.onerror và catch (0% zombie).
+//           2. Tự động dừng Auto-Play & TTS khi chuyển ngữ cảnh (handleReviewWithGame,
+//              handleExitStudyMode, tắt Shuffle và chuyển tab rời Learn qua BottomNav).
+//           3. Chặn lặp phím (e.repeat) cho phím công tắc (gọi e.preventDefault()
+//              trước e.repeat với Space để chống cuộn trang khi giữ phím).
+//           4. Bọc try/catch đầy đủ cho toggleBatterySaver (WakeLock an toàn).
+//           5. Nâng cấp extractRetryKey & removeFromRetryBag theo từng gameType
+//              khớp 1:1 Validator của db.js (listening, reading, fillblank, oddoneout).
+//           6. Thay cờ đơn bằng pendingRetryPersistMapRef (Map<lang, bag>) chống
+//              race condition ghi đè chéo phân vùng ngôn ngữ trên IndexedDB.
 // ============================================================================
 
 
-import { parseAiJson } from '../utils/helpers.js';
-import { callGeminiApi } from '../services/geminiApi.js';
-import { IoeDataEngine } from './pedagogyEngine.js';
-import { MICRO_PROMPTS } from './microPrompts.js';
+import { useRef, useEffect, useCallback, useMemo } from 'react';
+import { UI_TEXT } from '@/config/i18n';
+import { STORAGE_KEYS } from '@/config/constants';
+import { Utils } from '@/utils/helpers';
+import { FcDB } from '@/services/db';
+import { useAiLogic } from './useAiLogic';
+import { useDataIO } from './useDataIO';
+import { useStudyProgress } from './useStudyProgress';
+import { useAiCurator } from './useAiCurator';
+import { useExamLogic } from './useExamLogic';
+import { useExamPoolLogic } from './useExamPoolLogic';
 
 
 // ============================================================================
-// HẰNG SỐ & HÀM PHỤ TRỢ NỘI BỘ (CHUẨN HÓA NGÔN NGỮ, CẤP ĐỘ, UNICODE & TƯỜNG LỬA)
+// MODULE HELPERS: CHUẨN HÓA UNICODE NFC & BỘ KHÓA TÚI NHÁP 10/10 MINI-GAMES
 // ============================================================================
-
-
-// Bảng ánh xạ mã cấp độ cũ (legacy) sang mã cấp độ 9 tầng hiện hành
-const OLD_TO_NEW_LEVEL_MAP = {
-  level_1_kiddie: 'en_level_1',
-  level_2_junior_basic: 'en_level_2',
-  level_3_junior_advanced: 'en_level_3',
-  level_4_discovery_basic: 'en_level_4',
-  level_5_discovery_advanced: 'en_level_5',
-  level_6_pre_ielts: 'en_level_6',
-  level_7_breakthrough: 'en_level_7',
-  level_8_academic: 'en_level_8',
-  level_9_expert: 'en_level_9'
-};
-
-
-// Phát hiện ký tự chữ Hán (CJK Unified Ideographs)
 const HANZI_REGEX = /[\u4e00-\u9fff]/;
 
 
-// Nguyên âm Pinyin có dấu thanh điệu (luôn cấm trong đáp án Tiếng Trung kể cả khi từ gốc có chữ Latin)
-const PINYIN_TONE_REGEX = /[āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜüĀÁǍÀĒÉĚÈĪÍǏÌŌÓǑÒŪÚǓÙǕǗǙǛÜ]/;
+const SPECIALIZED_RETRY_GAMES = new Set([
+  'oddoneout',
+  'fillblank',
+  'spotmistake',
+  'listening',
+  'reading'
+]);
 
 
-// Cặp ngoặc đơn (ASCII hoặc Fullwidth) chứa chữ Latin/Pinyin dạng chú thích (VD: "T恤 (T xù)")
-const CHINESE_PAREN_LATIN_REGEX =
-  /[（(][^）)]*[a-zA-ZāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜüĀÁǍÀĒÉĚÈĪÍǏÌŌÓǑÒŪÚǓÙǕǗǙǛÜ][^）)]*[）)]/;
-
-
-// Chữ Latin ASCII thông thường
-const ASCII_LATIN_REGEX = /[a-zA-Z]/;
-
-
-// Tường lửa Tiếng Anh: chặn ký tự IPA chuẩn, dấu trọng âm/trường âm IPA và ký tự backslash
-const ENGLISH_IPA_CHAR_REGEX = /[\\əæθʃʒðŋɑɔʊʌɛɪˈˌː]/;
-const ENGLISH_BRACKET_REGEX = /\[[^\]]*\]/;
-
-
-// Chặn cụm phiên âm nằm giữa 2 dấu gạch chéo /.../ (bao gồm "/in time/", "(/buk/)")
-// nhưng KHÔNG chặn oan "and/or", "he/she", "24/7", "in / on / at"
-const ENGLISH_SLASH_PHONETIC_REGEX =
-  /(?:^|[\s(])\/[^\s/](?:[^/]{0,38}[^\s/])?\/(?:[\s).,;!?]|$)/;
-
-
-// Ký tự dấu câu ở 2 đầu token dùng khi so sánh khử trùng lặp
-const EDGE_PUNCTUATION_REGEX = /^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu;
-
-
-/**
- * Chuẩn hóa chuỗi để so sánh độc bản chuẩn xác (Unicode NFC + gom khoảng trắng + thường hóa)
- * @param {any} str
- * @returns {string}
- */
-const normalizeCompareKey = (str) => {
-  if (str === null || str === undefined) return '';
-  const compact = String(str).trim().replace(/\s+/g, ' ');
-  const normalized = typeof compact.normalize === 'function' ? compact.normalize('NFC') : compact;
-  return normalized.toLowerCase();
+const normalizeKey = (val) => {
+  if (val === undefined || val === null) return '';
+  const str = String(val).trim().toLowerCase();
+  return typeof str.normalize === 'function' ? str.normalize('NFC') : str;
 };
 
 
-/**
- * Trích xuất chuỗi cấp độ đầu tiên hợp lệ từ chuỗi hoặc mảng Multi-select
- * @param {string|string[]} level
- * @returns {string}
- */
-const extractRawLevel = (level) => {
-  if (Array.isArray(level)) {
-    const firstValid = level.find(
-      (item) => item !== null && item !== undefined && String(item).trim() !== ''
-    );
-    return firstValid !== undefined ? String(firstValid).trim() : '';
-  }
-  return level !== null && level !== undefined ? String(level).trim() : '';
+const normalizeWordSignature = (words) => {
+  if (!Array.isArray(words)) return '';
+  return words.map((w) => normalizeKey(w)).join('|');
 };
 
 
-/**
- * Chuẩn hóa mã cấp độ (hỗ trợ cả Array từ bộ chọn Multi-select và mã legacy)
- * @param {string|string[]} level
- * @param {'en'|'zh'} fallbackLang
- * @returns {string}
- */
-const normalizeLevelKey = (level, fallbackLang = 'en') => {
-  const rawLevel = extractRawLevel(level);
-  if (!rawLevel) {
-    return fallbackLang === 'zh' ? 'zh_level_4' : 'en_level_4';
+const pickFirstNonEmptyString = (candidates) => {
+  for (const val of candidates) {
+    if (typeof val === 'string' && val.trim()) {
+      return val.trim();
+    }
   }
-
-
-  const mapped = OLD_TO_NEW_LEVEL_MAP[rawLevel] || rawLevel;
-  if (!mapped.includes('level_')) {
-    return fallbackLang === 'zh' ? 'zh_level_4' : 'en_level_4';
-  }
-  return mapped;
+  return '';
 };
 
 
-/**
- * Chuẩn hóa tham số chủ đề (Vắc-xin Đa nhiệm Array Armor)
- * @param {string|string[]} topic
- * @returns {string}
- */
-const normalizeTopic = (topic) => {
-  if (Array.isArray(topic)) {
-    const valid = topic
-      .map((item) => (item !== null && item !== undefined ? String(item).trim() : ''))
-      .filter(Boolean);
-    return valid.length > 0 ? valid.join(', ') : '';
+// Trích xuất khóa định danh chính theo từng gameType — khớp 1:1 với db.js
+const extractRetryKey = (item, gameType = '') => {
+  if (!item || typeof item !== 'object') return '';
+
+
+  switch (gameType) {
+    case 'listening':
+      return pickFirstNonEmptyString([
+        item.audioScript,
+        item.questionText,
+        item.term,
+        item.origin?.term,
+        item.question?.term
+      ]);
+    case 'reading': {
+      const qText =
+        typeof item.questionText === 'string' ? item.questionText.trim() : '';
+      const pCtx =
+        typeof item.passageContext === 'string'
+          ? item.passageContext.trim()
+          : '';
+      if (qText && pCtx) return `${qText}::${pCtx}`;
+      return pickFirstNonEmptyString([
+        qText,
+        pCtx,
+        item.term,
+        item.origin?.term,
+        item.question?.term
+      ]);
+    }
+    case 'fillblank':
+      return pickFirstNonEmptyString([
+        item.displaySentence,
+        item.targetWord,
+        item.term,
+        item.origin?.term,
+        item.question?.term
+      ]);
+    case 'spotmistake':
+      return pickFirstNonEmptyString([
+        item.wrongSentence,
+        item.term,
+        item.origin?.term,
+        item.question?.term
+      ]);
+    case 'oddoneout':
+      return pickFirstNonEmptyString([
+        item.oddWord,
+        item.term,
+        item.origin?.term,
+        item.question?.term
+      ]);
+    default:
+      return pickFirstNonEmptyString([
+        item.term,
+        item.origin?.term,
+        item.question?.term,
+        item.displaySentence,
+        item.wrongSentence,
+        item.oddWord,
+        item.audioScript,
+        item.questionText
+      ]);
   }
-  return topic !== null && topic !== undefined ? String(topic).trim() : '';
 };
 
 
-/**
- * Nhận diện chính xác ngôn ngữ ngoại ngữ gốc của thẻ (4 tầng ưu tiên):
- * 1. Tham số `explicitLang` nếu là 'zh' hoặc 'en'
- * 2. Trường `language` trên đối tượng thẻ (`cardOrText.language`)
- * 3. Chuỗi cấp độ (`level`) chứa 'zh' hoặc 'hsk'
- * 4. Tự động phát hiện ký tự Hán trong `term` (cứu hộ khi caller truyền ''/'vi' + level cũ)
- *
- * @param {Object|string} cardOrText
- * @param {string} explicitLang
- * @param {string|string[]} level
- * @returns {'en' | 'zh'}
- */
-const resolveForeignLang = (cardOrText, explicitLang, level) => {
-  const cleanExplicit = String(explicitLang || '').trim().toLowerCase();
-  if (cleanExplicit === 'zh' || cleanExplicit === 'en') {
-    return cleanExplicit;
+// Lấy tập toàn bộ khóa ứng viên chuẩn hóa NFC để removeFromRetryBag không bao giờ lệch khóa
+const getRetryCandidateKeys = (item, gameType = '') => {
+  if (!item || typeof item !== 'object') return [];
+  const rawList = [
+    extractRetryKey(item, gameType),
+    item.term,
+    item.origin?.term,
+    item.question?.term,
+    item.displaySentence,
+    item.targetWord,
+    item.wrongSentence,
+    item.oddWord,
+    item.audioScript,
+    item.questionText,
+    item.passageContext
+  ];
+  const keySet = new Set();
+  for (const val of rawList) {
+    const k = normalizeKey(val);
+    if (k) keySet.add(k);
   }
+  return Array.from(keySet);
+};
 
 
-  if (cardOrText && typeof cardOrText === 'object') {
-    const cardLang = String(cardOrText.language || '').trim().toLowerCase();
-    if (cardLang === 'zh' || cardLang === 'en') {
-      return cardLang;
+// Tự động đẩy (hoist) top-level term & definition để tương thích 100% Validator dòng 41 của db.js
+const normalizeRetryItem = (gameType, questionData) => {
+  const cloned = { ...questionData };
+  const nestedOrigin =
+    cloned.origin && typeof cloned.origin === 'object' ? cloned.origin : null;
+  const nestedQuestion =
+    cloned.question && typeof cloned.question === 'object' ? cloned.question : null;
+
+
+  if (!SPECIALIZED_RETRY_GAMES.has(gameType)) {
+    const rawTerm =
+      cloned.term ||
+      nestedQuestion?.term ||
+      nestedOrigin?.term ||
+      cloned.displaySentence ||
+      '';
+    const rawDef =
+      cloned.definition ||
+      nestedQuestion?.definition ||
+      nestedOrigin?.definition ||
+      cloned.meaning ||
+      nestedQuestion?.meaning ||
+      nestedOrigin?.meaning ||
+      '';
+
+
+    if (typeof rawTerm === 'string' && rawTerm.trim()) {
+      cloned.term = rawTerm.trim();
+    }
+    if (typeof rawDef === 'string' && rawDef.trim()) {
+      cloned.definition = rawDef.trim();
+    } else if (cloned.term) {
+      // Bảo vệ trường hợp thẻ khuyết nghĩa không bị db.js từ chối rút ra câm lặng
+      cloned.definition = cloned.term;
     }
   }
 
 
-  const levelStr = (Array.isArray(level) ? level.join(',') : String(level || '')).toLowerCase();
-  if (levelStr.includes('zh') || levelStr.includes('hsk')) {
-    return 'zh';
-  }
-
-
-  const rawTerm = typeof cardOrText === 'string' ? cardOrText : String(cardOrText?.term || '');
-  if (HANZI_REGEX.test(rawTerm)) {
-    return 'zh';
-  }
-
-
-  return 'en';
+  return cloned;
 };
 
 
-/**
- * Kiểm tra rò rỉ ký tự phiên âm IPA cho Tiếng Anh
- * (Chặn IPA, [...], /.../, (/.../) nhưng bảo toàn "and/or", "he/she", "24/7", "in / on / at")
- * @param {string} text
- * @returns {boolean}
- */
-const hasEnglishPhoneticLeak = (text) => {
-  if (!text) return false;
-  return (
-    ENGLISH_IPA_CHAR_REGEX.test(text) ||
-    ENGLISH_BRACKET_REGEX.test(text) ||
-    ENGLISH_SLASH_PHONETIC_REGEX.test(text)
-  );
-};
-
-
-/**
- * Kiểm tra rò rỉ Pinyin/Tiếng Anh trong đáp án Tiếng Trung:
- * - Bắt buộc có ít nhất 1 chữ Hán.
- * - Luôn chặn nguyên âm Pinyin có dấu thanh điệu và chú thích ngoặc chứa chữ Latin
- *   ngay cả khi từ gốc là từ vay mượn chứa chữ Latin (VD: "T恤", "KTV").
- * - Nếu từ gốc không chứa chữ Latin, cấm tuyệt đối mọi ký tự ASCII a-z/A-Z.
- *
- * @param {string} text
- * @param {string} sourceTerm
- * @returns {boolean}
- */
-const hasChineseLeak = (text, sourceTerm = '') => {
-  if (!text) return true;
-  if (!HANZI_REGEX.test(text)) return true;
-  if (PINYIN_TONE_REGEX.test(text) || CHINESE_PAREN_LATIN_REGEX.test(text)) {
-    return true;
-  }
-  const sourceHasLatin = ASCII_LATIN_REGEX.test(sourceTerm);
-  if (!sourceHasLatin && ASCII_LATIN_REGEX.test(text)) {
-    return true;
-  }
-  return false;
-};
-
-
-/**
- * Phân tích phản hồi JSON từ Gemini an toàn, không bao giờ ném lỗi null-reference
- * @param {Object|null} res
- * @returns {Object|null}
- */
-const safeParseGeminiResult = (res) => {
-  if (!res || typeof res.text !== 'string' || !res.text.trim()) {
-    return null;
+// ============================================================================
+// [AUDIO WAKE LOCK] KHIÊN SƯỞI ẤM ÂM THANH LIÊN TỤC (15s WAV LOOP)
+// ============================================================================
+const createTingAudio = () => {
+  if (typeof window !== 'undefined' && window.fc_tingAudio) {
+    return window.fc_tingAudio;
   }
   try {
-    const parsed = parseAiJson(res.text);
-    return parsed && typeof parsed === 'object' ? parsed : null;
-  } catch (err) {
-    console.warn('[GameAiEngine] Lỗi giải mã JSON từ AI:', err);
+    const sampleRate = 44100;
+    const duration = 15.0; // 15 giây
+    const numSamples = Math.floor(sampleRate * duration);
+    const buffer = new ArrayBuffer(44 + numSamples * 2);
+    const view = new DataView(buffer);
+
+
+    const writeString = (dataView, offset, string) => {
+      for (let i = 0; i < string.length; i++) {
+        dataView.setUint8(offset + i, string.charCodeAt(i));
+      }
+    };
+
+
+    // Viết Header chuẩn cho file .WAV
+    writeString(view, 0, 'RIFF');
+    view.setUint32(4, 36 + numSamples * 2, true);
+    writeString(view, 8, 'WAVE');
+    writeString(view, 12, 'fmt ');
+    view.setUint32(16, 16, true); // PCM
+    view.setUint16(20, 1, true); // Format 1
+    view.setUint16(22, 1, true); // 1 Channel (Mono)
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true); // Byte rate
+    view.setUint16(32, 2, true); // Block align
+    view.setUint16(34, 16, true); // 16 bit
+    writeString(view, 36, 'data');
+    view.setUint32(40, numSamples * 2, true);
+
+
+    // Tạo sóng Sine 10Hz với âm lượng không đổi 5% (không fade-out)
+    for (let i = 0; i < numSamples; i++) {
+      const timeSec = i / sampleRate;
+      const amplitude = 32767 * 0.05;
+      const sample = amplitude * Math.sin(2 * Math.PI * 10 * timeSec);
+      view.setInt16(44 + i * 2, sample, true);
+    }
+
+
+    const blob = new Blob([buffer], { type: 'audio/wav' });
+    const audio = new Audio(URL.createObjectURL(blob));
+    audio.setAttribute('playsinline', 'true');
+    audio.setAttribute('webkit-playsinline', 'true');
+    audio.preload = 'auto';
+    audio.loop = true; // Lặp vô tận tạo lớp Khiên bền vững
+    if (typeof window !== 'undefined') {
+      window.fc_tingAudio = audio;
+    }
+    return audio;
+  } catch (e) {
+    console.warn('WAV Gen Error:', e);
     return null;
   }
 };
 
 
-export const GameAiEngine = {
-  // ============================================================================
-  // 0A. RADAR NHẬN DIỆN TRÌNH ĐỘ - Hỗ trợ Mở trần Từ vựng & HSK 3.0
-  // ============================================================================
-  _getLevelContext: function (level, isForDistractor = false, forcedLang = '') {
-    if (!level) return '';
-    const rawLevel = extractRawLevel(level);
-    if (!rawLevel) return '';
-
-
-    const mappedKey = OLD_TO_NEW_LEVEL_MAP[rawLevel] || rawLevel;
-    const isZh =
-      forcedLang === 'zh' ||
-      mappedKey.toLowerCase().includes('zh') ||
-      mappedKey.toLowerCase().includes('hsk');
-
-
-    // Ghi đè ngữ cảnh hệ thống, ép chuẩn HSK 3.0 cho Tiếng Trung
-    let contextDesc = '';
-    if (isZh) {
-      contextDesc = 'Chuẩn HSK 3.0 mới';
-    } else {
-      contextDesc =
-        IoeDataEngine && IoeDataEngine.GRADE_CONTEXTS
-          ? IoeDataEngine.GRADE_CONTEXTS[mappedKey] || 'CEFR Standard'
-          : 'CEFR Standard';
-    }
-
-
-    let instruction = `\n[TRÌNH ĐỘ]: ${mappedKey} (${contextDesc}).`;
-
-
-    // Cởi trói cho AI khi tạo bẫy
-    if (isForDistractor) {
-      instruction += ` [QUY TẮC MỞ RỘNG]: Được phép dùng từ vựng vượt cấp để tạo bẫy. TUYỆT ĐỐI KHÔNG lặp lại từ gốc khi bí ý tưởng!`;
-    } else {
-      instruction += ` Ưu tiên từ vựng/ngữ pháp chuẩn cấp độ này.`;
-    }
-    return instruction;
-  },
-
-
-  // ============================================================================
-  // 0B. LÕI ĐỊNH TUYẾN MỜ - Chắp vá Micro-prompts xuyên cấp độ nhưng khóa ngôn ngữ
-  // ============================================================================
-  _getFuzzyMicroPrompt: function (card, gameType) {
-    const pool = MICRO_PROMPTS?.[gameType] || IoeDataEngine?.MICRO_PROMPTS?.[gameType];
-    if (!pool) return '';
-
-
-    const extractPrompt = (item) => {
-      if (!item) return '';
-      return typeof item === 'object' ? item.prompt || '' : String(item);
-    };
-
-
-    const fallbacks = {
-      quiz: 'general_trap',
-      spot_mistake: 'general_mistake',
-      fill_blank: 'general_blank',
-      scramble: 'general_noise'
-    };
-    const defaultFallback = pool[fallbacks[gameType]] || '';
-
-
-    if (!card || !card.grammar_type) return extractPrompt(defaultFallback);
-
-
-    let tags = card.grammar_type;
-    if (typeof tags === 'string') {
-      tags = tags
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
-    }
-    if (!Array.isArray(tags) || tags.length === 0) return extractPrompt(defaultFallback);
-
-
-    const targetTag = String(tags[Math.floor(Math.random() * tags.length)] || '').trim();
-    if (!targetTag) return extractPrompt(defaultFallback);
-
-
-    // BƯỚC 1: EXACT MATCH
-    if (pool[targetTag]) return extractPrompt(pool[targetTag]);
-
-
-    // BƯỚC 2: LANGUAGE-AWARE FUZZY MATCH
-    const isChinese = targetTag.startsWith('zh_');
-    const isEnglish = targetTag.startsWith('eng_') || targetTag.startsWith('pre_a1_');
-    const coreTrap = targetTag.replace(/^(zh_hsk\d*_|eng_a\d+p?_|pre_a1_)/, '');
-
-
-    if (coreTrap) {
-      const possibleKeys = Object.keys(pool).filter((key) => {
-        const isCorrectLang = isChinese
-          ? key.startsWith('zh_')
-          : isEnglish
-          ? key.startsWith('eng_') || key.startsWith('pre_')
-          : true;
-        return isCorrectLang && key.includes(coreTrap);
-      });
-
-
-      if (possibleKeys.length > 0) {
-        return extractPrompt(pool[possibleKeys[Math.floor(Math.random() * possibleKeys.length)]]);
+const playTing = () => {
+  try {
+    const audio = createTingAudio();
+    if (audio) {
+      // Hủy đồng hồ hẹn giờ tắt khiên (nếu có)
+      if (typeof window !== 'undefined' && window.fc_tingAudioTimeout) {
+        clearTimeout(window.fc_tingAudioTimeout);
+        window.fc_tingAudioTimeout = null;
       }
-    }
-
-
-    // BƯỚC 3: LƯỚI CỨU HỘ CUỐI CÙNG
-    return extractPrompt(defaultFallback);
-  },
-
-
-  // ============================================================================
-  // 1. ĐỘNG CƠ TẠO LỖI SAI TRỰC TUYẾN (Spot Mistake) + GATEKEEPER HẬU KIỂM
-  // ============================================================================
-  ai_distort: async function (text, lang, type, apiKey, level = '', topic = '', card = null) {
-    const cleanText = String(text || '').trim();
-    if (!cleanText) return null;
-
-
-    const safeLang = resolveForeignLang(
-      { language: card?.language, term: cleanText || card?.term },
-      lang,
-      level
-    );
-    const safeTopic = normalizeTopic(topic);
-    const mappedLevel = normalizeLevelKey(level, safeLang);
-    const levelContext = GameAiEngine._getLevelContext(mappedLevel, false, safeLang);
-    const langStr = safeLang === 'zh' ? 'Tiếng Trung' : 'Tiếng Anh';
-
-
-    let prompt = '';
-    let schema = {};
-
-
-    let microPrompt = '';
-    if (card) {
-      if (card.grammar_type) {
-        const mp = GameAiEngine._getFuzzyMicroPrompt(card, 'spot_mistake');
-        if (mp) microPrompt = '\n[MỤC TIÊU NGỮ PHÁP ĐẶC BIỆT]: ' + mp + '\n';
-      } else {
-        microPrompt =
-          '\n[CHẨN ĐOÁN NGỮ PHÁP]: Phân tích cấu trúc cốt lõi (liên từ, giới từ, trật tự từ). Bẻ gãy chính cấu trúc đó thay vì chỉ sai từ vựng.\n';
-      }
-    }
-
-
-    let injectedRule = '';
-    if (IoeDataEngine && typeof IoeDataEngine.getMicroTierDistortionRule === 'function') {
-      const targetLang = safeLang === 'zh' ? 'Chinese' : 'English';
-      // [VER 1.1] Phân biệt đúng chế độ từ vựng ('vocab') và câu văn ('sentence')
-      const dataMode = type === 'word' ? 'vocab' : 'sentence';
-      const ruleStr = IoeDataEngine.getMicroTierDistortionRule(
-        targetLang,
-        dataMode,
-        mappedLevel,
-        safeTopic
-      );
-      if (ruleStr) injectedRule = '\n[ĐỊNH HƯỚNG BÓP MÉO]: ' + ruleStr;
-    }
-
-
-    if (type === 'word') {
-      prompt = `Ngữ cảnh: "${cleanText}". Ngôn ngữ: ${langStr}.\n`;
-      prompt += `[NHIỆM VỤ]: Tạo 1 lỗi chính tả/hình thái từ tự nhiên.` + microPrompt + injectedRule;
-      prompt +=
-        `\n[CẤU TRÚC]: Trả về 1 từ duy nhất khác từ gốc. Phần giải thích (explanation) viết bằng Tiếng Việt.` +
-        levelContext;
-      schema = {
-        type: 'OBJECT',
-        properties: {
-          wrongWord: { type: 'STRING', description: 'THE SINGLE INCORRECT WORD.' },
-          explanation: { type: 'STRING', description: 'Brief explanation in Vietnamese.' }
-        },
-        required: ['wrongWord', 'explanation']
-      };
-    } else {
-      const examples =
-        safeLang === 'zh'
-          ? `[Ý TƯỞNG BẺ GÃY]: Sai đại từ/giới tính/thì, Đổi tính từ trái nghĩa, Sai trợ từ (的/得/地)/lượng từ, Thay cụm từ biểu cảm, Nhét chữ rác.`
-          : `[Ý TƯỞNG BẺ GÃY]: Sai thì/đại từ, Tính từ trái nghĩa, Đảo lộn trật tự cụm cố định, Thêm mạo từ/giới từ thừa.`;
-
-
-      prompt = `Ngữ cảnh: "${cleanText}". Ngôn ngữ: ${langStr}.\n`;
-      prompt += `[NHIỆM VỤ]: Tạo 1 lỗi sai tinh vi (ngữ pháp/ngữ cảnh) trong câu bằng cách THAY THẾ hoặc THÊM TỪ.\n`;
-      prompt += `${examples}\n`;
-      prompt +=
-        `[TRẢ VỀ]: 'wrongWord' phải là sub-string tồn tại vật lý trong 'wrongSentence'. 'explanation' viết bằng Tiếng Việt.` +
-        microPrompt +
-        injectedRule +
-        levelContext;
-      schema = {
-        type: 'OBJECT',
-        properties: {
-          wrongSentence: {
-            type: 'STRING',
-            description: 'THE FULL SENTENCE CONTAINING THE MISTAKE.'
-          },
-          wrongWord: {
-            type: 'STRING',
-            description:
-              'THE EXACT SUBSTRING THAT IS WRONG (Must physically exist in wrongSentence).'
-          },
-          correction: {
-            type: 'STRING',
-            description: 'THE CORRECT WORD OR PHRASE TO REPLACE THE MISTAKE.'
-          },
-          explanation: { type: 'STRING', description: 'Explanation in Vietnamese.' }
-        },
-        required: ['wrongSentence', 'wrongWord', 'correction', 'explanation']
-      };
-    }
-
-
-    // Giữ nguyên lan truyền lỗi mạng / GLOBAL_PAUSE lên tầng gọi
-    const res = await callGeminiApi(prompt, schema, apiKey);
-    const parsed = safeParseGeminiResult(res);
-    if (!parsed) return null;
-
-
-    // [VER 1.1] GATEKEEPER HẬU KIỂM CHO AI_DISTORT
-    if (type === 'word') {
-      const wrongWord = String(parsed.wrongWord || '').trim();
-      const explanation = String(parsed.explanation || '').trim();
-
-
-      if (!wrongWord || normalizeCompareKey(wrongWord) === normalizeCompareKey(cleanText)) {
-        console.warn('[Gatekeeper:ai_distort] Từ bóp méo rỗng hoặc trùng từ gốc:', wrongWord);
-        return null;
-      }
-      if (safeLang === 'zh' && hasChineseLeak(wrongWord, cleanText)) {
-        console.warn('[Gatekeeper:ai_distort] Rò rỉ Pinyin/Latin ở chế độ từ:', wrongWord);
-        return null;
-      }
-      if (safeLang === 'en' && hasEnglishPhoneticLeak(wrongWord)) {
-        console.warn('[Gatekeeper:ai_distort] Rò rỉ IPA ở chế độ từ:', wrongWord);
-        return null;
-      }
-
-
-      return {
-        ...parsed,
-        wrongWord,
-        explanation: explanation || 'Lỗi chính tả/hình thái từ.'
-      };
-    }
-
-
-    const wrongSentence = String(parsed.wrongSentence || '').trim();
-    const rawWrongWord = String(parsed.wrongWord || '').trim();
-    const correction = String(parsed.correction || '').trim();
-    const explanation = String(parsed.explanation || '').trim();
-
-
-    if (!wrongSentence || !rawWrongWord) {
-      console.warn('[Gatekeeper:ai_distort] Thiếu wrongSentence hoặc wrongWord.');
-      return null;
-    }
-
-
-    if (normalizeCompareKey(wrongSentence) === normalizeCompareKey(cleanText)) {
-      console.warn('[Gatekeeper:ai_distort] Câu trả về không có thay đổi so với câu gốc.');
-      return null;
-    }
-
-
-    // Tự phục hồi độ khớp hoa/thường để đảm bảo wrongWord luôn tồn tại vật lý trong wrongSentence
-    let exactWrongWord = rawWrongWord;
-    if (!wrongSentence.includes(exactWrongWord)) {
-      const lowerIdx = wrongSentence.toLowerCase().indexOf(exactWrongWord.toLowerCase());
-      if (lowerIdx !== -1) {
-        exactWrongWord = wrongSentence.slice(lowerIdx, lowerIdx + exactWrongWord.length);
-      } else {
-        console.warn(
-          '[Gatekeeper:ai_distort] wrongWord không tồn tại vật lý trong wrongSentence:',
-          rawWrongWord
-        );
-        return null;
-      }
-    }
-
-
-    if (correction && normalizeCompareKey(exactWrongWord) === normalizeCompareKey(correction)) {
-      console.warn('[Gatekeeper:ai_distort] wrongWord trùng khớp với correction:', exactWrongWord);
-      return null;
-    }
-
-
-    if (safeLang === 'zh' && hasChineseLeak(wrongSentence, cleanText)) {
-      console.warn('[Gatekeeper:ai_distort] Rò rỉ Pinyin/Latin trong câu sai:', wrongSentence);
-      return null;
-    }
-    if (safeLang === 'en' && hasEnglishPhoneticLeak(wrongSentence)) {
-      console.warn('[Gatekeeper:ai_distort] Rò rỉ IPA trong câu sai:', wrongSentence);
-      return null;
-    }
-
-
-    return {
-      ...parsed,
-      wrongSentence,
-      wrongWord: exactWrongWord,
-      correction,
-      explanation: explanation || 'Lỗi ngữ pháp hoặc ngữ cảnh trong câu.'
-    };
-  },
-
-
-  // ============================================================================
-  // 2. ĐỘNG CƠ TẠO ĐÁP ÁN NHIỄU (Quiz Options) — KỶ LUẬT THÉP & ĐỘC BẢN 2 CHIỀU
-  // ============================================================================
-  ai_generateOptions: async function (
-    cardOrText,
-    distractorLang,
-    type,
-    apiKey,
-    count = 3,
-    level = '',
-    topic = '',
-    isReverse = false
-  ) {
-    let term = '';
-    let definition = '';
-    if (typeof cardOrText === 'string') {
-      term = cardOrText.trim();
-      definition = '';
-    } else if (cardOrText && typeof cardOrText === 'object') {
-      term = String(cardOrText.term || '').trim();
-      definition = String(cardOrText.definition || '').trim();
-    }
-
-
-    if (!term) return [];
-
-
-    const safeCount = Math.max(1, Number(count) || 3);
-
-
-    // Nhận diện song ngữ 4 tầng, tuyệt đối không nhận nhầm Tiếng Trung thành Tiếng Anh
-    const foreignLang = resolveForeignLang(cardOrText, distractorLang, level);
-    const mappedLevel = normalizeLevelKey(level, foreignLang);
-    const safeTopic = normalizeTopic(topic);
-    const foreignLangName = foreignLang === 'zh' ? 'TIẾNG TRUNG' : 'TIẾNG ANH';
-    const foreignLangEngName = foreignLang === 'zh' ? 'CHINESE' : 'ENGLISH';
-
-
-    // LẮP RÁP PROMPT: CHỈ THỊ TRỰC DIỆN
-    let prompt = `[SYSTEM]: QUIZ GENERATOR ENGINE.\n`;
-    prompt += `[SOURCE]:\n`;
-    prompt += `- Original (${foreignLangName}): "${term}"\n`;
-    if (definition) {
-      prompt += `- Meaning (Vietnamese): "${definition}"\n`;
-    }
-    if (safeTopic) {
-      prompt += `- Topic: "${safeTopic}"\n`;
-    }
-    prompt += `\n[TASK]:\n`;
-    prompt += `STEP 1: Generate ${safeCount} traps ('foreignText') in ${foreignLangName} based on Original.\n`;
-    prompt += `STEP 2: Translate the exact meaning of those ${safeCount} traps into Vietnamese ('vietnameseText'). DO NOT re-translate the original word.\n\n`;
-
-
-    // KỶ LUẬT THÉP (FIREWALL + EQUALITY CHECK)
-    prompt += `[STRICT CONSTRAINTS - MUST OBEY]:\n`;
-    if (foreignLang === 'zh') {
-      prompt += `1. NO SEMANTIC BLEEDING: 'foreignText' MUST ONLY contain REAL CHINESE (Hanzi) words. NO ENGLISH translation of morphemes.\n`;
-    } else {
-      prompt += `1. NO SEMANTIC BLEEDING: 'foreignText' MUST ONLY contain REAL ENGLISH words. NO Vietnamese text inside 'foreignText'.\n`;
-    }
-    if (definition) {
-      prompt += `2. 2D UNIQUENESS: All ${safeCount} 'foreignText' MUST NOT EQUAL "${term}". All ${safeCount} 'vietnameseText' MUST NOT EQUAL "${definition}". No typo bypassing.\n`;
-    } else {
-      prompt += `2. 2D UNIQUENESS: All ${safeCount} 'foreignText' MUST NOT EQUAL "${term}". All ${safeCount} 'vietnameseText' MUST translate the trap, NOT "${term}". No typo bypassing.\n`;
-    }
-    prompt += `3. DICTIONARY WORDS ONLY: Must use REAL, EXISTING ${foreignLangEngName} words.\n`;
-    prompt += `4. ENCODING: Return raw UTF-8 characters. NO \\uXXXX escaping.\n`;
-    if (foreignLang === 'zh') {
-      prompt += `5. CHARACTER FIREWALL: 'foreignText' MUST BE 100% AUTHENTIC CHINESE CHARACTERS (Hanzi). STRICTLY PROHIBITED to output Pinyin or Romanized spellings. Any output containing a-z letters will cause system failure.\n`;
-    } else {
-      prompt += `5. CHARACTER FIREWALL: 'foreignText' MUST BE STANDARD ENGLISH WORDS. STRICTLY PROHIBITED to output phonetic transcriptions (IPA) or pronunciation guides (like /.../ or [...]).\n`;
-    }
-    if (definition) {
-      prompt += `6. ASSERTION: ASSERT(foreignText !== "${term}" && vietnameseText !== "${definition}"). IF MATCH, REGENERATE.\n\n`;
-    } else {
-      prompt += `6. ASSERTION: ASSERT(foreignText !== "${term}"). IF MATCH, REGENERATE.\n\n`;
-    }
-
-
-    // DYNAMIC MIMICRY: Bắt chước cấu trúc dấu phân tách của nghĩa gốc để tránh lộ đáp án
-    if (type !== 'sentence' && definition) {
-      const detectedSeparators = [];
-      if (definition.includes(',')) detectedSeparators.push('comma (,)');
-      if (definition.includes('/')) detectedSeparators.push('slash (/)');
-      if (definition.includes(';')) detectedSeparators.push('semicolon (;)');
-      if (detectedSeparators.length > 0) {
-        prompt += `[STRUCTURAL MIMICRY]: Original translation contains ${detectedSeparators.join(
-          ' and '
-        )}. 'vietnameseText' MUST precisely mimic this format.\n\n`;
-      }
-    }
-
-
-    if (type === 'sentence') {
-      prompt += `[TẠO BẪY CÂU]: Giữ nguyên 70-80% từ vựng gốc. Đổi 1-2 tiểu tiết cốt lõi (chủ thể, hành động, từ trái nghĩa).\n`;
-    } else {
-      prompt += `[ROUTING]:\n`;
-      let primaryTrap = null;
-      let fallbackTraps = '';
-      if (foreignLang === 'zh') {
-        const termLen = Array.from(term).length;
-        const traps =
-          termLen === 1
-            ? [
-                { name: 'Đồng âm/Pinyin', desc: 'Đọc giống nhưng viết khác, nghĩa khác.' },
-                { name: 'Chung gốc/Bán đồng hình', desc: 'Chung 1 nét/bộ thủ nhưng khác nghĩa.' },
-                { name: 'Trái nghĩa', desc: 'Nghĩa đối lập hoàn toàn.' },
-                { name: 'Cùng Chủ đề', desc: 'Cùng loại sự vật nhưng sai đối tượng.' }
-              ]
-            : [
-                {
-                  name: 'Từ ghép chung gốc (Shared Morpheme)',
-                  desc: 'Tìm từ ghép khác chung 1 chữ Hán. BẮT BUỘC CHỮ CÒN LẠI KHÁC NHAU. (Gốc AB -> Bẫy AC/CB. CẤM trả về AB).'
-                },
-                { name: 'Trái nghĩa', desc: 'Nghĩa đối lập hoàn toàn.' },
-                {
-                  name: 'Cùng Chủ đề',
-                  desc: 'Cùng loại sự vật/hành động nhưng sai đối tượng.'
-                }
-              ];
-
-
-        const selectedIdx = Math.floor(Math.random() * traps.length);
-        primaryTrap = traps[selectedIdx];
-        const fallbacks = traps.filter((_, idx) => idx !== selectedIdx);
-        fallbackTraps = fallbacks.map((item) => `- ${item.name}: ${item.desc}`).join('\n');
-        prompt += `> BƯỚC 1 (ƯU TIÊN): Dùng bẫy [${primaryTrap.name}] (${primaryTrap.desc}).\n`;
-        prompt += `> BƯỚC 2 (ANTI-BLOCK): Nếu bí, lập tức chuyển sang các bẫy dự phòng:\n${fallbackTraps}\n`;
-        prompt += `> BƯỚC 3: Được phép trộn nhiều loại bẫy, miễn là CÓ THẬT và KHÁC TỪ GỐC.\n`;
-      } else {
-        const traps = [
-          { name: 'Lookalikes', desc: 'Sai 1-2 ký tự hoặc phát âm giống.' },
-          { name: 'Morphology', desc: 'Cùng gốc nhưng sai tiền/hậu tố.' },
-          { name: 'Logic', desc: 'Trái nghĩa hoặc cùng chủ đề.' }
-        ];
-        const selectedIdx = Math.floor(Math.random() * traps.length);
-        primaryTrap = traps[selectedIdx];
-        const fallbacks = traps.filter((_, idx) => idx !== selectedIdx);
-        fallbackTraps = fallbacks.map((item) => `- ${item.name}: ${item.desc}`).join('\n');
-        prompt += `> BƯỚC 1 (ƯU TIÊN): Dùng bẫy [${primaryTrap.name}] (${primaryTrap.desc}).\n`;
-        prompt += `> BƯỚC 2: Nếu bí, dùng bẫy dự phòng:\n${fallbackTraps}\n`;
-      }
-    }
-
-
-    prompt += `\n[THOUGHT PROCESS]: Điền trường 'reasoning' TRƯỚC TIÊN (Ghi 1 câu ngắn gọn logic tạo bẫy).\n`;
-
-
-    if (cardOrText && typeof cardOrText === 'object' && cardOrText.grammar_type) {
-      const mp = GameAiEngine._getFuzzyMicroPrompt(cardOrText, 'quiz');
-      if (mp) prompt += `\n[TARGET GRAMMAR]: ${mp}\n`;
-    }
-    prompt += GameAiEngine._getLevelContext(mappedLevel, true, foreignLang);
-
-
-    // Tách riêng mô tả Schema theo ngôn ngữ để tránh mâu thuẫn tự triệt tiêu
-    const foreignFieldDesc =
-      foreignLang === 'zh'
-        ? `Trap in CHINESE (Hanzi only). MUST NOT BE "${term}". STRICTLY NO PINYIN OR ENGLISH. STRICTLY NO UNICODE ESCAPING.`
-        : `Trap in ENGLISH. MUST NOT BE "${term}". STRICTLY NO IPA OR PHONETIC GUIDES.`;
-
-
-    const vietnameseFieldDesc = definition
-      ? `Vietnamese translation of foreignText. MUST NOT BE "${definition}". MUST HAVE ACCENTS.`
-      : `Accurate Vietnamese translation of foreignText (NOT "${term}"). MUST HAVE ACCENTS.`;
-
-
-    const itemsSchema = {
-      type: 'OBJECT',
-      properties: {
-        foreignText: { type: 'STRING', description: foreignFieldDesc },
-        vietnameseText: { type: 'STRING', description: vietnameseFieldDesc }
-      },
-      required: ['foreignText', 'vietnameseText']
-    };
-
-
-    const schema = {
-      type: 'OBJECT',
-      properties: {
-        reasoning: { type: 'STRING', description: 'Short reasoning logic.' },
-        distractors: { type: 'ARRAY', items: itemsSchema }
-      },
-      required: ['reasoning', 'distractors']
-    };
-
-
-    const res = await callGeminiApi(prompt, schema, apiKey);
-    const parsed = safeParseGeminiResult(res);
-    const dists = Array.isArray(parsed?.distractors) ? parsed.distractors : [];
-
-
-    // ============================================================================
-    // TRẠM GÁC HẬU KỲ & BỘ LỌC ĐỘC BẢN 2 CHIỀU (POST-PROCESSING GATEKEEPER - NFC)
-    // ============================================================================
-    const validDistractors = [];
-    const textSet = new Set([normalizeCompareKey(term)]);
-    const meaningSet = new Set(definition ? [normalizeCompareKey(definition)] : []);
-
-
-    for (const d of dists) {
-      if (!d || typeof d !== 'object') continue;
-      const fText = String(d.foreignText || '').trim();
-      const vText = String(d.vietnameseText || '').trim();
-      if (!fText || !vText) continue;
-
-
-      // 1. Kiểm tra rò rỉ ngôn ngữ & phiên âm (Language & Phonetic Firewall)
-      if (foreignLang === 'zh' && hasChineseLeak(fText, term)) {
-        console.warn('[Gatekeeper] Phát hiện rò rỉ Pinyin/Tiếng Anh. Chém bỏ bẫy:', fText);
-        continue;
-      }
-      if (foreignLang === 'en' && hasEnglishPhoneticLeak(fText)) {
-        console.warn('[Gatekeeper] Phát hiện rò rỉ phiên âm IPA. Chém bỏ bẫy:', fText);
-        continue;
-      }
-
-
-      // 2. Kiểm tra Độc bản 2 chiều chuẩn Unicode NFC (2D Uniqueness Check)
-      const fKey = normalizeCompareKey(fText);
-      const vKey = normalizeCompareKey(vText);
-      if (!fKey || !vKey || textSet.has(fKey) || meaningSet.has(vKey)) {
-        console.warn(
-          '[Gatekeeper] Phát hiện trùng lặp Cột mốc/Nội bộ. Chém bỏ bẫy:',
-          fText,
-          '|',
-          vText
-        );
-        continue;
-      }
-
-
-      // Vượt qua trạm gác -> Lưu vào danh sách an toàn và cập nhật Set
-      textSet.add(fKey);
-      meaningSet.add(vKey);
-      validDistractors.push({ foreignText: fText, vietnameseText: vText });
-    }
-
-
-    // 3. Ánh xạ đầu ra theo chiều hỏi (Sự khuyết thiếu sẽ được GameOfflineEngine bù đắp)
-    return validDistractors
-      .map((d) => {
-        if (!isReverse) {
-          return { text: d.vietnameseText, meaning: d.foreignText };
+      // Chỉ gọi play() nếu luồng đang ngủ. Nếu đang mở thì tái sử dụng!
+      if (audio.paused) {
+        audio.currentTime = 0;
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(() => {
+            /* Bỏ qua lỗi Auto-play của trình duyệt */
+          });
         }
-        return { text: d.foreignText, meaning: d.vietnameseText };
-      })
-      .slice(0, safeCount);
-  },
-
-
-  // ============================================================================
-  // 3. ĐỘNG CƠ SINH RÁC TRỰC TUYẾN (Scramble Noise) + GATEKEEPER HẬU KIỂM
-  // ============================================================================
-  ai_getNoise: async function (
-    correctText,
-    lang,
-    type,
-    apiKey,
-    count = 2,
-    level = '',
-    topic = '',
-    card = null
-  ) {
-    const cleanText = String(correctText || '').trim();
-    if (!cleanText) return [];
-
-
-    const safeCount = Math.max(1, Number(count) || 2);
-    const safeLang = resolveForeignLang(
-      { language: card?.language, term: cleanText || card?.term },
-      lang,
-      level
-    );
-    const safeTopic = normalizeTopic(topic);
-    const mappedLevel = normalizeLevelKey(level, safeLang);
-
-
-    let prompt = '';
-    let microPrompt = '';
-    if (card) {
-      if (card.grammar_type) {
-        const mp = GameAiEngine._getFuzzyMicroPrompt(card, 'scramble');
-        if (mp) microPrompt = '\n[TARGET GRAMMAR]: ' + mp + '\n';
-      } else {
-        microPrompt =
-          '\n[CHẨN ĐOÁN NGỮ PHÁP]: Phân tích cấu trúc cốt lõi. Sinh từ rác có thể phá vỡ cấu trúc đó (VD: thừa giới từ, sai liên từ).\n';
       }
     }
-
-
-    if (type === 'word') {
-      if (safeLang === 'zh') {
-        prompt = `[NHIỆM VỤ]: Tạo ${safeCount} chữ Hán đơn ngẫu nhiên (cùng bộ thủ hoặc đồng âm, KHÔNG nằm trong từ gốc) với từ gốc: "${cleanText}" để làm nhiễu. CHỈ TRẢ VỀ CHỮ HÁN. BẮT BUỘC Raw UTF-8.`;
-      } else {
-        prompt = `[NHIỆM VỤ]: Tạo ${safeCount} chữ cái in thường (a-z) ngẫu nhiên làm nhiễu cho từ gốc: "${cleanText}".`;
-      }
-    } else {
-      const langStr = safeLang === 'zh' ? 'Tiếng Trung' : 'Tiếng Anh';
-      prompt = `Ngữ cảnh: "${cleanText}". Ngôn ngữ: ${langStr}.\n`;
-      prompt += `[NHIỆM VỤ]: Tạo ${safeCount} từ vựng rác làm nhiễu (KHÔNG trùng với các từ đã có trong câu gốc).\n`;
-      prompt += `[CHIẾN LƯỢC]: CÙNG TỪ LOẠI với các từ trong câu nhưng sai ngữ cảnh, để khi ghép vào sẽ tạo lỗi ngữ pháp.\n\n`;
-      if (safeLang === 'zh') prompt += `BẮT BUỘC Raw UTF-8, không dùng \\uXXXX.\n`;
-    }
-
-
-    let injectedRule = '';
-    if (IoeDataEngine && typeof IoeDataEngine.getMicroTierNoiseRule === 'function') {
-      const targetLang = safeLang === 'zh' ? 'Chinese' : 'English';
-      const dataMode = type === 'sentence' ? 'sentence' : 'vocab';
-      const ruleStr = IoeDataEngine.getMicroTierNoiseRule(
-        targetLang,
-        dataMode,
-        mappedLevel,
-        safeTopic
-      );
-      if (ruleStr) injectedRule = '\n[ĐỊNH HƯỚNG RÁC]: ' + ruleStr;
-    }
-
-
-    prompt += microPrompt;
-    prompt += injectedRule;
-    prompt += GameAiEngine._getLevelContext(mappedLevel, false, safeLang);
-
-
-    const schema = {
-      type: 'OBJECT',
-      properties: {
-        noise: {
-          type: 'ARRAY',
-          items: { type: 'STRING' },
-          description: 'ARRAY OF RANDOM OR MISLEADING WORDS/CHARACTERS.'
-        }
-      },
-      required: ['noise']
-    };
-
-
-    const res = await callGeminiApi(prompt, schema, apiKey);
-    const parsed = safeParseGeminiResult(res);
-    const rawNoise = Array.isArray(parsed?.noise) ? parsed.noise : [];
-
-
-    // [VER 1.1] GATEKEEPER HẬU KIỂM CHO AI_GETNOISE
-    const normalizedSource = normalizeCompareKey(cleanText);
-    const existingTokenSet = new Set();
-
-
-    if (safeLang === 'zh') {
-      Array.from(cleanText).forEach((ch) => {
-        const cleaned = normalizeCompareKey(ch.replace(EDGE_PUNCTUATION_REGEX, ''));
-        if (cleaned) existingTokenSet.add(cleaned);
-      });
-      cleanText.split(/\s+/).forEach((seg) => {
-        const cleaned = normalizeCompareKey(seg.replace(EDGE_PUNCTUATION_REGEX, ''));
-        if (cleaned) existingTokenSet.add(cleaned);
-      });
-    } else if (type === 'word') {
-      Array.from(cleanText).forEach((ch) => {
-        const cleaned = normalizeCompareKey(ch);
-        if (cleaned) existingTokenSet.add(cleaned);
-      });
-    } else {
-      cleanText.split(/\s+/).forEach((word) => {
-        const cleaned = normalizeCompareKey(word.replace(EDGE_PUNCTUATION_REGEX, ''));
-        if (cleaned) existingTokenSet.add(cleaned);
-      });
-    }
-
-
-    const seenNoise = new Set();
-    const validNoise = [];
-
-
-    for (const item of rawNoise) {
-      if (validNoise.length >= safeCount) break;
-      let token = item !== null && item !== undefined ? String(item).trim() : '';
-      if (!token) continue;
-
-
-      if (safeLang === 'zh') {
-        if (hasChineseLeak(token, cleanText)) continue;
-        if (type === 'word' && Array.from(token).length !== 1) continue;
-      } else if (type === 'word') {
-        token = token.toLowerCase();
-        if (!/^[a-z]$/.test(token)) continue;
-      } else if (hasEnglishPhoneticLeak(token)) {
-        continue;
-      }
-
-
-      const stripped = token.replace(EDGE_PUNCTUATION_REGEX, '') || token;
-      const tokenKey = normalizeCompareKey(stripped);
-      if (!tokenKey) continue;
-
-
-      if (existingTokenSet.has(tokenKey) || seenNoise.has(tokenKey)) continue;
-      if (safeLang === 'zh' && type !== 'word' && normalizedSource.includes(tokenKey)) {
-        continue;
-      }
-
-
-      seenNoise.add(tokenKey);
-      validNoise.push(token);
-    }
-
-
-    return validNoise.slice(0, safeCount);
-  },
-
-
-  // ============================================================================
-  // 4. ĐỘNG CƠ ĐỤC LỖ TRỰC TUYẾN (Cloze Mask) + TỰ PHỤC HỒI & GATEKEEPER HẬU KIỂM
-  // ============================================================================
-  ai_mask: async function (
-    text,
-    hintFallback,
-    lang,
-    apiKey,
-    level = '',
-    topic = '',
-    card = null
-  ) {
-    const cleanText = String(text || '').trim();
-    if (!cleanText) return null;
-
-
-    const safeLang = resolveForeignLang(
-      { language: card?.language, term: cleanText || card?.term },
-      lang,
-      level
-    );
-    const safeTopic = normalizeTopic(topic);
-    const mappedLevel = normalizeLevelKey(level, safeLang);
-    const targetLang = safeLang === 'zh' ? 'Chinese' : 'English';
-    const langName = safeLang === 'zh' ? 'Tiếng Trung' : 'Tiếng Anh';
-
-
-    const rand = Math.floor(Math.random() * 100);
-    let strategy = 1;
-    if (rand >= 35 && rand < 70) strategy = 2;
-    else if (rand >= 70) strategy = 3;
-
-
-    let microPrompt = '';
-    if (card) {
-      if (card.grammar_type) {
-        const mp = GameAiEngine._getFuzzyMicroPrompt(card, 'fill_blank');
-        if (mp) {
-          microPrompt = '\n[TARGET GRAMMAR]: ' + mp + '\n';
-          strategy = 2;
-        }
-      } else {
-        microPrompt =
-          '\n[CHẨN ĐOÁN NGỮ PHÁP]: Ưu tiên đục lỗ vị trí ngữ pháp then chốt (liên từ, giới từ, bổ ngữ) thay vì đục lỗ danh/động từ thông thường.\n';
-      }
-    }
-
-
-    let prompt = `[SYSTEM]: CLOZE TEST GENERATOR.\n`;
-    prompt += `[NHIỆM VỤ]: Tạo câu hỏi ĐIỀN TỪ VÀO CHỖ TRỐNG từ gốc: "${cleanText}". Nghĩa tham khảo: "${
-      hintFallback || ''
-    }". Ngôn ngữ đích: ${langName}.\n\n`;
-
-
-    if (strategy === 1) {
-      prompt += `[CHIẾN LƯỢC 1: COLLOCATIONS]\n`;
-      prompt += `- Chỉ thị: Đục lỗ MỘT TỪ DUY NHẤT cấu thành nên một cụm từ cố định.\n`;
-      prompt += `- Nhiễu: 3 đáp án nhiễu CÙNG TỪ LOẠI mà học viên dễ nhầm do thói quen dịch word-by-word.\n`;
-      prompt += `- Gợi ý (hint): Dịch nghĩa ngắn gọn của TỪ BỊ ĐỤC LỖ sang tiếng Việt.\n`;
-    } else if (strategy === 2) {
-      prompt += `[CHIẾN LƯỢC 2: GRAMMAR & COHESION]\n`;
-      prompt += `- Chỉ thị: Đục lỗ vị trí ngữ pháp (Giới từ, Mạo từ, Đại từ, Từ nối, Chia thì).\n`;
-      prompt += `- Nhiễu: 3 đáp án nhiễu CÙNG TỪ LOẠI nhưng sai logic/cấu trúc.\n`;
-      prompt += `- Gợi ý (hint): Giải thích ngắn gọn bằng Tiếng Việt tại sao dùng từ này (VD: "Đi với danh từ X").\n`;
-    } else {
-      prompt += `[CHIẾN LƯỢC 3: PARAPHRASING]\n`;
-      prompt += `- Chỉ thị: Đục lỗ Tính từ, Động từ, hoặc Danh từ cốt lõi.\n`;
-      prompt += `- Nhiễu: 3 từ hợp lệ ngữ pháp nhưng sai ý nghĩa ngữ cảnh.\n`;
-      prompt += `- Gợi ý (hint): KHÔNG DỊCH TIẾNG VIỆT. Viết lại (paraphrase) từ bị đục bằng từ đồng nghĩa (synonyms) BẰNG CHÍNH NGÔN NGỮ ĐÍCH (${langName}).\n`;
-    }
-
-
-    prompt += `\n[QUY TẮC ĐỤC LỖ]:\n`;
-    prompt += `- Thay thế từ bị đục bằng CHÍNH XÁC: "[__________]" (10 dấu gạch dưới).\n`;
-    prompt += `- Giữ nguyên dấu câu xung quanh.\n`;
-    if (safeLang === 'zh') prompt += `- ABSOLUTELY NO UNICODE ESCAPING. Return raw UTF-8.\n`;
-
-
-    let injectedRule = '';
-    if (IoeDataEngine && typeof IoeDataEngine.getMicroTierClozeRule === 'function') {
-      const dataMode = 'sentence';
-      const ruleStr = IoeDataEngine.getMicroTierClozeRule(
-        targetLang,
-        dataMode,
-        mappedLevel,
-        safeTopic
-      );
-      if (ruleStr) injectedRule = '\n[ĐỊNH HƯỚNG BỔ SUNG]: ' + ruleStr;
-    }
-
-
-    prompt += microPrompt;
-    prompt += injectedRule;
-    prompt += GameAiEngine._getLevelContext(mappedLevel, false, safeLang);
-
-
-    const schema = {
-      type: 'OBJECT',
-      properties: {
-        displaySentence: {
-          type: 'STRING',
-          description:
-            'THE SENTENCE WITH EXACTLY 10 UNDERSCORES [__________] REPLACING THE TARGET WORD.'
-        },
-        targetWord: {
-          type: 'STRING',
-          description: 'THE EXACT CORRECT WORD REMOVED FROM THE SENTENCE.'
-        },
-        distractors: {
-          type: 'ARRAY',
-          items: { type: 'STRING' },
-          description: 'ARRAY OF 3 WRONG OPTIONS. MUST BE REAL WORDS.'
-        },
-        hint: { type: 'STRING', description: 'Hint in Vietnamese or paraphrased target language.' }
-      },
-      required: ['displaySentence', 'targetWord', 'distractors', 'hint']
-    };
-
-
-    const res = await callGeminiApi(prompt, schema, apiKey);
-    const parsed = safeParseGeminiResult(res);
-    if (!parsed) return null;
-
-
-    // [VER 1.1] TỰ PHỤC HỒI & GATEKEEPER HẬU KIỂM CHO AI_MASK
-    let displaySentence = String(parsed.displaySentence || '').trim();
-    displaySentence = displaySentence.replace(/\[[\s_]{3,}\]/g, '[__________]');
-    if (!displaySentence.includes('[__________]') && /_{4,}/.test(displaySentence)) {
-      displaySentence = displaySentence.replace(/_{4,}/, '[__________]');
-    }
-
-
-    const targetWord = String(parsed.targetWord || '').trim();
-    const hint = String(parsed.hint || '').trim() || String(hintFallback || '').trim();
-
-
-    if (!displaySentence || !displaySentence.includes('[__________]') || !targetWord) {
-      console.warn(
-        '[Gatekeeper:ai_mask] Câu đục lỗ thiếu [__________] hoặc rỗng targetWord:',
-        displaySentence
-      );
-      return null;
-    }
-
-
-    if (safeLang === 'zh' && hasChineseLeak(targetWord, cleanText)) {
-      console.warn('[Gatekeeper:ai_mask] targetWord Tiếng Trung rò rỉ Pinyin/Latin:', targetWord);
-      return null;
-    }
-    if (safeLang === 'en' && hasEnglishPhoneticLeak(targetWord)) {
-      console.warn('[Gatekeeper:ai_mask] targetWord Tiếng Anh rò rỉ IPA:', targetWord);
-      return null;
-    }
-
-
-    const rawDistractors = Array.isArray(parsed.distractors) ? parsed.distractors : [];
-    const seenKeys = new Set([normalizeCompareKey(targetWord)]);
-    const validDistractors = [];
-
-
-    for (const item of rawDistractors) {
-      if (validDistractors.length >= 3) break;
-      const dist = item !== null && item !== undefined ? String(item).trim() : '';
-      if (!dist) continue;
-
-
-      if (safeLang === 'zh' && hasChineseLeak(dist, cleanText)) continue;
-      if (safeLang === 'en' && hasEnglishPhoneticLeak(dist)) continue;
-
-
-      const distKey = normalizeCompareKey(dist);
-      if (!distKey || seenKeys.has(distKey)) continue;
-
-
-      seenKeys.add(distKey);
-      validDistractors.push(dist);
-    }
-
-
-    return {
-      ...parsed,
-      displaySentence,
-      targetWord,
-      distractors: validDistractors,
-      hint
-    };
+  } catch (e) {
+    console.warn('Play Ting Error:', e);
   }
 };
+
+
+// Hàm đóng khiên an toàn bằng kỹ thuật Debounce 3.5 giây
+const releaseShieldDebounced = () => {
+  if (typeof window === 'undefined') return;
+  if (window.fc_tingAudioTimeout) clearTimeout(window.fc_tingAudioTimeout);
+  window.fc_tingAudioTimeout = setTimeout(() => {
+    window.fc_tingAudioTimeout = null;
+    if (window.fc_tingAudio) window.fc_tingAudio.pause();
+  }, 3500);
+};
+
+
+// Cắt khiên tức thời (dùng khi người dùng chủ động bấm Dừng / Mute / Unmount)
+const stopShieldImmediately = () => {
+  if (typeof window === 'undefined') return;
+  if (window.fc_tingAudioTimeout) {
+    clearTimeout(window.fc_tingAudioTimeout);
+    window.fc_tingAudioTimeout = null;
+  }
+  if (window.fc_tingAudio) {
+    try {
+      window.fc_tingAudio.pause();
+    } catch {
+      // Bỏ qua an toàn
+    }
+  }
+};
+
+
+// ============================================================================
+// MAIN HOOK: useAppLogic
+// ============================================================================
+export const useAppLogic = (core) => {
+  // 1. LẤY CORE STATE & STABLE SETTERS
+  const {
+    viewMode,
+    lang,
+    uiLang,
+    cards,
+    notebook,
+    apiKey,
+    currentCardIndex,
+    isFlipped,
+    isAutoPlaying,
+    isShuffle,
+    isAutoMode,
+    isFlipLocked,
+    settings,
+    voices,
+    globalRetryBag,
+    aiHarvestPool,
+    isDbReady,
+    // Setters ổn định từ useState (không bao giờ đổi tham chiếu khi re-render)
+    setToast,
+    setIsFlipped,
+    setIsContentHidden,
+    setCards,
+    setCurrentCardIndex,
+    setIsAutoPlaying,
+    setIsAutoMode,
+    setIsBatterySaverMode,
+    setIsMuted,
+    setIsShuffle,
+    setGlobalRetryBag,
+    setIncorrectList,
+    setShowIncorrectModal,
+    setIsStudyingNotebook,
+    setShowNotebook,
+    setStudySourceName,
+    setViewMode,
+    setShowHelp,
+    setWordSelectTarget,
+    setShowHanziSelector,
+    setCurrentHanziChar,
+    setShowHanziWriter,
+    setIsFlipLocked,
+    setShowSettings,
+    setShowAiConfigModal,
+    setShowApiKeyModal,
+    setShowWordSelect,
+    setShowSaveLoadModal,
+    setShowExamPoolManager,
+    setIsGamePlaying,
+    // Refs ổn định
+    audioTimeoutRef,
+    autoPlayTimeoutRef
+  } = core;
+
+
+  // Derived State
+  const mainColor = lang === 'zh' ? 'red' : 'sky';
+  const isCurrentCardInNotebookDerived = useMemo(() => {
+    const currentTermKey = normalizeKey(cards?.[currentCardIndex]?.term);
+    if (!currentTermKey || !Array.isArray(notebook)) return false;
+    return notebook.some((n) => normalizeKey(n?.term) === currentTermKey);
+  }, [cards, currentCardIndex, notebook]);
+
+
+  // Ref nội bộ quản lý phiên đọc đơn điệu, dừng chủ động, timer điều hướng & hàng đợi ghi Túi Nháp
+  const speakSessionIdRef = useRef(0);
+  const explicitStopRef = useRef(false);
+  const navTimeoutsRef = useRef(new Set());
+  const pendingRetryPersistMapRef = useRef(new Map());
+  const prevViewModeRef = useRef(viewMode);
+
+
+  // Theo dõi trạng thái mở Modal qua Ref để không phải gỡ/gắn lại keydown listener liên tục
+  const isAnyModalOpenRef = useRef(false);
+  isAnyModalOpenRef.current = Boolean(
+    core.showSettings ||
+      core.showApiKeyModal ||
+      core.showNotebook ||
+      core.showManual ||
+      core.showLinkManager ||
+      core.showWordSelect ||
+      core.showMastered ||
+      core.showIncorrectModal ||
+      core.showHelp ||
+      core.showHanziSelector ||
+      core.showHanziWriter ||
+      core.showSaveLoadModal ||
+      core.showAiChat ||
+      core.showExamPoolManager ||
+      core.showAiConfigModal
+  );
+
+
+  // [VÁ LỖI ĐỨT CÁP THU HOẠCH] Proxy Pattern truyền hàm thu hoạch vào useExamLogic
+  const handleAutoHarvestToPoolRef = useRef(null);
+  const harvestProxy = useCallback(
+    (item, targetLang, level, topic, typeToHarvest) => {
+      if (handleAutoHarvestToPoolRef.current) {
+        handleAutoHarvestToPoolRef.current(
+          item,
+          targetLang,
+          level,
+          topic,
+          typeToHarvest
+        );
+      }
+    },
+    []
+  );
+
+
+  // [MOCK TEST ERA] Khởi tạo ExamLogic tại cấp cao nhất để giữ State khi chuyển Tab
+  const examLogic = useExamLogic(apiKey, harvestProxy);
+
+
+  // Ref Isolation Pattern: Phong ấn State để dùng trong các hàm Async (Đồng bộ tức thời 0ms)
+  const latestStateRef = useRef({
+    cards,
+    currentCardIndex,
+    isFlipped,
+    settings,
+    isAutoPlaying,
+    isFlipLocked,
+    isAutoMode,
+    notebook,
+    incorrectList: core.incorrectList,
+    mastered: core.mastered,
+    isStudyingNotebook: core.isStudyingNotebook,
+    studySourceName: core.studySourceName,
+    isMuted: core.isMuted,
+    isShuffle,
+    isBatterySaverMode: core.isBatterySaverMode,
+    aiHarvestPool,
+    globalRetryBag,
+    isDbReady,
+    lang
+  });
+
+
+  latestStateRef.current = {
+    cards,
+    currentCardIndex,
+    isFlipped,
+    settings,
+    isAutoPlaying,
+    isFlipLocked,
+    isAutoMode,
+    notebook,
+    incorrectList: core.incorrectList,
+    mastered: core.mastered,
+    isStudyingNotebook: core.isStudyingNotebook,
+    studySourceName: core.studySourceName,
+    isMuted: core.isMuted,
+    isShuffle,
+    isBatterySaverMode: core.isBatterySaverMode,
+    aiHarvestPool,
+    globalRetryBag,
+    isDbReady,
+    lang
+  };
+
+
+  // Helper quản lý bộ hẹn giờ điều hướng thẻ 150ms (chống rò rỉ & stale snapshot)
+  const clearPendingNavTimeouts = useCallback(() => {
+    navTimeoutsRef.current.forEach((id) => clearTimeout(id));
+    navTimeoutsRef.current.clear();
+  }, []);
+
+
+  const scheduleNavTimeout = useCallback((fn, delay = 150) => {
+    const id = setTimeout(() => {
+      navTimeoutsRef.current.delete(id);
+      fn();
+    }, delay);
+    navTimeoutsRef.current.add(id);
+    return id;
+  }, []);
+
+
+  // ==========================================================================
+  // 2. UTILITY FUNCTIONS (t, showToast, getCardStyle, speak, stopSpeaking)
+  // ==========================================================================
+  const t = useCallback(
+    (key, params = {}) => {
+      const textDict =
+        UI_TEXT || (typeof window !== 'undefined' ? window.UI_TEXT : null);
+      if (!textDict) return key;
+      const dict = textDict[uiLang] || textDict.en || {};
+      let text = dict[key] || key;
+      if (typeof text === 'string' && params && typeof params === 'object') {
+        Object.keys(params).forEach((p) => {
+          text = text.split(`{${p}}`).join(String(params[p] ?? ''));
+        });
+      }
+      return text;
+    },
+    [uiLang]
+  );
+
+
+  // Chuẩn hóa Toast: luôn đảm bảo `text` là String thuần (diệt 100% bẫy Object crash React)
+  const showToast = useCallback(
+    (message, type = 'success') => {
+      let normalizedText = 'Thông báo';
+      let normalizedType = typeof type === 'string' && type.trim() ? type : 'success';
+
+
+      if (typeof message === 'string') {
+        normalizedText = message;
+      } else if (message && typeof message === 'object') {
+        normalizedText = String(message.text ?? message.message ?? 'Thông báo');
+        if (typeof message.type === 'string' && message.type.trim()) {
+          normalizedType = message.type;
+        }
+      } else if (message !== null && message !== undefined) {
+        normalizedText = String(message);
+      }
+
+
+      setToast({ text: normalizedText, type: normalizedType, id: Date.now() });
+    },
+    [setToast]
+  );
+
+
+  const getCardStyle = useCallback(
+    (isBack = false) => {
+      const fallbackSize = isBack ? 1.25 : 3;
+      const rawSize = Number(
+        isBack ? settings?.backFontSize : settings?.fontSize
+      );
+      // Chốt chặn an toàn chống NaN, số âm hoặc cỡ chữ lệch 26rem/36rem
+      const size =
+        Number.isFinite(rawSize) && rawSize > 0 && rawSize <= 10
+          ? rawSize
+          : fallbackSize;
+
+
+      const style = {
+        fontSize: `${size}rem`,
+        fontWeight: settings?.fontWeight || 'bold'
+      };
+      switch (settings?.fontFamily) {
+        case 'serif':
+          style.fontFamily = '"Noto Serif SC", serif';
+          break;
+        case 'kaiti':
+          style.fontFamily =
+            '"KaiTi", "STKaiti", "楷体", "LXGW WenKai Lite", serif';
+          break;
+        case 'callig':
+          style.fontFamily = '"Long Cang", cursive';
+          break;
+        default:
+          style.fontFamily = 'ui-sans-serif, system-ui, sans-serif';
+      }
+      return style;
+    },
+    [settings]
+  );
+
+
+  // Đại phẫu speak(): chốt chặn safeRate/safePitch, smart overload callback & khóa phiên đơn điệu
+  const speak = useCallback(
+    (text, rate = null, voice = null, onEnd = null) => {
+      // Tương thích ngược thông minh: nếu bất kỳ Mini-Game nào truyền nhầm callback vào vị trí 2/3
+      let resolvedRate = rate;
+      let resolvedVoice = voice;
+      let resolvedOnEnd = onEnd;
+
+
+      if (typeof resolvedRate === 'function') {
+        resolvedOnEnd = resolvedRate;
+        resolvedRate = null;
+        resolvedVoice = null;
+      } else if (typeof resolvedVoice === 'function') {
+        resolvedOnEnd = resolvedVoice;
+        resolvedVoice = null;
+      }
+
+
+      let ended = false;
+      const safeOnEnd = () => {
+        if (ended) return;
+        ended = true;
+        if (typeof resolvedOnEnd === 'function') {
+          try {
+            resolvedOnEnd();
+          } catch (err) {
+            console.warn('[useAppLogic] speak onEnd error:', err);
+          }
+        }
+      };
+
+
+      explicitStopRef.current = false;
+      const mySessionId = ++speakSessionIdRef.current;
+
+
+      if (audioTimeoutRef?.current) {
+        clearTimeout(audioTimeoutRef.current);
+        audioTimeoutRef.current = null;
+      }
+
+
+      const cleanText =
+        typeof text === 'string'
+          ? text.trim()
+          : typeof text === 'number' && Number.isFinite(text)
+          ? String(text)
+          : '';
+
+
+      if (!cleanText) {
+        safeOnEnd();
+        return;
+      }
+
+
+      if (latestStateRef.current.isMuted) {
+        const simulatedDuration = 1200 + cleanText.length * 80;
+        const onSimDone = () => {
+          if (audioTimeoutRef) audioTimeoutRef.current = null;
+          if (!explicitStopRef.current && mySessionId === speakSessionIdRef.current) {
+            safeOnEnd();
+          }
+        };
+        if (audioTimeoutRef) {
+          audioTimeoutRef.current = setTimeout(onSimDone, simulatedDuration);
+        } else {
+          setTimeout(onSimDone, simulatedDuration);
+        }
+        return;
+      }
+
+
+      if (typeof window === 'undefined' || !window.speechSynthesis) {
+        safeOnEnd();
+        return;
+      }
+
+
+      // Kích hoạt "Khiên Sưởi Ấm Liên Tục" trước khi đọc TTS
+      playTing();
+      try {
+        window.speechSynthesis.cancel();
+        if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+      } catch {
+        // Bỏ qua an toàn
+      }
+
+
+      const createAndSpeak = () => {
+        if (audioTimeoutRef) audioTimeoutRef.current = null;
+        if (explicitStopRef.current || mySessionId !== speakSessionIdRef.current) {
+          return;
+        }
+
+
+        const currentSettings = latestStateRef.current.settings || {};
+        const defaultRate =
+          typeof currentSettings.rate === 'number' &&
+          Number.isFinite(currentSettings.rate) &&
+          currentSettings.rate >= 0.3 &&
+          currentSettings.rate <= 2.5
+            ? currentSettings.rate
+            : 0.9;
+
+
+        const safeRate =
+          typeof resolvedRate === 'number' &&
+          Number.isFinite(resolvedRate) &&
+          resolvedRate >= 0.3 &&
+          resolvedRate <= 2.5
+            ? resolvedRate
+            : defaultRate;
+
+
+        const safePitch =
+          typeof currentSettings.pitch === 'number' &&
+          Number.isFinite(currentSettings.pitch) &&
+          currentSettings.pitch >= 0.5 &&
+          currentSettings.pitch <= 2.0
+            ? currentSettings.pitch
+            : 1;
+
+
+        const u = new SpeechSynthesisUtterance(cleanText);
+        window.fc_currentUtterance = u;
+
+
+        const detectedLang = HANZI_REGEX.test(cleanText) ? 'zh-CN' : 'en-US';
+        u.lang = detectedLang;
+
+
+        const availableVoices =
+          Array.isArray(voices) && voices.length > 0
+            ? voices
+            : typeof window.speechSynthesis.getVoices === 'function'
+            ? window.speechSynthesis.getVoices() || []
+            : [];
+
+
+        let v =
+          resolvedVoice &&
+          typeof resolvedVoice === 'object' &&
+          typeof resolvedVoice.lang === 'string'
+            ? resolvedVoice
+            : null;
+
+
+        if (!v && availableVoices.length > 0) {
+          const langPrefix = detectedLang.split('-')[0];
+          if (currentSettings.selectedVoice) {
+            const pref = availableVoices.find(
+              (vo) => vo && vo.name === currentSettings.selectedVoice
+            );
+            if (pref && typeof pref.lang === 'string' && pref.lang.startsWith(langPrefix)) {
+              v = pref;
+            }
+          }
+          if (!v) {
+            v =
+              availableVoices.find((x) => x && x.lang === detectedLang) ||
+              availableVoices.find(
+                (x) => x && typeof x.lang === 'string' && x.lang.startsWith(langPrefix)
+              ) ||
+              null;
+          }
+        }
+
+
+        if (v) u.voice = v;
+        u.rate = safeRate;
+        u.pitch = safePitch;
+
+
+        const handleSpeechSettled = () => {
+          // Chỉ thu hồi Khiên WAV 15s & bắn callback nếu đây đúng là phiên đọc mới nhất!
+          if (mySessionId === speakSessionIdRef.current) {
+            window.fc_currentUtterance = null;
+            releaseShieldDebounced();
+            if (!explicitStopRef.current) {
+              safeOnEnd();
+            }
+          }
+        };
+
+
+        u.onend = handleSpeechSettled;
+        u.onerror = handleSpeechSettled;
+
+
+        try {
+          window.speechSynthesis.speak(u);
+        } catch (err) {
+          console.warn('[useAppLogic] speechSynthesis.speak error:', err);
+          handleSpeechSettled();
+        }
+      };
+
+
+      if (audioTimeoutRef) {
+        audioTimeoutRef.current = setTimeout(createAndSpeak, 300);
+      } else {
+        setTimeout(createAndSpeak, 300);
+      }
+    },
+    [voices, audioTimeoutRef]
+  );
+
+
+  const stopSpeaking = useCallback(() => {
+    explicitStopRef.current = true;
+    speakSessionIdRef.current += 1;
+    stopShieldImmediately();
+
+
+    if (typeof window !== 'undefined') {
+      try {
+        if (window.speechSynthesis) window.speechSynthesis.cancel();
+      } catch {
+        // Bỏ qua an toàn
+      }
+      window.fc_currentUtterance = null;
+    }
+    if (audioTimeoutRef?.current) {
+      clearTimeout(audioTimeoutRef.current);
+      audioTimeoutRef.current = null;
+    }
+    if (autoPlayTimeoutRef?.current) {
+      clearTimeout(autoPlayTimeoutRef.current);
+      autoPlayTimeoutRef.current = null;
+    }
+  }, [audioTimeoutRef, autoPlayTimeoutRef]);
+
+
+  // Dọn đồng bộ toàn bộ trạng thái Auto-Play / Lật thẻ / TTS của màn hình Học Thẻ
+  const resetLearnPlaybackState = useCallback(() => {
+    clearPendingNavTimeouts();
+    setIsAutoPlaying(false);
+    setIsAutoMode(false);
+    setIsFlipped(false);
+    setIsContentHidden(false);
+    stopSpeaking();
+  }, [
+    clearPendingNavTimeouts,
+    setIsAutoMode,
+    setIsAutoPlaying,
+    setIsContentHidden,
+    setIsFlipped,
+    stopSpeaking
+  ]);
+
+
+  // Tự động dừng Auto-Play & TTS của màn hình Học Thẻ khi người dùng chuyển tab qua BottomNav
+  useEffect(() => {
+    if (prevViewModeRef.current === 'learn' && viewMode !== 'learn') {
+      resetLearnPlaybackState();
+    }
+    prevViewModeRef.current = viewMode;
+  }, [viewMode, resetLearnPlaybackState]);
+
+
+  // Cleanup toàn bộ timer & Khiên âm thanh khi unmount
+  useEffect(() => {
+    return () => {
+      clearPendingNavTimeouts();
+      stopSpeaking();
+    };
+  }, [clearPendingNavTimeouts, stopSpeaking]);
+
+
+  // ==========================================================================
+  // 3. NAVIGATION (ĐIỀU HƯỚNG THẺ & PLAYBACK CONTROLS)
+  // ==========================================================================
+  const handleNext = useCallback(() => {
+    clearPendingNavTimeouts();
+    setIsFlipped(false);
+    setIsContentHidden(false);
+    stopSpeaking();
+
+
+    scheduleNavTimeout(() => {
+      const {
+        cards: currentCards,
+        isShuffle: currentShuffle,
+        currentCardIndex: idx
+      } = latestStateRef.current;
+
+
+      if (!Array.isArray(currentCards) || currentCards.length === 0) return;
+
+
+      if (currentShuffle) {
+        if (idx >= currentCards.length - 1) {
+          const reshuffled = Utils.shuffleArray([...currentCards]);
+          setCards(reshuffled);
+          setCurrentCardIndex(0);
+          showToast('Đã đi hết 1 vòng! Đang xáo trộn lại bộ bài.', 'info');
+        } else {
+          setCurrentCardIndex((prev) =>
+            Math.min(prev + 1, currentCards.length - 1)
+          );
+        }
+      } else {
+        setCurrentCardIndex((prev) => (prev + 1) % currentCards.length);
+      }
+    }, 150);
+  }, [
+    clearPendingNavTimeouts,
+    scheduleNavTimeout,
+    setCards,
+    setCurrentCardIndex,
+    setIsContentHidden,
+    setIsFlipped,
+    showToast,
+    stopSpeaking
+  ]);
+
+
+  const handlePrev = useCallback(() => {
+    clearPendingNavTimeouts();
+    setIsFlipped(false);
+    setIsContentHidden(false);
+    stopSpeaking();
+
+
+    scheduleNavTimeout(() => {
+      const { cards: currentCards } = latestStateRef.current;
+      if (!Array.isArray(currentCards) || currentCards.length === 0) return;
+      const len = currentCards.length;
+      setCurrentCardIndex((prev) => (((prev - 1) % len) + len) % len);
+    }, 150);
+  }, [
+    clearPendingNavTimeouts,
+    scheduleNavTimeout,
+    setCurrentCardIndex,
+    setIsContentHidden,
+    setIsFlipped,
+    stopSpeaking
+  ]);
+
+
+  const handleJumpToCard = useCallback(
+    (inputNumber) => {
+      clearPendingNavTimeouts();
+      const { cards: currentCards } = latestStateRef.current;
+      if (!Array.isArray(currentCards) || currentCards.length === 0) return;
+      const targetIndex = parseInt(inputNumber, 10) - 1;
+      if (
+        !Number.isNaN(targetIndex) &&
+        targetIndex >= 0 &&
+        targetIndex < currentCards.length
+      ) {
+        setCurrentCardIndex(targetIndex);
+        setIsFlipped(false);
+        setIsContentHidden(false);
+        stopSpeaking();
+      }
+    },
+    [
+      clearPendingNavTimeouts,
+      setCurrentCardIndex,
+      setIsContentHidden,
+      setIsFlipped,
+      stopSpeaking
+    ]
+  );
+
+
+  const toggleAutoPlay = useCallback(() => {
+    if (latestStateRef.current.isAutoPlaying) {
+      clearPendingNavTimeouts();
+      setIsAutoPlaying(false);
+      setIsContentHidden(false);
+      stopSpeaking();
+    } else {
+      // Đánh thức trực tiếp Khiên âm thanh HTML5 trên iOS/Safari ngay trong user gesture
+      if (!latestStateRef.current.isMuted) {
+        playTing();
+      }
+      setIsAutoMode(true);
+      setIsAutoPlaying(true);
+      setIsContentHidden(false);
+      showToast('Bắt đầu tự động phát', 'success');
+    }
+  }, [
+    clearPendingNavTimeouts,
+    setIsAutoMode,
+    setIsAutoPlaying,
+    setIsContentHidden,
+    showToast,
+    stopSpeaking
+  ]);
+
+
+  const handleStopAutoPlay = useCallback(() => {
+    resetLearnPlaybackState();
+    setCurrentCardIndex(0);
+    showToast('Đã dừng và quay về đầu!', 'info');
+  }, [resetLearnPlaybackState, setCurrentCardIndex, showToast]);
+
+
+  const toggleBatterySaver = useCallback(async () => {
+    try {
+      if (!latestStateRef.current.isBatterySaverMode) {
+        await Utils.requestWakeLock();
+        setIsBatterySaverMode(true);
+        showToast('Đã bật Chế độ Rảnh tay (Màn hình luôn sáng)', 'success');
+      } else {
+        await Utils.releaseWakeLock();
+        setIsBatterySaverMode(false);
+      }
+    } catch (err) {
+      console.warn('[useAppLogic] WakeLock error:', err);
+      showToast(
+        'Trình duyệt không hỗ trợ hoặc từ chối giữ sáng màn hình',
+        'warning'
+      );
+    }
+  }, [setIsBatterySaverMode, showToast]);
+
+
+  // Loại bỏ 100% side-effect khỏi React state updater & cắt Khiên âm thanh đầy đủ khi Mute
+  const handleToggleMute = useCallback(() => {
+    const newState = !latestStateRef.current.isMuted;
+    setIsMuted(newState);
+    if (newState) {
+      stopSpeaking();
+    }
+    showToast(
+      newState ? 'Đã tắt tiếng (Giả lập thời gian đọc)' : 'Đã bật tiếng',
+      'info'
+    );
+  }, [setIsMuted, showToast, stopSpeaking]);
+
+
+  // Tham chiếu ổn định vĩnh viễn (đọc từ latestStateRef chống re-bind keydown)
+  const handleToggleShuffle = useCallback(() => {
+    const s = latestStateRef.current;
+    const nextState = !s.isShuffle;
+    setIsShuffle(nextState);
+
+
+    if (nextState) {
+      showToast('Đã bật trộn bài', 'info');
+    } else {
+      resetLearnPlaybackState();
+      let originalData = [];
+      if (s.studySourceName && s.studySourceName.includes('Sổ tay cần nhớ')) {
+        originalData = Array.isArray(s.incorrectList) ? s.incorrectList : [];
+      } else if (
+        (s.studySourceName && s.studySourceName.includes('Sổ tay từ vựng')) ||
+        s.isStudyingNotebook
+      ) {
+        originalData = Array.isArray(s.notebook) ? s.notebook : [];
+      } else {
+        const savedList = Utils?.safeJsonParse('fc_data_' + s.lang, []);
+        originalData = Array.isArray(savedList) ? savedList : [];
+      }
+      setCards(originalData);
+      setCurrentCardIndex(0);
+      showToast('Đã tắt trộn bài (Về thứ tự gốc)', 'info');
+    }
+  }, [
+    resetLearnPlaybackState,
+    setCards,
+    setCurrentCardIndex,
+    setIsShuffle,
+    showToast
+  ]);
+
+
+  // ==========================================================================
+  // 4. RETRY BAG APIS (QUẢN LÝ TÚI NHÁP TOÀN CỤC — KHỚP 1:1 VỚI db.js)
+  // ==========================================================================
+  // Hàng đợi Map đa phân vùng ngôn ngữ: chống tuyệt đối race condition khi đổi ngôn ngữ trong cùng 1 tick
+  useEffect(() => {
+    if (!isDbReady || pendingRetryPersistMapRef.current.size === 0) return;
+
+
+    const dbInstance =
+      FcDB || (typeof window !== 'undefined' ? window.FcDB : null);
+    if (!dbInstance || typeof dbInstance.set !== 'function') return;
+
+
+    const entries = Array.from(pendingRetryPersistMapRef.current.entries());
+    pendingRetryPersistMapRef.current.clear();
+
+
+    entries.forEach(([targetLang, bagSnapshot]) => {
+      const safeTargetLang = targetLang === 'zh' ? 'zh' : 'en';
+      dbInstance
+        .set('fc_global_retry_bag_' + safeTargetLang, bagSnapshot)
+        .catch(() => {});
+    });
+  }, [globalRetryBag, isDbReady]);
+
+
+  const addToRetryBag = useCallback(
+    (gameType, questionData) => {
+      if (!gameType || !questionData || typeof questionData !== 'object') return;
+      const normalizedItem = normalizeRetryItem(gameType, questionData);
+      const termToCheck = extractRetryKey(normalizedItem, gameType);
+      const targetKey = normalizeKey(termToCheck);
+      if (!targetKey) return;
+
+
+      const safeLang = latestStateRef.current.lang === 'zh' ? 'zh' : 'en';
+
+
+      setGlobalRetryBag((prev) => {
+        const safePrev = prev && typeof prev === 'object' ? prev : {};
+        const currentBag = Array.isArray(safePrev[gameType])
+          ? safePrev[gameType]
+          : [];
+
+
+        const isDup = currentBag.some((item) => {
+          const itemKey = normalizeKey(extractRetryKey(item, gameType));
+          if (!itemKey) return false;
+          if (
+            gameType === 'oddoneout' &&
+            Array.isArray(item.words) &&
+            Array.isArray(normalizedItem.words)
+          ) {
+            return (
+              itemKey === targetKey &&
+              normalizeWordSignature(item.words) ===
+                normalizeWordSignature(normalizedItem.words)
+            );
+          }
+          return itemKey === targetKey;
+        });
+
+
+        if (isDup) return safePrev;
+
+
+        // Giới hạn 100 thẻ gần nhất / loại game chống phình IndexedDB
+        const updatedList = [...currentBag, normalizedItem].slice(-100);
+        const nextBag = {
+          ...safePrev,
+          [gameType]: updatedList
+        };
+        pendingRetryPersistMapRef.current.set(safeLang, nextBag);
+        return nextBag;
+      });
+    },
+    [setGlobalRetryBag]
+  );
+
+
+  const removeFromRetryBag = useCallback(
+    (gameType, termToRemove, extraData = null) => {
+      if (!gameType || !termToRemove) return;
+      const targetKey = normalizeKey(termToRemove);
+      if (!targetKey) return;
+
+
+      const safeLang = latestStateRef.current.lang === 'zh' ? 'zh' : 'en';
+      const extraPassageKey =
+        gameType === 'reading' && typeof extraData === 'string'
+          ? normalizeKey(extraData)
+          : '';
+      const extraOddWordsSig =
+        gameType === 'oddoneout' && Array.isArray(extraData)
+          ? normalizeWordSignature(extraData)
+          : '';
+
+
+      setGlobalRetryBag((prev) => {
+        const safePrev = prev && typeof prev === 'object' ? prev : {};
+        const currentBag = Array.isArray(safePrev[gameType])
+          ? safePrev[gameType]
+          : [];
+        if (currentBag.length === 0) return safePrev;
+
+
+        const newBag = currentBag.filter((item) => {
+          const primaryKey = normalizeKey(extractRetryKey(item, gameType));
+
+
+          if (
+            gameType === 'oddoneout' &&
+            extraOddWordsSig &&
+            Array.isArray(item?.words)
+          ) {
+            if (
+              primaryKey === targetKey &&
+              normalizeWordSignature(item.words) === extraOddWordsSig
+            ) {
+              return false;
+            }
+            return true;
+          }
+
+
+          if (gameType === 'reading' && extraPassageKey) {
+            const itemQuestionKey = normalizeKey(item?.questionText);
+            const itemPassageKey = normalizeKey(item?.passageContext);
+            if (
+              itemQuestionKey === targetKey &&
+              itemPassageKey === extraPassageKey
+            ) {
+              return false;
+            }
+            return true;
+          }
+
+
+          const candidateKeys = getRetryCandidateKeys(item, gameType);
+          return !candidateKeys.includes(targetKey);
+        });
+
+
+        if (newBag.length === currentBag.length) return safePrev;
+
+
+        const nextBag = {
+          ...safePrev,
+          [gameType]: newBag
+        };
+        pendingRetryPersistMapRef.current.set(safeLang, nextBag);
+        return nextBag;
+      });
+    },
+    [setGlobalRetryBag]
+  );
+
+
+  // ==========================================================================
+  // 5. LẮP RÁP CÁC MODULE (SUB-HOOKS ASSEMBLY)
+  // ==========================================================================
+  const aiLogic = useAiLogic(core, latestStateRef, {
+    speak,
+    handleNext,
+    showToast,
+    stopSpeaking
+  });
+
+
+  const sharedCallbacks = {
+    t,
+    showToast,
+    handleNext,
+    processAiQueue: aiLogic.processAiQueue
+  };
+
+
+  const dataIO = useDataIO(core, latestStateRef, { t, showToast });
+  const studyProgress = useStudyProgress(core, latestStateRef, sharedCallbacks);
+  const aiCurator = useAiCurator(core, latestStateRef, { t, showToast });
+  const examPoolLogic = useExamPoolLogic(core, sharedCallbacks);
+
+
+  // Đồng bộ hàm thu hoạch vào Ref Proxy
+  handleAutoHarvestToPoolRef.current = examPoolLogic.handleAutoHarvestToPool;
+
+
+  // ==========================================================================
+  // 6. UI ORCHESTRATION & UNIVERSAL REVIEW ROUTER (MEMOIZED)
+  // ==========================================================================
+  const handleOpenSettings = useCallback(() => setShowSettings(true), [setShowSettings]);
+  const handleCloseSettings = useCallback(() => setShowSettings(false), [setShowSettings]);
+  const handleOpenAiConfig = useCallback(() => setShowAiConfigModal(true), [setShowAiConfigModal]);
+
+
+  const onMissingKey = useCallback(() => {
+    showToast('Cần Google Gemini API Key', 'warning');
+    setShowApiKeyModal(true);
+  }, [setShowApiKeyModal, showToast]);
+
+
+  const handleOpenWordSelector = useCallback(
+    (payload) => {
+      let targetData;
+      if (payload && typeof payload === 'object' && payload.isSmartTarget) {
+        targetData = payload;
+      } else if (typeof payload === 'string' && payload.trim() !== '') {
+        targetData = payload;
+      } else {
+        const s = latestStateRef.current;
+        targetData = s.cards?.[s.currentCardIndex]?.term || '';
+      }
+      setWordSelectTarget(targetData);
+      setShowWordSelect(true);
+    },
+    [setShowWordSelect, setWordSelectTarget]
+  );
+
+
+  const handleOpenIncorrect = useCallback(
+    () => setShowIncorrectModal(true),
+    [setShowIncorrectModal]
+  );
+  const handleCloseIncorrect = useCallback(
+    () => setShowIncorrectModal(false),
+    [setShowIncorrectModal]
+  );
+
+
+  const handleRemoveAllIncorrect = useCallback(() => {
+    const safeLang = latestStateRef.current.lang === 'zh' ? 'zh' : 'en';
+    setIncorrectList([]);
+    const incorrectKey =
+      (STORAGE_KEYS?.INCORRECT_LIST || 'fc_incorrect_list') + '_' + safeLang;
+    const dbInstance =
+      FcDB || (typeof window !== 'undefined' ? window.FcDB : null);
+    if (dbInstance && typeof dbInstance.set === 'function') {
+      dbInstance.set(incorrectKey, []).catch(() => {});
+    }
+    showToast('Đã xóa toàn bộ danh sách cần nhớ', 'success');
+    setShowIncorrectModal(false);
+  }, [setIncorrectList, setShowIncorrectModal, showToast]);
+
+
+  // ROUTER ÔN TẬP VẠN NĂNG (UNIVERSAL REVIEW ROUTER — ĐỒNG BỘ GameView Ver 1.1)
+  const handleReviewWithGame = useCallback(
+    (gameType, sourceData, sourceName) => {
+      if (!Array.isArray(sourceData) || sourceData.length === 0) {
+        showToast('Không có dữ liệu để ôn tập!', 'warning');
+        return;
+      }
+
+
+      resetLearnPlaybackState();
+
+
+      const currentShuffle = latestStateRef.current.isShuffle;
+      let targetList = [...sourceData];
+      if (currentShuffle) targetList = Utils.shuffleArray(targetList);
+      setCards(targetList);
+      setIsStudyingNotebook(true);
+
+
+      setShowNotebook(false);
+      setShowIncorrectModal(false);
+
+
+      if (gameType === 'flashcard') {
+        setStudySourceName(sourceName);
+        setViewMode('learn');
+        setCurrentCardIndex(0);
+        showToast(
+          currentShuffle
+            ? `Đã trộn ngẫu nhiên ${sourceName}!`
+            : `Đang học ${sourceName}!`
+        );
+      } else {
+        const gameNames = {
+          match: 'Nối Ô',
+          scramble: 'Ghép Câu',
+          quiz: 'Trắc Nghiệm',
+          fillblank: 'Điền Từ',
+          spotmistake: 'Tìm Lỗi Sai',
+          oddoneout: 'Từ Khác Loại',
+          imagequiz: 'Đoán Hình',
+          pronunciation: 'Ngữ Âm',
+          listening: 'Nghe Hiểu',
+          reading: 'Đọc Hiểu'
+        };
+        const suffix = gameNames[gameType] || gameType;
+        setStudySourceName(`${sourceName} (${suffix})`);
+        setViewMode('game');
+
+
+        if (typeof window !== 'undefined') {
+          const route = `${gameType}_setup`;
+          window.__pendingGameRoute = route;
+          try {
+            window.dispatchEvent(
+              new CustomEvent('fc-pending-game-route', { detail: route })
+            );
+          } catch {
+            // Fallback an toàn cho trình duyệt cũ
+          }
+        }
+        showToast(`Chuyển sang Game để ôn tập ${sourceName}!`);
+      }
+    },
+    [
+      resetLearnPlaybackState,
+      setCards,
+      setCurrentCardIndex,
+      setIsStudyingNotebook,
+      setShowIncorrectModal,
+      setShowNotebook,
+      setStudySourceName,
+      setViewMode,
+      showToast
+    ]
+  );
+
+
+  const handleExitStudyMode = useCallback(() => {
+    resetLearnPlaybackState();
+    const s = latestStateRef.current;
+    const savedData = Utils?.safeJsonParse('fc_data_' + s.lang, []);
+    let targetList = Array.isArray(savedData) ? savedData : [];
+    if (s.isShuffle) targetList = Utils.shuffleArray([...targetList]);
+    setCards(targetList);
+    setStudySourceName(null);
+    setIsStudyingNotebook(false);
+    setCurrentCardIndex(0);
+    showToast('Đã thoát chế độ ôn tập, quay lại danh sách gốc', 'info');
+  }, [
+    resetLearnPlaybackState,
+    setCards,
+    setCurrentCardIndex,
+    setIsStudyingNotebook,
+    setStudySourceName,
+    showToast
+  ]);
+
+
+  const handleOpenHelp = useCallback(() => setShowHelp(true), [setShowHelp]);
+  const handleCloseHelp = useCallback(() => setShowHelp(false), [setShowHelp]);
+  const handleOpenSaveLoad = useCallback(
+    () => setShowSaveLoadModal(true),
+    [setShowSaveLoadModal]
+  );
+  const handleCloseSaveLoad = useCallback(
+    () => setShowSaveLoadModal(false),
+    [setShowSaveLoadModal]
+  );
+
+
+  const handleOpenHanziStudy = useCallback(
+    (textOrEvent) => {
+      const s = latestStateRef.current;
+      const text =
+        typeof textOrEvent === 'string'
+          ? textOrEvent
+          : s.cards?.[s.currentCardIndex]?.term || '';
+      setWordSelectTarget(text);
+      setShowHanziSelector(true);
+    },
+    [setShowHanziSelector, setWordSelectTarget]
+  );
+
+
+  const handleCloseHanziSelector = useCallback(
+    () => setShowHanziSelector(false),
+    [setShowHanziSelector]
+  );
+  const handleStartWriting = useCallback(
+    (char) => {
+      setCurrentHanziChar(char);
+      setShowHanziSelector(false);
+      setShowHanziWriter(true);
+    },
+    [setCurrentHanziChar, setShowHanziSelector, setShowHanziWriter]
+  );
+  const handleCloseHanziWriter = useCallback(
+    () => setShowHanziWriter(false),
+    [setShowHanziWriter]
+  );
+
+
+  const handleOpenExamPoolManager = useCallback(
+    () => setShowExamPoolManager(true),
+    [setShowExamPoolManager]
+  );
+  const handleCloseExamPoolManager = useCallback(
+    () => setShowExamPoolManager(false),
+    [setShowExamPoolManager]
+  );
+
+
+  // ==========================================================================
+  // 7. KEYBOARD SHORTCUTS (CHẶN CƯỚP PHÍM HỆ THỐNG, CHỐNG LẶP PHÍM GIỮ)
+  // ==========================================================================
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (viewMode !== 'learn') return; // Chỉ chạy ở Learn Mode
+      if (isAnyModalOpenRef.current) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+
+      const target = e.target;
+      const tagName = target?.tagName;
+      if (
+        tagName === 'INPUT' ||
+        tagName === 'TEXTAREA' ||
+        tagName === 'SELECT' ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+
+
+      switch (e.key) {
+        case 'ArrowRight':
+        case 'd':
+        case 'D':
+          handleNext();
+          break;
+        case 'ArrowLeft':
+        case 'a':
+        case 'A':
+          handlePrev();
+          break;
+        case ' ':
+          // Luôn preventDefault trước khi chặn e.repeat để chống cuộn trang khi giữ phím Space
+          e.preventDefault();
+          if (e.repeat) break;
+          setIsFlipped((prev) => !prev);
+          break;
+        case 's':
+        case 'S': {
+          if (e.repeat) break;
+          const s = latestStateRef.current;
+          const card = s.cards?.[s.currentCardIndex];
+          if (card?.term) speak(card.term);
+          break;
+        }
+        case 'p':
+        case 'P':
+          if (e.repeat) break;
+          toggleAutoPlay();
+          break;
+        case 'm':
+        case 'M':
+          if (e.repeat) break;
+          handleToggleMute();
+          break;
+        case 'r':
+        case 'R':
+          if (e.repeat) break;
+          handleToggleShuffle();
+          break;
+        case 'Escape':
+        case 'x':
+        case 'X':
+          if (e.repeat) break;
+          if (
+            latestStateRef.current.isAutoPlaying ||
+            latestStateRef.current.isAutoMode
+          ) {
+            handleStopAutoPlay();
+          }
+          break;
+        case 'l':
+        case 'L':
+          if (e.repeat) break;
+          if (latestStateRef.current.isAutoMode) {
+            const nextLocked = !latestStateRef.current.isFlipLocked;
+            setIsFlipLocked(nextLocked);
+            showToast(
+              nextLocked ? 'Đã khóa lật' : 'Đã mở khóa lật',
+              'info'
+            );
+          }
+          break;
+        default:
+          break;
+      }
+    };
+
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    viewMode,
+    handleNext,
+    handlePrev,
+    speak,
+    toggleAutoPlay,
+    handleStopAutoPlay,
+    handleToggleMute,
+    handleToggleShuffle,
+    setIsFlipped,
+    setIsFlipLocked,
+    showToast
+  ]);
+
+
+  // ==========================================================================
+  // 8. RETURN MERGED ACTIONS (BẢO TOÀN 100% HỢP ĐỒNG API CHO TẦNG 7)
+  // ==========================================================================
+  return {
+    state: {
+      ...core,
+      mainColor,
+      isCurrentCardInNotebook: isCurrentCardInNotebookDerived,
+      incorrectCount: core.incorrectList?.length || 0,
+      examLogic
+    },
+    setters: { ...core, setIsShuffle: handleToggleShuffle },
+    actions: {
+      t,
+      showToast,
+      getCardStyle,
+      speak,
+      stopSpeaking,
+      handleNext,
+      handlePrev,
+      toggleAutoPlay,
+      handleStopAutoPlay,
+      handleJumpToCard,
+      handleOpenSettings,
+      handleCloseSettings,
+      handleCancelSettings: handleCloseSettings,
+      handleOpenAiConfig,
+      onMissingKey,
+      handleOpenWordSelector,
+      handleNextWithToast: handleNext,
+      ...aiLogic,
+      toggleBatterySaver,
+      handleToggleMute,
+      handleOpenIncorrect,
+      handleCloseIncorrect,
+      handleRemoveAllIncorrect,
+      handleReviewWithGame,
+      handleExitStudyMode,
+      handleOpenHelp,
+      handleCloseHelp,
+      handleOpenSaveLoad,
+      handleCloseSaveLoad,
+      handleOpenHanziStudy,
+      handleCloseHanziSelector,
+      handleStartWriting,
+      handleCloseHanziWriter,
+      handleOpenExamPoolManager,
+      handleCloseExamPoolManager,
+      setIsGamePlaying,
+      addToRetryBag,
+      removeFromRetryBag,
+      ...dataIO,
+      ...studyProgress,
+      ...aiCurator,
+      ...examPoolLogic
+    },
+    examPoolData: examPoolLogic,
+    refs: { audioTimeoutRef }
+  };
+};
+
+
+export const Block6_4_useAppLogic = useAppLogic;
 
 
 if (typeof window !== 'undefined') {
-  window.GameAiEngine = GameAiEngine;
+  window.Block6_4_useAppLogic = useAppLogic;
+  window.useAppLogic = useAppLogic;
 }
 
 
-export default GameAiEngine;
+export default useAppLogic;
 
