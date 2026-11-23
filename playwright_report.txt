@@ -1,0 +1,133 @@
+﻿
+Running 4 tests using 1 worker
+
+  Γ£ÿ  1 [chromium] ΓÇ║ tests\e2e\smoke.spec.js:170:3 ΓÇ║ Flashcard 3D ΓÇö E2E Smoke Test Suite (Zero-Crash Verification) ΓÇ║ 1. Khß╗ƒi ─æß╗Öng App, hiß╗ân thß╗ï thß║╗ hß╗ìc 3D, lß║¡t thß║╗, chuyß╗ân thß║╗ v├á nhß║¡p liß╗çu kh├┤ng lß╗ùi (30.3s)
+  Γ£ÿ  2 [chromium] ΓÇ║ tests\e2e\smoke.spec.js:206:3 ΓÇ║ Flashcard 3D ΓÇö E2E Smoke Test Suite (Zero-Crash Verification) ΓÇ║ 2. Chuyß╗ân ─æß╗òi Tß╗½ Vß╗▒ng <-> C├óu V─ân v├á CN <-> EN t├ích bß║ích 100%, giß╗» nguy├¬n sau F5 & localStorage < 2MB (24.0s)
+  Γ£ÿ  3 [chromium] ΓÇ║ tests\e2e\smoke.spec.js:281:3 ΓÇ║ Flashcard 3D ΓÇö E2E Smoke Test Suite (Zero-Crash Verification) ΓÇ║ 3. Qu├⌐t mß╗ƒ/─æ├│ng c├íc Modals ch├¡nh (Settings, API Key, AI Chat, Data & Link Manager) kh├┤ng crash (19.1s)
+  Γ£ÿ  4 [chromium] ΓÇ║ tests\e2e\smoke.spec.js:328:3 ΓÇ║ Flashcard 3D ΓÇö E2E Smoke Test Suite (Zero-Crash Verification) ΓÇ║ 4. Chuyß╗ân sang tab Game, kiß╗âm tra sß║únh Mini-Games & mß╗ƒ thß╗¡ v├ín ch╞íi Offline kh├┤ng vß╗í Props (19.3s)
+
+
+  1) [chromium] ΓÇ║ tests\e2e\smoke.spec.js:170:3 ΓÇ║ Flashcard 3D ΓÇö E2E Smoke Test Suite (Zero-Crash Verification) ΓÇ║ 1. Khß╗ƒi ─æß╗Öng App, hiß╗ân thß╗ï thß║╗ hß╗ìc 3D, lß║¡t thß║╗, chuyß╗ân thß║╗ v├á nhß║¡p liß╗çu kh├┤ng lß╗ùi 
+
+    TimeoutError: page.goto: Timeout 20000ms exceeded.
+    Call log:
+      - navigating to "http://localhost:3000/", waiting until "domcontentloaded"
+
+
+      94 |  */
+      95 | async function seedFourMasterDecks(page, initialLang = 'zh', initialMode = 'vocab') {
+    > 96 |   await page.goto('/', { waitUntil: 'domcontentloaded' });
+         |              ^
+      97 |   await page.waitForSelector('#root', { state: 'attached' });
+      98 |
+      99 |   // ─Éß╗úi window.FcDB sß║╡n s├áng tß╗½ tß║ºng khß╗ƒi tß║ío cß╗ºa ß╗⌐ng dß╗Ñng
+        at seedFourMasterDecks (E:\Lap_Trinh\HocTot\tests\e2e\smoke.spec.js:96:14)
+        at E:\Lap_Trinh\HocTot\tests\e2e\smoke.spec.js:174:11
+
+    Error Context: test-results\smoke-Flashcard-3D-ΓÇö-E2E-S-fa165--thß║╗-v├á-nhß║¡p-liß╗çu-kh├┤ng-lß╗ùi-chromium\error-context.md
+
+    attachment #2: trace (application/zip) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+    test-results\smoke-Flashcard-3D-ΓÇö-E2E-S-fa165--thß║╗-v├á-nhß║¡p-liß╗çu-kh├┤ng-lß╗ùi-chromium\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\smoke-Flashcard-3D-ΓÇö-E2E-S-fa165--thß║╗-v├á-nhß║¡p-liß╗çu-kh├┤ng-lß╗ùi-chromium\trace.zip
+
+    ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+  2) [chromium] ΓÇ║ tests\e2e\smoke.spec.js:206:3 ΓÇ║ Flashcard 3D ΓÇö E2E Smoke Test Suite (Zero-Crash Verification) ΓÇ║ 2. Chuyß╗ân ─æß╗òi Tß╗½ Vß╗▒ng <-> C├óu V─ân v├á CN <-> EN t├ích bß║ích 100%, giß╗» nguy├¬n sau F5 & localStorage < 2MB 
+
+    TimeoutError: page.goto: Timeout 20000ms exceeded.
+    Call log:
+      - navigating to "http://localhost:3000/", waiting until "domcontentloaded"
+
+
+      94 |  */
+      95 | async function seedFourMasterDecks(page, initialLang = 'zh', initialMode = 'vocab') {
+    > 96 |   await page.goto('/', { waitUntil: 'domcontentloaded' });
+         |              ^
+      97 |   await page.waitForSelector('#root', { state: 'attached' });
+      98 |
+      99 |   // ─Éß╗úi window.FcDB sß║╡n s├áng tß╗½ tß║ºng khß╗ƒi tß║ío cß╗ºa ß╗⌐ng dß╗Ñng
+        at seedFourMasterDecks (E:\Lap_Trinh\HocTot\tests\e2e\smoke.spec.js:96:14)
+        at E:\Lap_Trinh\HocTot\tests\e2e\smoke.spec.js:210:11
+
+    attachment #1: screenshot (image/png) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+    test-results\smoke-Flashcard-3D-ΓÇö-E2E-S-a3e20-y├¬n-sau-F5-localStorage-2MB-chromium\test-failed-1.png
+    ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+    Error Context: test-results\smoke-Flashcard-3D-ΓÇö-E2E-S-a3e20-y├¬n-sau-F5-localStorage-2MB-chromium\error-context.md
+
+    attachment #3: trace (application/zip) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+    test-results\smoke-Flashcard-3D-ΓÇö-E2E-S-a3e20-y├¬n-sau-F5-localStorage-2MB-chromium\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\smoke-Flashcard-3D-ΓÇö-E2E-S-a3e20-y├¬n-sau-F5-localStorage-2MB-chromium\trace.zip
+
+    ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+  3) [chromium] ΓÇ║ tests\e2e\smoke.spec.js:281:3 ΓÇ║ Flashcard 3D ΓÇö E2E Smoke Test Suite (Zero-Crash Verification) ΓÇ║ 3. Qu├⌐t mß╗ƒ/─æ├│ng c├íc Modals ch├¡nh (Settings, API Key, AI Chat, Data & Link Manager) kh├┤ng crash 
+
+    TimeoutError: page.waitForFunction: Timeout 15000ms exceeded.
+
+       98 |
+       99 |   // ─Éß╗úi window.FcDB sß║╡n s├áng tß╗½ tß║ºng khß╗ƒi tß║ío cß╗ºa ß╗⌐ng dß╗Ñng
+    > 100 |   await page.waitForFunction(
+          |              ^
+      101 |     () => typeof window.FcDB !== 'undefined' && typeof window.FcDB.set === 'function',
+      102 |     null,
+      103 |     { timeout: 15000 }
+        at seedFourMasterDecks (E:\Lap_Trinh\HocTot\tests\e2e\smoke.spec.js:100:14)
+        at E:\Lap_Trinh\HocTot\tests\e2e\smoke.spec.js:285:5
+
+    attachment #1: screenshot (image/png) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+    test-results\smoke-Flashcard-3D-ΓÇö-E2E-S-5efc5-ta-Link-Manager-kh├┤ng-crash-chromium\test-failed-1.png
+    ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+    Error Context: test-results\smoke-Flashcard-3D-ΓÇö-E2E-S-5efc5-ta-Link-Manager-kh├┤ng-crash-chromium\error-context.md
+
+    attachment #3: trace (application/zip) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+    test-results\smoke-Flashcard-3D-ΓÇö-E2E-S-5efc5-ta-Link-Manager-kh├┤ng-crash-chromium\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\smoke-Flashcard-3D-ΓÇö-E2E-S-5efc5-ta-Link-Manager-kh├┤ng-crash-chromium\trace.zip
+
+    ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+  4) [chromium] ΓÇ║ tests\e2e\smoke.spec.js:328:3 ΓÇ║ Flashcard 3D ΓÇö E2E Smoke Test Suite (Zero-Crash Verification) ΓÇ║ 4. Chuyß╗ân sang tab Game, kiß╗âm tra sß║únh Mini-Games & mß╗ƒ thß╗¡ v├ín ch╞íi Offline kh├┤ng vß╗í Props 
+
+    TimeoutError: page.waitForFunction: Timeout 15000ms exceeded.
+
+       98 |
+       99 |   // ─Éß╗úi window.FcDB sß║╡n s├áng tß╗½ tß║ºng khß╗ƒi tß║ío cß╗ºa ß╗⌐ng dß╗Ñng
+    > 100 |   await page.waitForFunction(
+          |              ^
+      101 |     () => typeof window.FcDB !== 'undefined' && typeof window.FcDB.set === 'function',
+      102 |     null,
+      103 |     { timeout: 15000 }
+        at seedFourMasterDecks (E:\Lap_Trinh\HocTot\tests\e2e\smoke.spec.js:100:14)
+        at E:\Lap_Trinh\HocTot\tests\e2e\smoke.spec.js:332:5
+
+    attachment #1: screenshot (image/png) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+    test-results\smoke-Flashcard-3D-ΓÇö-E2E-S-2d0fb-ch╞íi-Offline-kh├┤ng-vß╗í-Props-chromium\test-failed-1.png
+    ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+    Error Context: test-results\smoke-Flashcard-3D-ΓÇö-E2E-S-2d0fb-ch╞íi-Offline-kh├┤ng-vß╗í-Props-chromium\error-context.md
+
+    attachment #3: trace (application/zip) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+    test-results\smoke-Flashcard-3D-ΓÇö-E2E-S-2d0fb-ch╞íi-Offline-kh├┤ng-vß╗í-Props-chromium\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\smoke-Flashcard-3D-ΓÇö-E2E-S-2d0fb-ch╞íi-Offline-kh├┤ng-vß╗í-Props-chromium\trace.zip
+
+    ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+
+  4 failed
+    [chromium] ΓÇ║ tests\e2e\smoke.spec.js:170:3 ΓÇ║ Flashcard 3D ΓÇö E2E Smoke Test Suite (Zero-Crash Verification) ΓÇ║ 1. Khß╗ƒi ─æß╗Öng App, hiß╗ân thß╗ï thß║╗ hß╗ìc 3D, lß║¡t thß║╗, chuyß╗ân thß║╗ v├á nhß║¡p liß╗çu kh├┤ng lß╗ùi 
+    [chromium] ΓÇ║ tests\e2e\smoke.spec.js:206:3 ΓÇ║ Flashcard 3D ΓÇö E2E Smoke Test Suite (Zero-Crash Verification) ΓÇ║ 2. Chuyß╗ân ─æß╗òi Tß╗½ Vß╗▒ng <-> C├óu V─ân v├á CN <-> EN t├ích bß║ích 100%, giß╗» nguy├¬n sau F5 & localStorage < 2MB 
+    [chromium] ΓÇ║ tests\e2e\smoke.spec.js:281:3 ΓÇ║ Flashcard 3D ΓÇö E2E Smoke Test Suite (Zero-Crash Verification) ΓÇ║ 3. Qu├⌐t mß╗ƒ/─æ├│ng c├íc Modals ch├¡nh (Settings, API Key, AI Chat, Data & Link Manager) kh├┤ng crash 
+    [chromium] ΓÇ║ tests\e2e\smoke.spec.js:328:3 ΓÇ║ Flashcard 3D ΓÇö E2E Smoke Test Suite (Zero-Crash Verification) ΓÇ║ 4. Chuyß╗ân sang tab Game, kiß╗âm tra sß║únh Mini-Games & mß╗ƒ thß╗¡ v├ín ch╞íi Offline kh├┤ng vß╗í Props 
+
+To open last HTML report run:
+[36m[39m
+[36m  npx playwright show-report[39m
+[36m[39m

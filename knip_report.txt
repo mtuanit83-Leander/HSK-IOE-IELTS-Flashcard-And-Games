@@ -1,0 +1,269 @@
+﻿Unused files (1)
+src/features/games/common/GameSharedUI.jsx
+Unused dependencies (1)
+lucide-react  package.json:15:6
+Unlisted binaries (1)
+eslint  package.json
+Unused exports (158)
+default                          variable  src/App.jsx:570:16                                   
+TopicSelector                              src/components/common/Controls.jsx:393:14            
+default                          class     src/components/common/ErrorBoundary.jsx:59:16        
+default                          variable  src/components/common/GlobalLoadingScreen.jsx:100:16 
+createIcon                                 src/components/common/Icons.jsx:7:14                 
+default                          variable  src/components/common/Icons.jsx:405:16               
+default                          variable  src/components/layout/AppHeader.jsx:218:16           
+LayoutAlignWidget                          src/components/layout/BottomNav.jsx:8:14             
+default                          variable  src/components/layout/BottomNav.jsx:179:16           
+default                          variable  src/components/layout/ControlBar.jsx:155:16          
+default                          variable  src/components/layout/FlashcardDisplay.jsx:908:16    
+default                          variable  src/components/modals/AiChatModal.jsx:636:16         
+default                          variable  src/components/modals/AiConfigModal.jsx:238:16       
+default                          variable  src/components/modals/ApiKeyModal.jsx:626:16         
+default                          variable  src/components/modals/ExamPoolManagerModal.jsx:397:16
+default                          variable  src/components/modals/HanziWriterModal.jsx:330:16    
+default                                    src/components/modals/HelperModals.jsx:279:16        
+default                          variable  src/components/modals/HelpModal.jsx:287:16           
+default                          variable  src/components/modals/LinkManagerModal.jsx:520:16    
+default                          variable  src/components/modals/ManualInputModal.jsx:422:16    
+default                          variable  src/components/modals/NotebookModal.jsx:1358:16      
+default                                    src/components/modals/ProgressModals.jsx:240:16      
+default                          variable  src/components/modals/SaveLoadModal.jsx:144:16       
+default                          variable  src/components/modals/SettingsModal.jsx:762:16       
+isIOS                                      src/config/constants.js:1:14                         
+default                          variable  src/config/i18n.js:270:16                            
+default                          variable  src/config/prompts.js:48:16                          
+default                          variable  src/context/AppContext.jsx:207:16                    
+batchEnrich                                src/engines/aiFactory.js:1031:14                     
+getHistoryPrompt                           src/engines/aiFactory.js:1032:14                     
+forgeBaseCard                              src/engines/aiFactory.js:1033:14                     
+forgeMatrix                                src/engines/aiFactory.js:1034:14                     
+forgeContext                               src/engines/aiFactory.js:1035:14                     
+default                          variable  src/engines/aiFactory.js:1041:16                     
+_generateFallbackData                      src/engines/exam/examFallback.js:322:14              
+default                          variable  src/engines/exam/examFallback.js:324:16              
+clearVolatileMemory                        src/engines/exam/examMemory.js:211:14                
+_syncMemory                                src/engines/exam/examMemory.js:212:14                
+_extractTermsToCheck                       src/engines/exam/examMemory.js:213:14                
+_isDuplicate                               src/engines/exam/examMemory.js:214:14                
+_sanitizeAiItem                            src/engines/exam/examMemory.js:215:14                
+default                          variable  src/engines/exam/examMemory.js:217:16                
+_normalizeForMinigame                      src/engines/exam/examNormalizer.js:248:14            
+default                          variable  src/engines/exam/examNormalizer.js:250:16            
+hydrateQuestion                            src/engines/exam/index.js:2188:14                    
+getEmergencyFallback                       src/engines/exam/index.js:2193:14                    
+clearVolatileMemory                        src/engines/exam/index.js:2198:14                    
+_generateFallbackData                      src/engines/exam/index.js:2203:14                    
+_normalizeForMinigame                      src/engines/exam/index.js:2208:14                    
+default                          variable  src/engines/exam/index.js:2217:16                    
+default                          variable  src/engines/examProfiles.js:396:16                   
+default                          variable  src/engines/fallbackData.js:537:16                   
+default                          variable  src/engines/gameAiEngine.js:1155:16                  
+GameOfflineEngine                          src/engines/gameOfflineEngine.js:300:14              
+OptionsEngine                              src/engines/gameOfflineEngine.js:1584:14             
+DistortionEngine                           src/engines/gameOfflineEngine.js:1585:14             
+ClozeEngine                                src/engines/gameOfflineEngine.js:1586:14             
+ScrambleNoiseEngine                        src/engines/gameOfflineEngine.js:1587:14             
+OddOneOutEngine                            src/engines/gameOfflineEngine.js:1588:14             
+default                          variable  src/engines/gameOfflineEngine.js:1597:16             
+default                          variable  src/engines/microPrompts.js:680:16                   
+QUESTION_TYPES                             src/engines/pedagogyEngine.js:19:14                  
+LEVEL_STRUCTURES                           src/engines/pedagogyEngine.js:39:14                  
+GRADE_CONTEXTS                             src/engines/pedagogyEngine.js:100:14                 
+LEVEL_DICTIONARY                           src/engines/pedagogyEngine.js:142:14                 
+TOPICS                                     src/engines/pedagogyEngine.js:193:14                 
+PedagogyEngine                             src/engines/pedagogyEngine.js:1023:14                
+getPedagogyMatrixRule                      src/engines/pedagogyEngine.js:1024:14                
+getLevelConstraint                         src/engines/pedagogyEngine.js:1025:14                
+default                          variable  src/engines/pedagogyEngine.js:1034:16                
+default                          variable  src/engines/queueEngine.js:454:16                    
+SkillRadarChart                            src/features/exam/ExamReportUI.jsx:17:14             
+default                          variable  src/features/exam/ExamReportUI.jsx:471:16            
+default                          variable  src/features/exam/ExamReviewModal.jsx:573:16         
+default                          variable  src/features/exam/ExamUIShell.jsx:1190:16            
+mergePendingDeckFromCoordinator            src/features/games/common/gameHelpers.js:506:14      
+calculateGameScore                         src/features/games/common/gameHelpers.js:553:14      
+GameHelpers                                src/features/games/common/gameHelpers.js:723:14      
+default                          variable  src/features/games/common/gameHelpers.js:748:16      
+useFillBlankLogic                          src/features/games/FillBlankGame.jsx:27:14           
+default                          variable  src/features/games/FillBlankGame.jsx:1236:16         
+default                          variable  src/features/games/FillBlankUI.jsx:880:16            
+default                          variable  src/features/games/GameMenu.jsx:835:16               
+default                          variable  src/features/games/GameView.jsx:1051:16              
+useImageQuizLogic                          src/features/games/ImageQuizGame.jsx:30:14           
+default                          variable  src/features/games/ImageQuizGame.jsx:1274:16         
+default                          variable  src/features/games/ImageQuizUI.jsx:779:16            
+useListeningLogic                          src/features/games/ListeningGame.jsx:26:14           
+default                          variable  src/features/games/ListeningGame.jsx:1153:16         
+default                          variable  src/features/games/ListeningUI.jsx:887:16            
+default                          variable  src/features/games/MatchGame.jsx:1125:16             
+default                          variable  src/features/games/MatchUI.jsx:831:16                
+useOddOneOutLogic                          src/features/games/OddOneOutGame.jsx:30:14           
+default                          variable  src/features/games/OddOneOutGame.jsx:1218:16         
+default                          variable  src/features/games/OddOneOutUI.jsx:775:16            
+usePronunciationLogic                      src/features/games/PronunciationGame.jsx:27:14       
+default                          variable  src/features/games/PronunciationGame.jsx:1138:16     
+default                          variable  src/features/games/PronunciationUI.jsx:785:16        
+default                          variable  src/features/games/QuizGame.jsx:1873:16              
+default                          variable  src/features/games/QuizUI.jsx:1463:16                
+useReadingLogic                            src/features/games/ReadingGame.jsx:21:14             
+default                          variable  src/features/games/ReadingGame.jsx:899:16            
+default                                    src/features/games/ReadingUI.jsx:897:16              
+default                          variable  src/features/games/ScrambleGame.jsx:1290:16          
+default                          variable  src/features/games/ScrambleUI.jsx:1075:16            
+useSpotMistakeLogic                        src/features/games/SpotMistakeGame.jsx:145:14        
+default                          variable  src/features/games/SpotMistakeGame.jsx:1496:16       
+default                          variable  src/features/games/SpotMistakeUI.jsx:1059:16         
+default                          variable  src/hooks/useAiCurator.js:238:16                     
+Block6_2_useAiLogic                        src/hooks/useAiLogic.js:1173:14                      
+default                          variable  src/hooks/useAiLogic.js:1181:16                      
+Block6_4_useAppLogic                       src/hooks/useAppLogic.js:1633:14                     
+default                          variable  src/hooks/useAppLogic.js:1642:16                     
+MASTER_DATA_KEYS                           src/hooks/useCoreState.js:31:14                      
+DEFAULT_SETTINGS                           src/hooks/useCoreState.js:136:14                     
+DEFAULT_AI_CONFIG                          src/hooks/useCoreState.js:156:14                     
+Block6_1_useCoreState                      src/hooks/useCoreState.js:1103:14                    
+default                          variable  src/hooks/useCoreState.js:1110:16                    
+useDataLogic                               src/hooks/useDataIO.js:1773:14                       
+Block6_3_useDataIO                         src/hooks/useDataIO.js:1774:14                       
+default                          variable  src/hooks/useDataIO.js:1783:16                       
+default                          variable  src/hooks/useExamLogic.js:1064:16                    
+Block6_8_useExamPoolLogic                  src/hooks/useExamPoolLogic.js:735:14                 
+default                          variable  src/hooks/useExamPoolLogic.js:742:16                 
+Block6_5_useStudyProgress                  src/hooks/useStudyProgress.js:474:14                 
+default                          variable  src/hooks/useStudyProgress.js:481:16                 
+default                          variable  src/services/db.js:288:16                            
+withApiLock                                src/services/geminiApi.js:29:14                      
+setKeyCooldown                             src/services/geminiApi.js:50:14                      
+cleanExpiredCooldowns                      src/services/geminiApi.js:58:14                      
+isGlobalPaused                             src/services/geminiApi.js:72:14                      
+triggerGlobalPause                         src/services/geminiApi.js:77:14                      
+getCooldown429Ms                           src/services/geminiApi.js:81:14                      
+fetchAiDistractors                         src/services/geminiApi.js:1044:14                    
+fetchAiDistractorsBatch                    src/services/geminiApi.js:1070:14                    
+GeminiApiService                           src/services/geminiApi.js:1109:14                    
+default                          variable  src/services/geminiApi.js:1133:16                    
+MASTER_DATA_KEY_PREFIX                     src/utils/helpers.js:17:14                           
+isMasterDataKey                            src/utils/helpers.js:55:14                           
+clearMasterDataCache                       src/utils/helpers.js:96:14                           
+normalizeStoredImageValue                  src/utils/helpers.js:127:14                          
+resolveSmartImageUrl                       src/utils/helpers.js:211:14                          
+advancedNormalize                          src/utils/helpers.js:352:14                          
+getStorageConfig                           src/utils/helpers.js:526:14                          
+requestWakeLock                            src/utils/helpers.js:533:14                          
+releaseWakeLock                            src/utils/helpers.js:548:14                          
+convertRawRowsToCards                      src/utils/helpers.js:565:14                          
+parseAndMapCSV                             src/utils/helpers.js:654:14                          
+sanitizeCards                              src/utils/helpers.js:663:14                          
+jsonToTsv                                  src/utils/helpers.js:705:14                          
+removePinyinTones                          src/utils/helpers.js:764:14                          
+comparePinyin                              src/utils/helpers.js:781:14                          
+generateQuizQuestion                       src/utils/helpers.js:815:14                          
+parseSrsTime                               src/utils/helpers.js:843:14                          
+generateTrickyVariant                      src/utils/helpers.js:928:14                          
+default                          variable  src/utils/helpers.js:1014:16                         
+default                          variable  src/utils/memoryManager.js:134:16                    
+default                          variable  src/utils/offlineDistractor.js:141:16                
+Duplicate exports (75)
+App|default                                                      src/App.jsx                                   
+TopicSelectorDropdown|TopicSelector                              src/components/common/Controls.jsx            
+ErrorBoundary|default                                            src/components/common/ErrorBoundary.jsx       
+GlobalLoadingScreen|default                                      src/components/common/GlobalLoadingScreen.jsx 
+Icons|default                                                    src/components/common/Icons.jsx               
+AppHeader|default                                                src/components/layout/AppHeader.jsx           
+BottomNav|default                                                src/components/layout/BottomNav.jsx           
+ControlBar|default                                               src/components/layout/ControlBar.jsx          
+FlashcardDisplay|default                                         src/components/layout/FlashcardDisplay.jsx    
+AiChatModal|default                                              src/components/modals/AiChatModal.jsx         
+AiConfigModal|default                                            src/components/modals/AiConfigModal.jsx       
+ApiKeyModal|default                                              src/components/modals/ApiKeyModal.jsx         
+ExamPoolManagerModal|default                                     src/components/modals/ExamPoolManagerModal.jsx
+HanziWriterModal|default                                         src/components/modals/HanziWriterModal.jsx    
+HelpModal|default                                                src/components/modals/HelpModal.jsx           
+LinkManagerModal|default                                         src/components/modals/LinkManagerModal.jsx    
+ManualInputModal|default                                         src/components/modals/ManualInputModal.jsx    
+NotebookModal|default                                            src/components/modals/NotebookModal.jsx       
+SaveLoadModal|default                                            src/components/modals/SaveLoadModal.jsx       
+SettingsModal|default                                            src/components/modals/SettingsModal.jsx       
+UI_TEXT|default                                                  src/config/i18n.js                            
+DEFAULT_PROMPTS|default                                          src/config/prompts.js                         
+AppContext|default                                               src/context/AppContext.jsx                    
+AiFactoryEngine|default                                          src/engines/aiFactory.js                      
+ExamFallback|default                                             src/engines/exam/examFallback.js              
+ExamMemory|default                                               src/engines/exam/examMemory.js                
+ExamNormalizer|default                                           src/engines/exam/examNormalizer.js            
+ExamProfiles|default                                             src/engines/examProfiles.js                   
+FallbackDataEngine|default                                       src/engines/fallbackData.js                   
+GameAiEngine|default                                             src/engines/gameAiEngine.js                   
+GameAlgoEngine|default                                           src/engines/gameOfflineEngine.js              
+MICRO_PROMPTS|default                                            src/engines/microPrompts.js                   
+IoeDataEngine|PedagogyEngine|default                             src/engines/pedagogyEngine.js                 
+QueueEngine|default                                              src/engines/queueEngine.js                    
+ExamReportUI|default                                             src/features/exam/ExamReportUI.jsx            
+ExamReviewModal|default                                          src/features/exam/ExamReviewModal.jsx         
+ExamUIShell|default                                              src/features/exam/ExamUIShell.jsx             
+node.exe : Configuration hints (21)
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Configuration hints (21):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+extractPendingCardsFromQueue|extractPendingCardsFromCoordinator  src/features/games/common/gameHelpers.js      
+mergePendingDeckFromCoordinator|mergePendingAmmoToDeck           src/features/games/common/gameHelpers.js      
+GameHelpers|default                                              src/features/games/common/gameHelpers.js      
+FillBlankGame|default                                            src/features/games/FillBlankGame.jsx          
+FillBlankPlayScreen|default                                      src/features/games/FillBlankUI.jsx            
+GameMenu|default                                                 src/features/games/GameMenu.jsx               
+GameView|default                                                 src/features/games/GameView.jsx               
+ImageQuizGame|default                                            src/features/games/ImageQuizGame.jsx          
+ImageQuizPlayScreen|default                                      src/features/games/ImageQuizUI.jsx            
+ListeningGame|default                                            src/features/games/ListeningGame.jsx          
+ListeningPlayScreen|default                                      src/features/games/ListeningUI.jsx            
+MatchGame|default                                                src/features/games/MatchGame.jsx              
+MatchPlayScreen|default                                          src/features/games/MatchUI.jsx                
+OddOneOutGame|default                                            src/features/games/OddOneOutGame.jsx          
+OddOneOutPlayScreen|default                                      src/features/games/OddOneOutUI.jsx            
+PronunciationGame|default                                        src/features/games/PronunciationGame.jsx      
+PronunciationPlayScreen|default                                  src/features/games/PronunciationUI.jsx        
+QuizGame|default                                                 src/features/games/QuizGame.jsx               
+GamePlayScreen|default                                           src/features/games/QuizUI.jsx                 
+ReadingGame|default                                              src/features/games/ReadingGame.jsx            
+ScrambleGame|default                                             src/features/games/ScrambleGame.jsx           
+ScramblePlayScreen|default                                       src/features/games/ScrambleUI.jsx             
+SpotMistakeGame|default                                          src/features/games/SpotMistakeGame.jsx        
+SpotMistakePlayScreen|default                                    src/features/games/SpotMistakeUI.jsx          
+useAiCurator|default                                             src/hooks/useAiCurator.js                     
+useAiLogic|Block6_2_useAiLogic|default                           src/hooks/useAiLogic.js                       
+useAppLogic|Block6_4_useAppLogic|default                         src/hooks/useAppLogic.js                      
+useCoreState|Block6_1_useCoreState|default                       src/hooks/useCoreState.js                     
+useDataIO|useDataLogic|Block6_3_useDataIO|default                src/hooks/useDataIO.js                        
+useExamLogic|default                                             src/hooks/useExamLogic.js                     
+useExamPoolLogic|Block6_8_useExamPoolLogic|default               src/hooks/useExamPoolLogic.js                 
+useStudyProgress|Block6_5_useStudyProgress|default               src/hooks/useStudyProgress.js                 
+FcDB|default                                                     src/services/db.js                            
+GeminiApiService|default                                         src/services/geminiApi.js                     
+buildSmartImageUrl|resolveSmartImageUrl                          src/utils/helpers.js                          
+Utils|default                                                    src/utils/helpers.js                          
+AiMemoryManager|default                                          src/utils/memoryManager.js                    
+OfflineDistractorEngine|default                                  src/utils/offlineDistractor.js                
+audit_app.mjs         Remove from knip.json ΓåÆ ignore (no matches)                              
+bundle_for_ai.js      Remove from knip.json ΓåÆ ignore (no matches)                              
+src/globals.d.ts      Remove from knip.json ΓåÆ ignore (no matches)                              
+transshipment-*.js    Remove from knip.json ΓåÆ ignore (no matches)                              
+tests/**              Remove from knip.json ΓåÆ ignore (no issues)                               
+vitest.config.js      Remove from knip.json ΓåÆ ignore (no matches)                              
+playwright.config.js  Remove from knip.json ΓåÆ ignore (no issues)                               
+dist/**               Remove from knip.json ΓåÆ ignore (gitignored)                              
+build/**              Remove from knip.json ΓåÆ ignore (no matches)                              
+@types/react          Remove from knip.json ΓåÆ ignoreDependencies                               
+@types/react-dom      Remove from knip.json ΓåÆ ignoreDependencies                               
+autoprefixer          Remove from knip.json ΓåÆ ignoreDependencies                               
+@playwright/test      Remove from knip.json ΓåÆ ignoreDependencies                               
+vitest                Remove from knip.json ΓåÆ ignoreDependencies                               
+jsdom                 Remove from knip.json ΓåÆ ignoreDependencies                               
+oxlint                Remove from knip.json ΓåÆ ignoreBinaries                                   
+src/main.jsx!         Remove redundant pattern from knip.json ΓåÆ entry                          
+vite.config.js!       Remove redundant pattern from knip.json ΓåÆ entry                          
+tailwind.config.js!   Remove redundant pattern from knip.json ΓåÆ entry                          
+postcss.config.js!    Remove redundant pattern from knip.json ΓåÆ entry                          
+.css                  Compiled extension excluded by knip.json ΓåÆ project (imports not followed)

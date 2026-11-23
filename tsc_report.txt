@@ -1,0 +1,556 @@
+﻿src/App.jsx(360,10): error TS2739: Type '{ isOpen: boolean; onClose: () => any; apiKey: any; setApiKey: any; t: any; }' is missing the following properties from type '{ aiModel: any; apiKey: any; isOpen: any; onClose: any; setAiModel: any; setApiKey: any; t?: (k: any) => any; }': aiModel, setAiModel
+src/App.jsx(378,11): error TS2322: Type '{ isOpen: boolean; onClose: () => any; data: any; onSave: any; onPlay: any; t: any; mainColor: string; onDelete: () => void; apiKey: any; lang: any; onCopy: any; sourceData: any; onOpenHanzi: any; onReviewGame: any; dataMode: any; }' is not assignable to type 'IntrinsicAttributes & { apiKey?: string; data?: any[]; dataMode?: string; isOpen: any; lang?: string; mainColor?: string; onClose: any; onCopy: any; onOpenHanzi: any; onPlay: any; onReviewGame: any; onSave: any; sourceData?: any[]; t?: (k: any) => any; }'.
+  Property 'onDelete' does not exist on type 'IntrinsicAttributes & { apiKey?: string; data?: any[]; dataMode?: string; isOpen: any; lang?: string; mainColor?: string; onClose: any; onCopy: any; onOpenHanzi: any; onPlay: any; onReviewGame: any; onSave: any; sourceData?: any[]; t?: (k: any) => any; }'.
+src/App.jsx(394,11): error TS2322: Type '{ isOpen: boolean; onClose: () => any; t: any; defaultUrl: any; setDefaultUrl: any; exportUrl: any; setExportUrl: any; importUrl: any; setImportUrl: any; apiKeySheetUrl: any; setApiKeySheetUrl: any; ... 13 more ...; onSaveLink: any; }' is not assignable to type 'IntrinsicAttributes & { aiHarvestPool?: {}; apiKeySheetUrl: any; exportUrl: any; isOpen: any; lang?: string; onClearHarvestPool: any; onClose: any; onDownloadTemplate: any; ... 10 more ...; t?: (k: any) => any; }'.
+  Property 'defaultUrl' does not exist on type 'IntrinsicAttributes & { aiHarvestPool?: {}; apiKeySheetUrl: any; exportUrl: any; isOpen: any; lang?: string; onClearHarvestPool: any; onClose: any; onDownloadTemplate: any; ... 10 more ...; t?: (k: any) => any; }'.
+src/App.jsx(484,11): error TS2322: Type '{ isOpen: boolean; onClose: any; text: any; onSelect: any; t: any; }' is not assignable to type 'IntrinsicAttributes & { isOpen: any; onClose: any; onSelect: any; text: any; }'.
+  Property 't' does not exist on type 'IntrinsicAttributes & { isOpen: any; onClose: any; onSelect: any; text: any; }'.
+src/components/common/Controls.jsx(397,10): error TS2339: Property 'AiModeSwitch' does not exist on type 'Window & typeof globalThis'.
+src/components/common/Controls.jsx(398,10): error TS2551: Property 'MenuToggle' does not exist on type 'Window & typeof globalThis'. Did you mean 'ontoggle'?
+src/components/common/Controls.jsx(399,10): error TS2339: Property 'LevelSelector' does not exist on type 'Window & typeof globalThis'.
+src/components/common/Controls.jsx(400,10): error TS2339: Property 'TopicSelectorDropdown' does not exist on type 'Window & typeof globalThis'.
+src/components/common/Controls.jsx(401,10): error TS2339: Property 'TopicSelector' does not exist on type 'Window & typeof globalThis'.
+src/components/common/GlobalLoadingScreen.jsx(97,10): error TS2339: Property 'GlobalLoadingScreen' does not exist on type 'Window & typeof globalThis'.
+src/components/common/Icons.jsx(402,10): error TS2339: Property 'Icons' does not exist on type 'Window & typeof globalThis'.
+src/components/layout/AppHeader.jsx(215,10): error TS2339: Property 'AppHeader' does not exist on type 'Window & typeof globalThis'.
+src/components/layout/BottomNav.jsx(175,10): error TS2339: Property 'BottomNav' does not exist on type 'Window & typeof globalThis'.
+src/components/layout/BottomNav.jsx(176,10): error TS2339: Property 'LayoutAlignWidget' does not exist on type 'Window & typeof globalThis'.
+src/components/layout/ControlBar.jsx(152,10): error TS2339: Property 'ControlBar' does not exist on type 'Window & typeof globalThis'.
+src/components/layout/FlashcardDisplay.jsx(138,32): error TS2339: Property 'startSide' does not exist on type '{}'.
+src/components/layout/FlashcardDisplay.jsx(139,27): error TS2339: Property 'cardSize' does not exist on type '{}'.
+src/components/layout/FlashcardDisplay.jsx(295,28): error TS2339: Property 'fontFamily' does not exist on type '{}'.
+src/components/layout/FlashcardDisplay.jsx(350,56): error TS2339: Property 'blur' does not exist on type 'Element'.
+src/components/layout/FlashcardDisplay.jsx(367,34): error TS2339: Property 'srsEnabled' does not exist on type '{}'.
+src/components/layout/FlashcardDisplay.jsx(449,39): error TS2559: Type '{ '--fc-scale': any; }' has no properties in common with type 'Properties<string | number, string & {}>'.
+src/components/layout/FlashcardDisplay.jsx(460,24): error TS2339: Property 'blur' does not exist on type 'EventTarget'.
+src/components/layout/FlashcardDisplay.jsx(571,45): error TS2339: Property 'fontWeight' does not exist on type '{}'.
+src/components/layout/FlashcardDisplay.jsx(748,41): error TS2339: Property 'fontWeight' does not exist on type '{}'.
+src/components/layout/FlashcardDisplay.jsx(905,10): error TS2339: Property 'FlashcardDisplay' does not exist on type 'Window & typeof globalThis'.
+src/components/modals/AiChatModal.jsx(582,19): error TS2322: Type 'string' is not assignable to type 'number'.
+src/components/modals/AiChatModal.jsx(633,10): error TS2339: Property 'AiChatModal' does not exist on type 'Window & typeof globalThis'.
+src/components/modals/AiConfigModal.jsx(235,10): error TS2339: Property 'AiConfigModal' does not exist on type 'Window & typeof globalThis'.
+src/components/modals/ApiKeyModal.jsx(623,10): error TS2339: Property 'ApiKeyModal' does not exist on type 'Window & typeof globalThis'.
+src/components/modals/ExamPoolManagerModal.jsx(394,10): error TS2339: Property 'ExamPoolManagerModal' does not exist on type 'Window & typeof globalThis'.
+src/components/modals/HanziWriterModal.jsx(327,10): error TS2551: Property 'HanziWriterModal' does not exist on type 'Window & typeof globalThis'. Did you mean 'HanziWriter'?
+src/components/modals/HelpModal.jsx(284,10): error TS2339: Property 'HelpModal' does not exist on type 'Window & typeof globalThis'.
+src/components/modals/HelperModals.jsx(275,10): error TS2339: Property 'WordSelectorModal' does not exist on type 'Window & typeof globalThis'.
+src/components/modals/HelperModals.jsx(276,10): error TS2339: Property 'HanziSelectorModal' does not exist on type 'Window & typeof globalThis'.
+src/components/modals/LinkManagerModal.jsx(517,10): error TS2339: Property 'LinkManagerModal' does not exist on type 'Window & typeof globalThis'.
+src/components/modals/ManualInputModal.jsx(329,19): error TS2322: Type 'string' is not assignable to type 'number'.
+src/components/modals/ManualInputModal.jsx(418,10): error TS2339: Property 'ManualInputModal' does not exist on type 'Window & typeof globalThis'.
+src/components/modals/NotebookModal.jsx(520,9): error TS2810: Expected 1 argument, but got 0. 'new Promise()' needs a JSDoc hint to produce a 'resolve' that can be called without arguments.
+src/components/modals/NotebookModal.jsx(527,9): error TS2810: Expected 1 argument, but got 0. 'new Promise()' needs a JSDoc hint to produce a 'resolve' that can be called without arguments.
+src/components/modals/NotebookModal.jsx(1132,25): error TS2322: Type 'string' is not assignable to type 'number'.
+src/components/modals/NotebookModal.jsx(1202,25): error TS2322: Type 'string' is not assignable to type 'number'.
+src/components/modals/NotebookModal.jsx(1214,25): error TS2322: Type 'string' is not assignable to type 'number'.
+src/components/modals/NotebookModal.jsx(1225,25): error TS2322: Type 'string' is not assignable to type 'number'.
+src/components/modals/NotebookModal.jsx(1236,25): error TS2322: Type 'string' is not assignable to type 'number'.
+src/components/modals/NotebookModal.jsx(1354,10): error TS2339: Property 'ReviewDropdown' does not exist on type 'Window & typeof globalThis'.
+src/components/modals/NotebookModal.jsx(1355,10): error TS2339: Property 'NotebookModal' does not exist on type 'Window & typeof globalThis'.
+src/components/modals/ProgressModals.jsx(236,10): error TS2339: Property 'MasteredModal' does not exist on type 'Window & typeof globalThis'.
+src/components/modals/ProgressModals.jsx(237,10): error TS2339: Property 'IncorrectModal' does not exist on type 'Window & typeof globalThis'.
+src/components/modals/SaveLoadModal.jsx(141,10): error TS2339: Property 'SaveLoadModal' does not exist on type 'Window & typeof globalThis'.
+src/components/modals/SettingsModal.jsx(392,38): error TS2339: Property 'srsEnabled' does not exist on type '{}'.
+src/components/modals/SettingsModal.jsx(396,28): error TS2339: Property 'srsEnabled' does not exist on type '{}'.
+src/components/modals/SettingsModal.jsx(401,43): error TS2339: Property 'srsHard' does not exist on type '{}'.
+src/components/modals/SettingsModal.jsx(407,43): error TS2339: Property 'srsGood' does not exist on type '{}'.
+src/components/modals/SettingsModal.jsx(413,43): error TS2339: Property 'srsEasy' does not exist on type '{}'.
+src/components/modals/SettingsModal.jsx(427,36): error TS2339: Property 'startSide' does not exist on type '{}'.
+src/components/modals/SettingsModal.jsx(457,36): error TS2339: Property 'fontFamily' does not exist on type '{}'.
+src/components/modals/SettingsModal.jsx(469,36): error TS2339: Property 'fontWeight' does not exist on type '{}'.
+src/components/modals/SettingsModal.jsx(477,49): error TS2339: Property 'rate' does not exist on type '{}'.
+src/components/modals/SettingsModal.jsx(481,38): error TS2339: Property 'selectedVoice' does not exist on type '{}'.
+src/components/modals/SettingsModal.jsx(494,61): error TS2339: Property 'selectedVoice' does not exist on type '{}'.
+src/components/modals/SettingsModal.jsx(497,64): error TS2339: Property 'rate' does not exist on type '{}'.
+src/components/modals/SettingsModal.jsx(510,36): error TS2339: Property 'rate' does not exist on type '{}'.
+src/components/modals/SettingsModal.jsx(522,34): error TS2339: Property 'fontSize' does not exist on type '{}'.
+src/components/modals/SettingsModal.jsx(532,34): error TS2339: Property 'backFontSize' does not exist on type '{}'.
+src/components/modals/SettingsModal.jsx(544,34): error TS2339: Property 'cardSize' does not exist on type '{}'.
+src/components/modals/SettingsModal.jsx(562,37): error TS2339: Property 'delayAfterRead' does not exist on type '{}'.
+src/components/modals/SettingsModal.jsx(572,37): error TS2339: Property 'delayFlip' does not exist on type '{}'.
+src/components/modals/SettingsModal.jsx(582,37): error TS2339: Property 'delayNext' does not exist on type '{}'.
+src/components/modals/SettingsModal.jsx(592,36): error TS2339: Property 'repeatCount' does not exist on type '{}'.
+src/components/modals/SettingsModal.jsx(759,10): error TS2339: Property 'SettingsModal' does not exist on type 'Window & typeof globalThis'.
+src/engines/exam/examFallback.js(84,20): error TS2339: Property 'IOE_MULTIPLE_CHOICE' does not exist on type '{}'.
+src/engines/exam/examFallback.js(86,20): error TS2339: Property 'IOE_MATCH' does not exist on type '{}'.
+src/engines/exam/examFallback.js(101,20): error TS2339: Property 'IOE_SPOT_MISTAKE' does not exist on type '{}'.
+src/engines/exam/examFallback.js(112,20): error TS2339: Property 'IOE_FILL_BLANK' does not exist on type '{}'.
+src/engines/exam/examFallback.js(123,20): error TS2339: Property 'IOE_SCRAMBLE' does not exist on type '{}'.
+src/engines/exam/examFallback.js(131,20): error TS2339: Property 'IOE_ODD_ONE_OUT' does not exist on type '{}'.
+src/engines/exam/examFallback.js(146,20): error TS2339: Property 'IOE_PRONUNCIATION' does not exist on type '{}'.
+src/engines/exam/examFallback.js(160,20): error TS2339: Property 'IOE_IMAGE_QUIZ' does not exist on type '{}'.
+src/engines/exam/examFallback.js(190,20): error TS2339: Property 'IOE_LISTENING' does not exist on type '{}'.
+src/engines/exam/index.js(2200,38): error TS2556: A spread argument must either have a tuple type or be passed to a rest parameter.
+src/engines/examProfiles.js(114,38): error TS2339: Property 'IOE_PRONUNCIATION' does not exist on type '{}'.
+src/engines/examProfiles.js(115,35): error TS2339: Property 'IOE_IMAGE_QUIZ' does not exist on type '{}'.
+src/engines/examProfiles.js(116,34): error TS2339: Property 'IOE_LISTENING' does not exist on type '{}'.
+src/engines/examProfiles.js(117,40): error TS2339: Property 'IELTS_READING_PASSAGE' does not exist on type '{}'.
+src/engines/examProfiles.js(224,27): error TS2339: Property 'IOE_ODD_ONE_OUT' does not exist on type '{}'.
+src/engines/examProfiles.js(226,27): error TS2339: Property 'IOE_SPOT_MISTAKE' does not exist on type '{}'.
+src/engines/examProfiles.js(236,27): error TS2339: Property 'IOE_MULTIPLE_CHOICE' does not exist on type '{}'.
+src/engines/examProfiles.js(237,27): error TS2339: Property 'IOE_SPOT_MISTAKE' does not exist on type '{}'.
+src/engines/examProfiles.js(238,27): error TS2339: Property 'IOE_FILL_BLANK' does not exist on type '{}'.
+src/engines/examProfiles.js(239,27): error TS2339: Property 'IOE_SCRAMBLE' does not exist on type '{}'.
+src/engines/examProfiles.js(277,30): error TS2339: Property 'IOE_ODD_ONE_OUT' does not exist on type '{}'.
+src/engines/examProfiles.js(279,30): error TS2339: Property 'IOE_MATCH' does not exist on type '{}'.
+src/engines/examProfiles.js(280,30): error TS2339: Property 'IOE_MULTIPLE_CHOICE' does not exist on type '{}'.
+src/engines/examProfiles.js(283,30): error TS2339: Property 'IOE_MULTIPLE_CHOICE' does not exist on type '{}'.
+src/engines/examProfiles.js(285,30): error TS2339: Property 'IOE_FILL_BLANK' does not exist on type '{}'.
+src/engines/examProfiles.js(286,30): error TS2339: Property 'IOE_SCRAMBLE' does not exist on type '{}'.
+src/engines/examProfiles.js(292,30): error TS2339: Property 'IOE_SPOT_MISTAKE' does not exist on type '{}'.
+src/engines/examProfiles.js(294,30): error TS2339: Property 'IOE_MATCH' does not exist on type '{}'.
+src/engines/examProfiles.js(295,30): error TS2339: Property 'IOE_MULTIPLE_CHOICE' does not exist on type '{}'.
+src/engines/examProfiles.js(298,30): error TS2339: Property 'IOE_MULTIPLE_CHOICE' does not exist on type '{}'.
+src/engines/examProfiles.js(300,30): error TS2339: Property 'IOE_FILL_BLANK' does not exist on type '{}'.
+src/engines/examProfiles.js(301,30): error TS2339: Property 'IOE_SCRAMBLE' does not exist on type '{}'.
+src/engines/examProfiles.js(317,28): error TS2339: Property 'IOE_ODD_ONE_OUT' does not exist on type '{}'.
+src/engines/examProfiles.js(319,28): error TS2339: Property 'IOE_MATCH' does not exist on type '{}'.
+src/engines/examProfiles.js(321,28): error TS2339: Property 'IOE_MATCH' does not exist on type '{}'.
+src/engines/examProfiles.js(322,28): error TS2339: Property 'IOE_SPOT_MISTAKE' does not exist on type '{}'.
+src/engines/examProfiles.js(324,28): error TS2339: Property 'IOE_MULTIPLE_CHOICE' does not exist on type '{}'.
+src/engines/examProfiles.js(326,28): error TS2339: Property 'IOE_MULTIPLE_CHOICE' does not exist on type '{}'.
+src/engines/examProfiles.js(336,28): error TS2339: Property 'IOE_FILL_BLANK' does not exist on type '{}'.
+src/engines/examProfiles.js(337,28): error TS2339: Property 'IOE_FILL_BLANK' does not exist on type '{}'.
+src/engines/examProfiles.js(339,28): error TS2339: Property 'IOE_SCRAMBLE' does not exist on type '{}'.
+src/engines/examProfiles.js(340,28): error TS2339: Property 'IOE_SCRAMBLE' does not exist on type '{}'.
+src/engines/examProfiles.js(350,28): error TS2339: Property 'IOE_SPOT_MISTAKE' does not exist on type '{}'.
+src/engines/examProfiles.js(366,28): error TS2339: Property 'IOE_MATCH' does not exist on type '{}'.
+src/engines/examProfiles.js(367,28): error TS2339: Property 'IOE_MULTIPLE_CHOICE' does not exist on type '{}'.
+src/engines/examProfiles.js(368,28): error TS2339: Property 'IOE_FILL_BLANK' does not exist on type '{}'.
+src/engines/examProfiles.js(374,28): error TS2339: Property 'IOE_MULTIPLE_CHOICE' does not exist on type '{}'.
+src/engines/examProfiles.js(375,28): error TS2339: Property 'IOE_MATCH' does not exist on type '{}'.
+src/engines/examProfiles.js(377,28): error TS2339: Property 'IOE_MATCH' does not exist on type '{}'.
+src/engines/examProfiles.js(378,28): error TS2339: Property 'IOE_MULTIPLE_CHOICE' does not exist on type '{}'.
+src/engines/examProfiles.js(380,28): error TS2339: Property 'IOE_FILL_BLANK' does not exist on type '{}'.
+src/engines/examProfiles.js(381,28): error TS2339: Property 'IOE_SCRAMBLE' does not exist on type '{}'.
+src/engines/examProfiles.js(385,28): error TS2339: Property 'IOE_MULTIPLE_CHOICE' does not exist on type '{}'.
+src/engines/fallbackData.js(397,9): error TS2741: Property 'question' is missing in type '{ term: string; definition: string; options: any[]; origin: { term: string; definition: string; isAiGenerated: boolean; }; isAiGenerated: false; _isRescued: true; }' but required in type '{ question: { term: string; definition: string; isAiGenerated: boolean; }; options: any[]; isAiGenerated: boolean; _isRescued: boolean; }'.
+src/engines/fallbackData.js(433,9): error TS2322: Type '{ wrongWord: string; explanation: any; wrongSentence?: undefined; correction?: undefined; } | { wrongSentence: string; wrongWord: any; correction: any; explanation: any; }' is not assignable to type '{ wrongSentence: string; wrongWord: string; correction: string; explanation: string; }'.
+  Type '{ wrongWord: string; explanation: any; wrongSentence?: undefined; correction?: undefined; }' is not assignable to type '{ wrongSentence: string; wrongWord: string; correction: string; explanation: string; }'.
+    Property 'wrongSentence' is optional in type '{ wrongWord: string; explanation: any; wrongSentence?: undefined; correction?: undefined; }' but required in type '{ wrongSentence: string; wrongWord: string; correction: string; explanation: string; }'.
+src/engines/queueEngine.js(4,76): error TS2339: Property '__zombieKillerActive' does not exist on type 'Window & typeof globalThis'.
+src/engines/queueEngine.js(5,14): error TS2339: Property '__zombieKillerActive' does not exist on type 'Window & typeof globalThis'.
+src/engines/queueEngine.js(26,16): error TS2339: Property '__zombieKillerActive' does not exist on type 'Window & typeof globalThis'.
+src/engines/queueEngine.js(80,19): error TS2810: Expected 1 argument, but got 0. 'new Promise()' needs a JSDoc hint to produce a 'resolve' that can be called without arguments.
+src/engines/queueEngine.js(98,15): error TS2810: Expected 1 argument, but got 0. 'new Promise()' needs a JSDoc hint to produce a 'resolve' that can be called without arguments.
+src/engines/queueEngine.js(138,17): error TS2810: Expected 1 argument, but got 0. 'new Promise()' needs a JSDoc hint to produce a 'resolve' that can be called without arguments.
+src/engines/queueEngine.js(246,19): error TS2810: Expected 1 argument, but got 0. 'new Promise()' needs a JSDoc hint to produce a 'resolve' that can be called without arguments.
+src/engines/queueEngine.js(261,15): error TS2810: Expected 1 argument, but got 0. 'new Promise()' needs a JSDoc hint to produce a 'resolve' that can be called without arguments.
+src/engines/queueEngine.js(296,82): error TS2810: Expected 1 argument, but got 0. 'new Promise()' needs a JSDoc hint to produce a 'resolve' that can be called without arguments.
+src/engines/queueEngine.js(398,15): error TS2810: Expected 1 argument, but got 0. 'new Promise()' needs a JSDoc hint to produce a 'resolve' that can be called without arguments.
+src/features/exam/ExamReportUI.jsx(127,15): error TS2322: Type 'string' is not assignable to type '"end" | "inherit" | "middle" | "start"'.
+src/features/exam/ExamReportUI.jsx(172,47): error TS2339: Property 'Block5_16_ExamReviewModal' does not exist on type 'Window & typeof globalThis'.
+src/features/exam/ExamReportUI.jsx(172,83): error TS2339: Property 'ExamReviewModal' does not exist on type 'Window & typeof globalThis'.
+src/features/exam/ExamReportUI.jsx(175,29): error TS2339: Property 'profile' does not exist on type '{}'.
+src/features/exam/ExamReportUI.jsx(176,31): error TS2339: Property 'blueprint' does not exist on type '{}'.
+src/features/exam/ExamReportUI.jsx(177,29): error TS2339: Property 'answers' does not exist on type '{}'.
+src/features/exam/ExamReportUI.jsx(185,50): error TS2339: Property 'timeRemaining' does not exist on type '{}'.
+src/features/exam/ExamReportUI.jsx(467,10): error TS2339: Property 'Block5_15_ExamReportUI' does not exist on type 'Window & typeof globalThis'.
+src/features/exam/ExamReportUI.jsx(468,10): error TS2339: Property 'ExamReportUI' does not exist on type 'Window & typeof globalThis'.
+src/features/exam/ExamReviewModal.jsx(569,10): error TS2339: Property 'Block5_16_ExamReviewModal' does not exist on type 'Window & typeof globalThis'.
+src/features/exam/ExamReviewModal.jsx(570,10): error TS2339: Property 'ExamReviewModal' does not exist on type 'Window & typeof globalThis'.
+src/features/exam/ExamUIShell.jsx(702,5): error TS2339: Property 'examState' does not exist on type '{}'.
+src/features/exam/ExamUIShell.jsx(703,5): error TS2339: Property 'currentQuestion' does not exist on type '{}'.
+src/features/exam/ExamUIShell.jsx(704,5): error TS2339: Property 'isHydrating' does not exist on type '{}'.
+src/features/exam/ExamUIShell.jsx(705,5): error TS2339: Property 'submitAnswer' does not exist on type '{}'.
+src/features/exam/ExamUIShell.jsx(706,5): error TS2339: Property 'quitExam' does not exist on type '{}'.
+src/features/exam/ExamUIShell.jsx(707,5): error TS2339: Property 'forceSubmitExam' does not exist on type '{}'.
+src/features/exam/ExamUIShell.jsx(708,5): error TS2339: Property 'setTransitionState' does not exist on type '{}'.
+src/features/exam/ExamUIShell.jsx(709,5): error TS2339: Property 'cachedCount' does not exist on type '{}'.
+src/features/exam/ExamUIShell.jsx(710,5): error TS2339: Property 'examCooldown' does not exist on type '{}'.
+src/features/exam/ExamUIShell.jsx(711,5): error TS2339: Property 'exportExamToExcel' does not exist on type '{}'.
+src/features/exam/ExamUIShell.jsx(870,49): error TS2339: Property 'Block5_15_ExamReportUI' does not exist on type 'Window & typeof globalThis'.
+src/features/exam/ExamUIShell.jsx(870,82): error TS2339: Property 'ExamReportUI' does not exist on type 'Window & typeof globalThis'.
+src/features/exam/ExamUIShell.jsx(1186,10): error TS2339: Property 'ExamUIShell' does not exist on type 'Window & typeof globalThis'.
+src/features/exam/ExamUIShell.jsx(1187,10): error TS2339: Property 'Block5_14_ExamUIShell' does not exist on type 'Window & typeof globalThis'.
+src/features/games/FillBlankGame.jsx(197,30): error TS2339: Property 'currentQuestion' does not exist on type '{}'.
+src/features/games/FillBlankGame.jsx(201,60): error TS2339: Property 'deck' does not exist on type '{}'.
+src/features/games/FillBlankGame.jsx(298,39): error TS2339: Property 'wrongCount' does not exist on type '{}'.
+src/features/games/FillBlankGame.jsx(299,34): error TS2339: Property 'combo' does not exist on type '{}'.
+src/features/games/FillBlankGame.jsx(303,20): error TS2339: Property 'checkStatus' does not exist on type '{}'.
+src/features/games/FillBlankGame.jsx(304,21): error TS2339: Property 'checkStatus' does not exist on type '{}'.
+src/features/games/FillBlankGame.jsx(305,19): error TS2339: Property 'currentQuestion' does not exist on type '{}'.
+src/features/games/FillBlankGame.jsx(307,39): error TS2339: Property 'currentQuestion' does not exist on type '{}'.
+src/features/games/FillBlankGame.jsx(308,30): error TS2339: Property 'currentQuestion' does not exist on type '{}'.
+src/features/games/FillBlankGame.jsx(854,51): error TS2339: Property 'correctCount' does not exist on type '{}'.
+src/features/games/FillBlankGame.jsx(855,48): error TS2339: Property 'time' does not exist on type '{}'.
+src/features/games/FillBlankGame.jsx(856,49): error TS2339: Property 'wrongCount' does not exist on type '{}'.
+src/features/games/FillBlankGame.jsx(1209,7): error TS2322: Type '{ currentQuestion: any; inputBuffer: any; setInputBuffer: Dispatch<any>; checkStatus: any; attempts: any; time: any; score: any; combo: any; playedCount: any; isFinished: boolean; isGenerating: boolean; ... 20 more ...; settings: any; }' is not assignable to type 'IntrinsicAttributes & { aiAmmoCount: any; aiCountdown: any; aiWaitTime: any; attempts: any; checkAnswer: any; checkStatus: any; combo: any; config: any; correctCount: any; ... 19 more ...; wrongCount: any; }'.
+  Property 't' does not exist on type 'IntrinsicAttributes & { aiAmmoCount: any; aiCountdown: any; aiWaitTime: any; attempts: any; checkAnswer: any; checkStatus: any; combo: any; config: any; correctCount: any; ... 19 more ...; wrongCount: any; }'.
+src/features/games/FillBlankGame.jsx(1230,10): error TS2339: Property 'Block5_9_useFillBlankLogic' does not exist on type 'Window & typeof globalThis'.
+src/features/games/FillBlankGame.jsx(1231,10): error TS2339: Property 'useFillBlankLogic' does not exist on type 'Window & typeof globalThis'.
+src/features/games/FillBlankGame.jsx(1232,10): error TS2339: Property 'Block5_9_FillBlankGame' does not exist on type 'Window & typeof globalThis'.
+src/features/games/FillBlankGame.jsx(1233,10): error TS2339: Property 'FillBlankGame' does not exist on type 'Window & typeof globalThis'.
+src/features/games/FillBlankUI.jsx(146,16): error TS2739: Type '{ active: any; setActive: Dispatch<any>; icon: ({ size, className, ...props }: { [x: string]: any; className?: string; size?: number; }) => Element; color: string; title: string; subtitle: string; }' is missing the following properties from type '{ active: any; color: any; disabled: any; extra: any; icon: any; setActive: any; subtitle: any; title: any; }': disabled, extra
+src/features/games/FillBlankUI.jsx(202,12): error TS2741: Property 'disabled' is missing in type '{ active: any; setActive: Dispatch<any>; icon: ({ size, className, ...props }: { [x: string]: any; className?: string; size?: number; }) => Element; color: string; title: string; subtitle: string; extra: Element; }' but required in type '{ active: any; color: any; disabled: any; extra: any; icon: any; setActive: any; subtitle: any; title: any; }'.
+src/features/games/FillBlankUI.jsx(374,8): error TS2741: Property 'onComplete' is missing in type '{ duration: any; onCancel: any; queueLength: any; text: string; subText: string; mainColor: string; levelStr: string; }' but required in type '{ duration?: number; engine?: any; levelStr?: string; mainColor?: string; onCancel: any; onComplete: any; queueLength?: number; subText?: string; text?: string; }'.
+src/features/games/FillBlankUI.jsx(874,10): error TS2339: Property 'Block5_8_FillBlankSetup' does not exist on type 'Window & typeof globalThis'.
+src/features/games/FillBlankUI.jsx(875,10): error TS2339: Property 'FillBlankSetup' does not exist on type 'Window & typeof globalThis'.
+src/features/games/FillBlankUI.jsx(876,10): error TS2339: Property 'Block5_8_FillBlankPlayScreen' does not exist on type 'Window & typeof globalThis'.
+src/features/games/FillBlankUI.jsx(877,10): error TS2339: Property 'FillBlankPlayScreen' does not exist on type 'Window & typeof globalThis'.
+src/features/games/GameMenu.jsx(831,10): error TS2339: Property 'GameMenu' does not exist on type 'Window & typeof globalThis'.
+src/features/games/GameMenu.jsx(832,10): error TS2339: Property 'Block5_7_GameMenu' does not exist on type 'Window & typeof globalThis'.
+src/features/games/GameView.jsx(697,25): error TS2339: Property 'level' does not exist on type '{}'.
+src/features/games/GameView.jsx(763,12): error TS2739: Type '{ t: any; mainColor: any; lang: any; dataMode: any; gameSessions: any; onSelectQuiz: () => void; onStartMatch: (aiModeFlag?: boolean) => void; onStartScramble: () => void; onStartFillBlank: () => void; ... 11 more ...; onOpenAiConfig: any; }' is missing the following properties from type '{ dataMode?: string; gameSessions?: {}; lang?: string; mainColor?: string; onClearSession: any; onOpenAiConfig: any; onOpenExamPoolManager: any; onResume: any; onResumeExam: any; onResumeMockTest: any; ... 13 more ...; t: any; }': onResumeExam, onSelectGame, onStartExam
+src/features/games/GameView.jsx(801,13): error TS2322: Type '{ examLogic: any; mainColor: any; onExit: () => void; onLogWrong: any; onOpenIncorrect: any; onBookmark: (payload: any) => any; notebook: any; onPlay: any; lang: any; }' is not assignable to type 'IntrinsicAttributes & { examLogic?: {}; lang: any; mainColor?: string; notebook: any; onBookmark: any; onExit: any; onOpenIncorrect: any; onPlay: any; onSpeak: any; }'.
+  Property 'onLogWrong' does not exist on type 'IntrinsicAttributes & { examLogic?: {}; lang: any; mainColor?: string; notebook: any; onBookmark: any; onExit: any; onOpenIncorrect: any; onPlay: any; onSpeak: any; }'.
+src/features/games/GameView.jsx(815,13): error TS2322: Type '{ t: any; mainColor: any; lang: any; dataMode: any; currentLevel: any; onOpenAiConfig: any; onStart: (arg1: any, arg2: any) => void; onBack: () => void; }' is not assignable to type 'IntrinsicAttributes & { currentLevel: any; lang?: string; mainColor?: string; onBack: any; onOpenAiConfig: any; onStart: any; }'.
+  Property 't' does not exist on type 'IntrinsicAttributes & { currentLevel: any; lang?: string; mainColor?: string; onBack: any; onOpenAiConfig: any; onStart: any; }'.
+src/features/games/GameView.jsx(848,13): error TS2322: Type '{ t: any; mainColor: any; initialAiMode: boolean; onStart: (arg1: any, arg2: any) => void; onBack: () => void; }' is not assignable to type 'IntrinsicAttributes & { initialAiMode?: boolean; mainColor?: string; onBack: any; onStart: any; }'.
+  Property 't' does not exist on type 'IntrinsicAttributes & { initialAiMode?: boolean; mainColor?: string; onBack: any; onStart: any; }'.
+src/features/games/GameView.jsx(863,13): error TS2322: Type '{ t: any; mainColor: any; onStart: (arg1: any, arg2: any) => void; onBack: () => void; }' is not assignable to type 'IntrinsicAttributes & { mainColor?: string; onBack: any; onStart: any; }'.
+  Property 't' does not exist on type 'IntrinsicAttributes & { mainColor?: string; onBack: any; onStart: any; }'.
+src/features/games/GameView.jsx(877,13): error TS2322: Type '{ t: any; mainColor: any; onStart: (arg1: any, arg2: any) => void; onBack: () => void; }' is not assignable to type 'IntrinsicAttributes & { mainColor?: string; onBack: any; onStart: any; }'.
+  Property 't' does not exist on type 'IntrinsicAttributes & { mainColor?: string; onBack: any; onStart: any; }'.
+src/features/games/GameView.jsx(891,13): error TS2322: Type '{ t: any; mainColor: any; onStart: (arg1: any, arg2: any) => void; onBack: () => void; }' is not assignable to type 'IntrinsicAttributes & { mainColor?: string; onBack: any; onStart: any; }'.
+  Property 't' does not exist on type 'IntrinsicAttributes & { mainColor?: string; onBack: any; onStart: any; }'.
+src/features/games/GameView.jsx(905,13): error TS2322: Type '{ t: any; mainColor: string; onStart: (arg1: any, arg2: any) => void; onBack: () => void; }' is not assignable to type 'IntrinsicAttributes & { mainColor?: string; onBack: any; onStart: any; }'.
+  Property 't' does not exist on type 'IntrinsicAttributes & { mainColor?: string; onBack: any; onStart: any; }'.
+src/features/games/GameView.jsx(919,13): error TS2322: Type '{ t: any; mainColor: string; onStart: (arg1: any, arg2: any) => void; onBack: () => void; }' is not assignable to type 'IntrinsicAttributes & { mainColor?: string; onBack: any; onStart: any; }'.
+  Property 't' does not exist on type 'IntrinsicAttributes & { mainColor?: string; onBack: any; onStart: any; }'.
+src/features/games/GameView.jsx(933,13): error TS2322: Type '{ t: any; mainColor: string; onStart: (arg1: any, arg2: any) => void; onBack: () => void; }' is not assignable to type 'IntrinsicAttributes & { mainColor?: string; onBack: any; onStart: any; }'.
+  Property 't' does not exist on type 'IntrinsicAttributes & { mainColor?: string; onBack: any; onStart: any; }'.
+src/features/games/GameView.jsx(947,13): error TS2322: Type '{ t: any; mainColor: string; onStart: (arg1: any, arg2: any) => void; onBack: () => void; }' is not assignable to type 'IntrinsicAttributes & { mainColor?: string; onBack: any; onStart: any; }'.
+  Property 't' does not exist on type 'IntrinsicAttributes & { mainColor?: string; onBack: any; onStart: any; }'.
+src/features/games/GameView.jsx(965,15): error TS2322: Type '{ t: any; mainColor: any; score: number; sessionTotal: number; correctCount: number; wrongCount: number; onBack: () => void; }' is not assignable to type 'IntrinsicAttributes & { correctCount?: number; mainColor?: string; onBack: any; wrongCount?: number; }'.
+  Property 't' does not exist on type 'IntrinsicAttributes & { correctCount?: number; mainColor?: string; onBack: any; wrongCount?: number; }'.
+src/features/games/GameView.jsx(981,14): error TS2741: Property 'onPause' is missing in type '{ cards: any; t: any; mainColor: any; lang: any; level: any; isAiMode: boolean; apiKey: string; config: {}; onPlay: any; onBookmark: (payload: any) => any; notebook: any; showToast: any; onLogWrong: any; ... 16 more ...; initialDifficulty: string; }' but required in type '{ addToRetryBag: any; cards?: any[]; config?: {}; globalRetryBag: any; initialDifficulty: any; isAiMode: any; isMuted?: boolean; isPaused?: boolean; lang?: string; level: any; mainColor?: string; notebook?: any[]; ... 13 more ...; timerMode: any; }'.
+src/features/games/GameView.jsx(984,37): error TS2339: Property 'timerMode' does not exist on type '{}'.
+src/features/games/GameView.jsx(985,37): error TS2339: Property 'timeLimit' does not exist on type '{}'.
+src/features/games/GameView.jsx(986,45): error TS2339: Property 'hardMode' does not exist on type '{}'.
+src/features/games/GameView.jsx(991,14): error TS2741: Property 'onPause' is missing in type '{ cards: any; t: any; mainColor: any; lang: any; level: any; isAiMode: boolean; apiKey: string; config: {}; onPlay: any; onBookmark: (payload: any) => any; notebook: any; showToast: any; onLogWrong: any; ... 16 more ...; initialDifficulty: string; }' but required in type '{ addToRetryBag: any; apiKey: any; cards?: any[]; config: any; globalRetryBag: any; initialDifficulty: any; isPaused?: boolean; lang?: string; level: any; mainColor?: string; notebook: any; onAutoSave: any; ... 14 more ...; timerMode: any; }'.
+src/features/games/GameView.jsx(994,37): error TS2339: Property 'timerMode' does not exist on type '{}'.
+src/features/games/GameView.jsx(995,37): error TS2339: Property 'timeLimit' does not exist on type '{}'.
+src/features/games/GameView.jsx(996,45): error TS2339: Property 'hardMode' does not exist on type '{}'.
+src/features/games/GameView.jsx(1004,37): error TS2339: Property 'timerMode' does not exist on type '{}'.
+src/features/games/GameView.jsx(1005,38): error TS2339: Property 'listenMode' does not exist on type '{}'.
+src/features/games/GameView.jsx(1006,37): error TS2339: Property 'timeLimit' does not exist on type '{}'.
+src/features/games/GameView.jsx(1007,36): error TS2339: Property 'hardMode' does not exist on type '{}'.
+src/features/games/GameView.jsx(1008,15): error TS2322: Type '{ cards: any; t: any; mainColor: any; lang: any; level: any; isAiMode: boolean; apiKey: string; config: {}; onPlay: any; onBookmark: (payload: any) => any; notebook: any; showToast: any; onLogWrong: any; ... 19 more ...; AiModeSwitch: ({ isAiMode, setAiMode, t, onMissingKey, isLoading, className }: { ...; }) => Elem...' is not assignable to type 'IntrinsicAttributes & { addToRetryBag: any; apiKey?: string; cards?: any[]; config?: {}; globalRetryBag?: {}; hardMode: any; isAiMode: any; lang?: string; level: any; listenMode: any; ... 17 more ...; timerMode: any; }'.
+  Property 'isLoading' does not exist on type 'IntrinsicAttributes & { addToRetryBag: any; apiKey?: string; cards?: any[]; config?: {}; globalRetryBag?: {}; hardMode: any; isAiMode: any; lang?: string; level: any; listenMode: any; ... 17 more ...; timerMode: any; }'.
+src/features/games/GameView.jsx(1034,14): error TS2741: Property 'speak' is missing in type '{ cards: any; t: any; lang: any; level: any; isAiMode: boolean; apiKey: string; config: {}; onPlay: any; onBookmark: (payload: any) => any; notebook: any; showToast: any; onLogWrong: any; onMissingKey: any; ... 13 more ...; mainColor: string; }' but required in type '{ addToRetryBag: any; apiKey: any; config: any; globalRetryBag: any; lang?: string; mainColor?: string; notebook: any; onAutoSave: any; onBack: any; onBookmark: any; onEndGame: any; onFinish: any; onLogWrong: any; ... 7 more ...; t: any; }'.
+src/features/games/GameView.jsx(1047,10): error TS2339: Property 'GameView' does not exist on type 'Window & typeof globalThis'.
+src/features/games/GameView.jsx(1048,10): error TS2339: Property 'Block5_7_GameView' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ImageQuizGame.jsx(186,30): error TS2339: Property 'currentQuestion' does not exist on type '{}'.
+src/features/games/ImageQuizGame.jsx(190,60): error TS2339: Property 'deck' does not exist on type '{}'.
+src/features/games/ImageQuizGame.jsx(281,39): error TS2339: Property 'wrongCount' does not exist on type '{}'.
+src/features/games/ImageQuizGame.jsx(282,34): error TS2339: Property 'combo' does not exist on type '{}'.
+src/features/games/ImageQuizGame.jsx(286,19): error TS2339: Property 'checkStatus' does not exist on type '{}'.
+src/features/games/ImageQuizGame.jsx(287,19): error TS2339: Property 'checkStatus' does not exist on type '{}'.
+src/features/games/ImageQuizGame.jsx(288,19): error TS2339: Property 'checkStatus' does not exist on type '{}'.
+src/features/games/ImageQuizGame.jsx(289,19): error TS2339: Property 'currentQuestion' does not exist on type '{}'.
+src/features/games/ImageQuizGame.jsx(291,39): error TS2339: Property 'currentQuestion' does not exist on type '{}'.
+src/features/games/ImageQuizGame.jsx(292,30): error TS2339: Property 'currentQuestion' does not exist on type '{}'.
+src/features/games/ImageQuizGame.jsx(547,53): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.
+src/features/games/ImageQuizGame.jsx(967,51): error TS2339: Property 'correctCount' does not exist on type '{}'.
+src/features/games/ImageQuizGame.jsx(968,48): error TS2339: Property 'time' does not exist on type '{}'.
+src/features/games/ImageQuizGame.jsx(969,49): error TS2339: Property 'wrongCount' does not exist on type '{}'.
+src/features/games/ImageQuizGame.jsx(1239,25): error TS2339: Property 'handleSaveToNotebook' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ImageQuizGame.jsx(1240,16): error TS2339: Property 'handleSaveToNotebook' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ImageQuizGame.jsx(1253,7): error TS2322: Type '{ currentQuestion: any; selectedIndex: any; checkStatus: any; attempts: any; score: any; combo: any; playedCount: any; time: any; isFinished: boolean; isGenerating: boolean; aiCountdown: number; correctCount: any; ... 19 more ...; settings: any; }' is not assignable to type 'IntrinsicAttributes & { aiCountdown: any; aiWaitTime: any; checkStatus: any; combo: any; config: any; correctCount: any; currentQuestion: any; handleNext: any; handleOptionClick: any; ... 19 more ...; wrongCount: any; }'.
+  Property 't' does not exist on type 'IntrinsicAttributes & { aiCountdown: any; aiWaitTime: any; checkStatus: any; combo: any; config: any; correctCount: any; currentQuestion: any; handleNext: any; handleOptionClick: any; ... 19 more ...; wrongCount: any; }'.
+src/features/games/ImageQuizGame.jsx(1268,10): error TS2339: Property 'Block5_18_useImageQuizLogic' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ImageQuizGame.jsx(1269,10): error TS2339: Property 'useImageQuizLogic' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ImageQuizGame.jsx(1270,10): error TS2339: Property 'Block5_18_ImageQuizGame' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ImageQuizGame.jsx(1271,10): error TS2339: Property 'ImageQuizGame' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ImageQuizUI.jsx(130,14): error TS2741: Property 'disabled' is missing in type '{ active: any; setActive: Dispatch<any>; icon: ({ size, className, ...props }: { [x: string]: any; className?: string; size?: number; }) => Element; color: string; title: string; subtitle: string; extra: Element; }' but required in type '{ active: any; color: any; disabled: any; extra: any; icon: any; setActive: any; subtitle: any; title: any; }'.
+src/features/games/ImageQuizUI.jsx(250,8): error TS2741: Property 'onComplete' is missing in type '{ duration: any; onCancel: any; queueLength: any; text: string; subText: string; mainColor: string; levelStr: string; }' but required in type '{ duration?: number; engine?: any; levelStr?: string; mainColor?: string; onCancel: any; onComplete: any; queueLength?: number; subText?: string; text?: string; }'.
+src/features/games/ImageQuizUI.jsx(773,10): error TS2339: Property 'Block5_17_ImageQuizSetup' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ImageQuizUI.jsx(774,10): error TS2339: Property 'ImageQuizSetup' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ImageQuizUI.jsx(775,10): error TS2339: Property 'Block5_17_ImageQuizPlayScreen' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ImageQuizUI.jsx(776,10): error TS2339: Property 'ImageQuizPlayScreen' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ListeningGame.jsx(209,30): error TS2339: Property 'currentQuestion' does not exist on type '{}'.
+src/features/games/ListeningGame.jsx(213,60): error TS2339: Property 'deck' does not exist on type '{}'.
+src/features/games/ListeningGame.jsx(381,39): error TS2339: Property 'wrongCount' does not exist on type '{}'.
+src/features/games/ListeningGame.jsx(382,34): error TS2339: Property 'combo' does not exist on type '{}'.
+src/features/games/ListeningGame.jsx(386,19): error TS2339: Property 'checkStatus' does not exist on type '{}'.
+src/features/games/ListeningGame.jsx(387,19): error TS2339: Property 'checkStatus' does not exist on type '{}'.
+src/features/games/ListeningGame.jsx(388,19): error TS2339: Property 'currentQuestion' does not exist on type '{}'.
+src/features/games/ListeningGame.jsx(390,39): error TS2339: Property 'currentQuestion' does not exist on type '{}'.
+src/features/games/ListeningGame.jsx(391,30): error TS2339: Property 'currentQuestion' does not exist on type '{}'.
+src/features/games/ListeningGame.jsx(799,49): error TS2339: Property 'correctCount' does not exist on type '{}'.
+src/features/games/ListeningGame.jsx(800,46): error TS2339: Property 'time' does not exist on type '{}'.
+src/features/games/ListeningGame.jsx(801,47): error TS2339: Property 'wrongCount' does not exist on type '{}'.
+src/features/games/ListeningGame.jsx(1116,58): error TS2339: Property 'handleSaveToNotebook' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ListeningGame.jsx(1117,16): error TS2339: Property 'handleSaveToNotebook' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ListeningGame.jsx(1132,7): error TS2322: Type '{ currentQuestion: any; selectedOptionIndex: any; checkStatus: any; attempts: any; score: any; combo: any; playedCount: any; time: any; isFinished: boolean; isGenerating: boolean; aiCountdown: number; ... 24 more ...; settings: any; }' is not assignable to type 'IntrinsicAttributes & { aiCountdown: any; aiWaitTime?: number; checkStatus: any; combo: any; config: any; correctCount: any; currentQuestion: any; handleNext: any; handleOptionClick: any; ... 23 more ...; wrongCount: any; }'.
+  Property 't' does not exist on type 'IntrinsicAttributes & { aiCountdown: any; aiWaitTime?: number; checkStatus: any; combo: any; config: any; correctCount: any; currentQuestion: any; handleNext: any; handleOptionClick: any; ... 23 more ...; wrongCount: any; }'.
+src/features/games/ListeningGame.jsx(1147,10): error TS2339: Property 'Block5_22_useListeningLogic' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ListeningGame.jsx(1148,10): error TS2339: Property 'useListeningLogic' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ListeningGame.jsx(1149,10): error TS2339: Property 'Block5_22_ListeningGame' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ListeningGame.jsx(1150,10): error TS2339: Property 'ListeningGame' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ListeningUI.jsx(166,12): error TS2741: Property 'disabled' is missing in type '{ active: any; setActive: Dispatch<any>; icon: ({ size, className, ...props }: { [x: string]: any; className?: string; size?: number; }) => Element; color: string; title: string; subtitle: string; extra: Element; }' but required in type '{ active: any; color: any; disabled: any; extra: any; icon: any; setActive: any; subtitle: any; title: any; }'.
+src/features/games/ListeningUI.jsx(327,8): error TS2741: Property 'onComplete' is missing in type '{ duration: any; onCancel: any; queueLength: any; text: string; subText: string; mainColor: string; levelStr: string; }' but required in type '{ duration?: number; engine?: any; levelStr?: string; mainColor?: string; onCancel: any; onComplete: any; queueLength?: number; subText?: string; text?: string; }'.
+src/features/games/ListeningUI.jsx(519,12): error TS2739: Type '{ duration: number; queueLength: any; text: string; mainColor: string; }' is missing the following properties from type '{ duration?: number; engine?: any; levelStr?: string; mainColor?: string; onCancel: any; onComplete: any; queueLength?: number; subText?: string; text?: string; }': onCancel, onComplete
+src/features/games/ListeningUI.jsx(880,10): error TS2339: Property 'Block5_21_ListeningSetup' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ListeningUI.jsx(881,10): error TS2339: Property 'ListeningSetup' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ListeningUI.jsx(882,10): error TS2339: Property 'Block5_21_ListeningPlayScreen' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ListeningUI.jsx(883,10): error TS2339: Property 'ListeningPlayScreen' does not exist on type 'Window & typeof globalThis'.
+src/features/games/MatchGame.jsx(71,55): error TS2339: Property 'timerMode' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(72,55): error TS2339: Property 'timeLimit' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(75,17): error TS2339: Property 'aiMode' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(75,61): error TS2339: Property 'aiMode' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(87,17): error TS2339: Property 'hardMode' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(87,55): error TS2339: Property 'hardMode' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(98,17): error TS2339: Property 'sourceMode' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(98,43): error TS2339: Property 'sourceMode' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(190,30): error TS2345: Argument of type '{ text: any; type: string; id: number; }' is not assignable to parameter of type 'string'.
+src/features/games/MatchGame.jsx(219,31): error TS2339: Property 'matchState' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(223,60): error TS2339: Property 'deck' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(229,33): error TS2339: Property 'matchState' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(230,32): error TS2339: Property 'gameStats' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(231,33): error TS2339: Property 'difficulty' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(233,31): error TS2339: Property 'timeLeft' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(234,33): error TS2339: Property 'aiWaitTime' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(305,48): error TS2339: Property 'dataMode' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(312,26): error TS2339: Property 'level' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(331,51): error TS2339: Property 'topic' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(332,33): error TS2339: Property 'topic' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(333,34): error TS2339: Property 'topic' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(527,47): error TS2339: Property 'dataMode' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(537,67): error TS2339: Property 'topic' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(538,35): error TS2339: Property 'topic' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(539,36): error TS2339: Property 'topic' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(681,26): error TS2339: Property 'level' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(698,43): error TS2339: Property 'dataMode' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(752,42): error TS2339: Property 'dataMode' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(766,42): error TS2339: Property 'gameStats' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(770,20): error TS2339: Property 'matchState' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(771,19): error TS2339: Property 'matchState' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(772,19): error TS2339: Property 'matchState' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(774,19): error TS2339: Property 'matchState' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(780,39): error TS2339: Property 'matchState' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(787,33): error TS2339: Property 'matchState' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(788,33): error TS2339: Property 'difficulty' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(790,27): error TS2339: Property 'deck' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(791,31): error TS2339: Property 'timeLeft' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(792,33): error TS2339: Property 'aiWaitTime' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(825,32): error TS2339: Property 'level' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(835,48): error TS2339: Property 'dataMode' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(971,38): error TS2339: Property 'level' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(981,54): error TS2339: Property 'dataMode' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(1110,7): error TS2322: Type '{ t: any; mainColor: string; isLoading: boolean; isPaused: boolean; onPause: any; handleSaveAndBack: () => void; onEndGame: any; timerMode: any; timeLeft: any; timeLimit: any; gameStats: any; accuracy: number; ... 14 more ...; aiWaitTime: any; }' is not assignable to type 'IntrinsicAttributes & { accuracy?: number; aiWaitTime?: number; checkMatch: any; config: any; difficulty?: string; gameStats?: { correct: number; wrong: number; }; generateMatch: any; ... 18 more ...; toggleResultPause: any; }'.
+  Property 'aiCountdown' does not exist on type 'IntrinsicAttributes & { accuracy?: number; aiWaitTime?: number; checkMatch: any; config: any; difficulty?: string; gameStats?: { correct: number; wrong: number; }; generateMatch: any; ... 18 more ...; toggleResultPause: any; }'.
+src/features/games/MatchGame.jsx(1111,44): error TS2339: Property 'level' does not exist on type '{}'.
+src/features/games/MatchGame.jsx(1120,10): error TS2339: Property 'MatchGame' does not exist on type 'Window & typeof globalThis'.
+src/features/games/MatchGame.jsx(1121,10): error TS2339: Property 'Block5_1_MatchGame' does not exist on type 'Window & typeof globalThis'.
+src/features/games/MatchGame.jsx(1122,10): error TS2339: Property 'Block5_2_MatchGame' does not exist on type 'Window & typeof globalThis'.
+src/features/games/MatchUI.jsx(133,10): error TS2739: Type '{ active: any; setActive: (val: any) => void; icon: ({ size, className, ...props }: { [x: string]: any; className?: string; size?: number; }) => Element; color: string; title: string; subtitle: string; }' is missing the following properties from type '{ active: any; color: any; disabled: any; extra: any; icon: any; setActive: any; subtitle: any; title: any; }': disabled, extra
+src/features/games/MatchUI.jsx(142,10): error TS2741: Property 'extra' is missing in type '{ active: any; setActive: Dispatch<any>; icon: ({ size, className, ...props }: { [x: string]: any; className?: string; size?: number; }) => Element; color: string; title: string; subtitle: string; disabled: boolean; }' but required in type '{ active: any; color: any; disabled: any; extra: any; icon: any; setActive: any; subtitle: any; title: any; }'.
+src/features/games/MatchUI.jsx(158,10): error TS2741: Property 'disabled' is missing in type '{ active: any; setActive: Dispatch<any>; icon: ({ size, className, ...props }: { [x: string]: any; className?: string; size?: number; }) => Element; color: string; title: string; subtitle: string; extra: Element; }' but required in type '{ active: any; color: any; disabled: any; extra: any; icon: any; setActive: any; subtitle: any; title: any; }'.
+src/features/games/MatchUI.jsx(300,8): error TS2741: Property 'onComplete' is missing in type '{ onCancel: () => any; queueLength: number; text: string; mainColor: string; levelStr: string; }' but required in type '{ duration?: number; engine?: any; levelStr?: string; mainColor?: string; onCancel: any; onComplete: any; queueLength?: number; subText?: string; text?: string; }'.
+src/features/games/MatchUI.jsx(372,12): error TS2739: Type '{ queueLength: number; text: string; mainColor: string; }' is missing the following properties from type '{ duration?: number; engine?: any; levelStr?: string; mainColor?: string; onCancel: any; onComplete: any; queueLength?: number; subText?: string; text?: string; }': onCancel, onComplete
+src/features/games/MatchUI.jsx(382,10): error TS2739: Type '{ queueLength: number; text: string; mainColor: string; }' is missing the following properties from type '{ duration?: number; engine?: any; levelStr?: string; mainColor?: string; onCancel: any; onComplete: any; queueLength?: number; subText?: string; text?: string; }': onCancel, onComplete
+src/features/games/MatchUI.jsx(441,23): error TS2339: Property '_isRescued' does not exist on type '{ pairs: any[]; leftItems: any[]; rightItems: any[]; connections: {}; selectedLeft: any; isChecked: boolean; correctLines: any[]; wrongLines: any[]; missingLines: any[]; timer: number; }'.
+src/features/games/MatchUI.jsx(448,26): error TS2339: Property 'isAiGenerated' does not exist on type '{ pairs: any[]; leftItems: any[]; rightItems: any[]; connections: {}; selectedLeft: any; isChecked: boolean; correctLines: any[]; wrongLines: any[]; missingLines: any[]; timer: number; }'.
+src/features/games/MatchUI.jsx(778,30): error TS2339: Property 'isResultPaused' does not exist on type '{ pairs: any[]; leftItems: any[]; rightItems: any[]; connections: {}; selectedLeft: any; isChecked: boolean; correctLines: any[]; wrongLines: any[]; missingLines: any[]; timer: number; }'.
+src/features/games/MatchUI.jsx(783,29): error TS2339: Property 'isResultPaused' does not exist on type '{ pairs: any[]; leftItems: any[]; rightItems: any[]; connections: {}; selectedLeft: any; isChecked: boolean; correctLines: any[]; wrongLines: any[]; missingLines: any[]; timer: number; }'.
+src/features/games/MatchUI.jsx(825,10): error TS2339: Property 'MatchSetup' does not exist on type 'Window & typeof globalThis'.
+src/features/games/MatchUI.jsx(826,10): error TS2339: Property 'MatchPlayScreen' does not exist on type 'Window & typeof globalThis'.
+src/features/games/MatchUI.jsx(827,10): error TS2339: Property 'Block5_1_MatchSetup' does not exist on type 'Window & typeof globalThis'.
+src/features/games/MatchUI.jsx(828,10): error TS2339: Property 'Block5_1_MatchPlayScreen' does not exist on type 'Window & typeof globalThis'.
+src/features/games/OddOneOutGame.jsx(180,30): error TS2339: Property 'currentQuestion' does not exist on type '{}'.
+src/features/games/OddOneOutGame.jsx(186,60): error TS2339: Property 'deck' does not exist on type '{}'.
+src/features/games/OddOneOutGame.jsx(280,39): error TS2339: Property 'wrongCount' does not exist on type '{}'.
+src/features/games/OddOneOutGame.jsx(281,34): error TS2339: Property 'combo' does not exist on type '{}'.
+src/features/games/OddOneOutGame.jsx(285,19): error TS2339: Property 'checkStatus' does not exist on type '{}'.
+src/features/games/OddOneOutGame.jsx(286,19): error TS2339: Property 'checkStatus' does not exist on type '{}'.
+src/features/games/OddOneOutGame.jsx(287,19): error TS2339: Property 'currentQuestion' does not exist on type '{}'.
+src/features/games/OddOneOutGame.jsx(289,39): error TS2339: Property 'currentQuestion' does not exist on type '{}'.
+src/features/games/OddOneOutGame.jsx(290,30): error TS2339: Property 'currentQuestion' does not exist on type '{}'.
+src/features/games/OddOneOutGame.jsx(885,51): error TS2339: Property 'correctCount' does not exist on type '{}'.
+src/features/games/OddOneOutGame.jsx(886,48): error TS2339: Property 'time' does not exist on type '{}'.
+src/features/games/OddOneOutGame.jsx(887,49): error TS2339: Property 'wrongCount' does not exist on type '{}'.
+src/features/games/OddOneOutGame.jsx(1188,7): error TS2322: Type '{ currentQuestion: any; selectedIndex: any; checkStatus: any; attempts: any; score: any; combo: any; playedCount: any; time: any; isFinished: boolean; isGenerating: boolean; aiCountdown: number; correctCount: any; ... 19 more ...; onPlay: any; }' is not assignable to type 'IntrinsicAttributes & { aiCountdown: any; aiWaitTime: any; attempts: any; checkStatus: any; combo: any; config: any; correctCount: any; currentQuestion: any; handleOptionClick: any; ... 19 more ...; wrongCount: any; }'.
+  Property 't' does not exist on type 'IntrinsicAttributes & { aiCountdown: any; aiWaitTime: any; attempts: any; checkStatus: any; combo: any; config: any; correctCount: any; currentQuestion: any; handleOptionClick: any; ... 19 more ...; wrongCount: any; }'.
+src/features/games/OddOneOutGame.jsx(1197,27): error TS2339: Property 'handleSaveToNotebook' does not exist on type 'Window & typeof globalThis'.
+src/features/games/OddOneOutGame.jsx(1198,18): error TS2339: Property 'handleSaveToNotebook' does not exist on type 'Window & typeof globalThis'.
+src/features/games/OddOneOutGame.jsx(1212,10): error TS2339: Property 'Block5_13_useOddOneOutLogic' does not exist on type 'Window & typeof globalThis'.
+src/features/games/OddOneOutGame.jsx(1213,10): error TS2339: Property 'useOddOneOutLogic' does not exist on type 'Window & typeof globalThis'.
+src/features/games/OddOneOutGame.jsx(1214,10): error TS2339: Property 'Block5_13_OddOneOutGame' does not exist on type 'Window & typeof globalThis'.
+src/features/games/OddOneOutGame.jsx(1215,10): error TS2339: Property 'OddOneOutGame' does not exist on type 'Window & typeof globalThis'.
+src/features/games/OddOneOutUI.jsx(135,12): error TS2741: Property 'extra' is missing in type '{ active: any; setActive: Dispatch<any>; icon: ({ size, className, ...props }: { [x: string]: any; className?: string; size?: number; }) => Element; color: string; title: string; subtitle: string; disabled: boolean; }' but required in type '{ active: any; color: any; disabled: any; extra: any; icon: any; setActive: any; subtitle: any; title: any; }'.
+src/features/games/OddOneOutUI.jsx(152,12): error TS2741: Property 'disabled' is missing in type '{ active: any; setActive: Dispatch<any>; icon: ({ size, className, ...props }: { [x: string]: any; className?: string; size?: number; }) => Element; color: string; title: string; subtitle: string; extra: Element; }' but required in type '{ active: any; color: any; disabled: any; extra: any; icon: any; setActive: any; subtitle: any; title: any; }'.
+src/features/games/OddOneOutUI.jsx(251,8): error TS2741: Property 'onComplete' is missing in type '{ duration: any; onCancel: any; queueLength: any; text: string; subText: string; mainColor: string; levelStr: string; }' but required in type '{ duration?: number; engine?: any; levelStr?: string; mainColor?: string; onCancel: any; onComplete: any; queueLength?: number; subText?: string; text?: string; }'.
+src/features/games/OddOneOutUI.jsx(769,10): error TS2339: Property 'Block5_12_OddOneOutSetup' does not exist on type 'Window & typeof globalThis'.
+src/features/games/OddOneOutUI.jsx(770,10): error TS2339: Property 'OddOneOutSetup' does not exist on type 'Window & typeof globalThis'.
+src/features/games/OddOneOutUI.jsx(771,10): error TS2339: Property 'Block5_12_OddOneOutPlayScreen' does not exist on type 'Window & typeof globalThis'.
+src/features/games/OddOneOutUI.jsx(772,10): error TS2339: Property 'OddOneOutPlayScreen' does not exist on type 'Window & typeof globalThis'.
+src/features/games/PronunciationGame.jsx(185,30): error TS2339: Property 'currentQuestion' does not exist on type '{}'.
+src/features/games/PronunciationGame.jsx(189,60): error TS2339: Property 'deck' does not exist on type '{}'.
+src/features/games/PronunciationGame.jsx(290,39): error TS2339: Property 'wrongCount' does not exist on type '{}'.
+src/features/games/PronunciationGame.jsx(291,34): error TS2339: Property 'combo' does not exist on type '{}'.
+src/features/games/PronunciationGame.jsx(295,19): error TS2339: Property 'checkStatus' does not exist on type '{}'.
+src/features/games/PronunciationGame.jsx(296,19): error TS2339: Property 'checkStatus' does not exist on type '{}'.
+src/features/games/PronunciationGame.jsx(297,19): error TS2339: Property 'currentQuestion' does not exist on type '{}'.
+src/features/games/PronunciationGame.jsx(299,39): error TS2339: Property 'currentQuestion' does not exist on type '{}'.
+src/features/games/PronunciationGame.jsx(300,30): error TS2339: Property 'currentQuestion' does not exist on type '{}'.
+src/features/games/PronunciationGame.jsx(775,51): error TS2339: Property 'correctCount' does not exist on type '{}'.
+src/features/games/PronunciationGame.jsx(776,48): error TS2339: Property 'time' does not exist on type '{}'.
+src/features/games/PronunciationGame.jsx(777,49): error TS2339: Property 'wrongCount' does not exist on type '{}'.
+src/features/games/PronunciationGame.jsx(1088,25): error TS2339: Property 'handleSaveToNotebook' does not exist on type 'Window & typeof globalThis'.
+src/features/games/PronunciationGame.jsx(1089,16): error TS2339: Property 'handleSaveToNotebook' does not exist on type 'Window & typeof globalThis'.
+src/features/games/PronunciationGame.jsx(1116,7): error TS2322: Type '{ currentQuestion: any; selectedIndex: any; checkStatus: any; attempts: any; score: any; combo: any; playedCount: any; time: any; isFinished: boolean; isGenerating: boolean; aiCountdown: number; correctCount: any; ... 20 more ...; onPlay: any; }' is not assignable to type 'IntrinsicAttributes & { aiCountdown: any; aiWaitTime?: number; attempts?: number; checkStatus: any; combo: any; config: any; correctCount: any; currentQuestion: any; handleNext: any; ... 22 more ...; wrongCount: any; }'.
+  Property 't' does not exist on type 'IntrinsicAttributes & { aiCountdown: any; aiWaitTime?: number; attempts?: number; checkStatus: any; combo: any; config: any; correctCount: any; currentQuestion: any; handleNext: any; ... 22 more ...; wrongCount: any; }'.
+src/features/games/PronunciationGame.jsx(1132,10): error TS2339: Property 'Block5_20_usePronunciationLogic' does not exist on type 'Window & typeof globalThis'.
+src/features/games/PronunciationGame.jsx(1133,10): error TS2339: Property 'usePronunciationLogic' does not exist on type 'Window & typeof globalThis'.
+src/features/games/PronunciationGame.jsx(1134,10): error TS2339: Property 'Block5_20_PronunciationGame' does not exist on type 'Window & typeof globalThis'.
+src/features/games/PronunciationGame.jsx(1135,10): error TS2339: Property 'PronunciationGame' does not exist on type 'Window & typeof globalThis'.
+src/features/games/PronunciationUI.jsx(138,12): error TS2741: Property 'disabled' is missing in type '{ active: any; setActive: Dispatch<any>; icon: ({ size, className, ...props }: { [x: string]: any; className?: string; size?: number; }) => Element; color: string; title: string; subtitle: string; extra: Element; }' but required in type '{ active: any; color: any; disabled: any; extra: any; icon: any; setActive: any; subtitle: any; title: any; }'.
+src/features/games/PronunciationUI.jsx(255,8): error TS2741: Property 'onComplete' is missing in type '{ duration: any; onCancel: any; queueLength: any; text: string; subText: string; mainColor: string; levelStr: string; }' but required in type '{ duration?: number; engine?: any; levelStr?: string; mainColor?: string; onCancel: any; onComplete: any; queueLength?: number; subText?: string; text?: string; }'.
+src/features/games/PronunciationUI.jsx(430,12): error TS2739: Type '{ duration: number; queueLength: any; text: string; mainColor: string; }' is missing the following properties from type '{ duration?: number; engine?: any; levelStr?: string; mainColor?: string; onCancel: any; onComplete: any; queueLength?: number; subText?: string; text?: string; }': onCancel, onComplete
+src/features/games/PronunciationUI.jsx(779,10): error TS2339: Property 'Block5_19_PronunciationSetup' does not exist on type 'Window & typeof globalThis'.
+src/features/games/PronunciationUI.jsx(780,10): error TS2339: Property 'PronunciationSetup' does not exist on type 'Window & typeof globalThis'.
+src/features/games/PronunciationUI.jsx(781,10): error TS2339: Property 'Block5_19_PronunciationPlayScreen' does not exist on type 'Window & typeof globalThis'.
+src/features/games/PronunciationUI.jsx(782,10): error TS2339: Property 'PronunciationPlayScreen' does not exist on type 'Window & typeof globalThis'.
+src/features/games/QuizGame.jsx(308,43): error TS2339: Property 'sourceMode' does not exist on type 'object'.
+src/features/games/QuizGame.jsx(309,54): error TS2339: Property 'askMode' does not exist on type 'object'.
+src/features/games/QuizGame.jsx(311,41): error TS2339: Property 'hardMode' does not exist on type 'object'.
+src/features/games/QuizGame.jsx(314,43): error TS2339: Property 'listenMode' does not exist on type 'object'.
+src/features/games/QuizGame.jsx(317,42): error TS2339: Property 'timerMode' does not exist on type 'object'.
+src/features/games/QuizGame.jsx(320,42): error TS2339: Property 'timeLimit' does not exist on type 'object'.
+src/features/games/QuizGame.jsx(324,43): error TS2339: Property 'showPronun' does not exist on type 'object'.
+src/features/games/QuizGame.jsx(327,47): error TS2339: Property 'autoReadAnswer' does not exist on type 'object'.
+src/features/games/QuizGame.jsx(330,44): error TS2339: Property 'suddenDeath' does not exist on type 'object'.
+src/features/games/QuizGame.jsx(332,56): error TS2339: Property 'dataMode' does not exist on type 'object'.
+src/features/games/QuizGame.jsx(335,49): error TS2339: Property 'grammarFocus' does not exist on type 'object'.
+src/features/games/QuizGame.jsx(341,19): error TS2339: Property 'isAiMode' does not exist on type 'object'.
+src/features/games/QuizGame.jsx(342,19): error TS2339: Property 'aiMode' does not exist on type 'object'.
+src/features/games/QuizGame.jsx(356,19): error TS2339: Property 'level' does not exist on type 'object'.
+src/features/games/QuizGame.jsx(360,53): error TS2339: Property 'topic' does not exist on type 'object'.
+src/features/games/QuizGame.jsx(542,9): error TS2810: Expected 1 argument, but got 0. 'new Promise()' needs a JSDoc hint to produce a 'resolve' that can be called without arguments.
+src/features/games/QuizGame.jsx(615,11): error TS2810: Expected 1 argument, but got 0. 'new Promise()' needs a JSDoc hint to produce a 'resolve' that can be called without arguments.
+src/features/games/QuizGame.jsx(623,11): error TS2810: Expected 1 argument, but got 0. 'new Promise()' needs a JSDoc hint to produce a 'resolve' that can be called without arguments.
+src/features/games/QuizGame.jsx(841,15): error TS2345: Argument of type 'string' is not assignable to parameter of type 'any[]'.
+src/features/games/QuizGame.jsx(1413,40): error TS2339: Property 'isMuted' does not exist on type '{}'.
+src/features/games/QuizGame.jsx(1440,42): error TS2339: Property 'isMuted' does not exist on type '{}'.
+src/features/games/QuizGame.jsx(1458,40): error TS2339: Property 'isMuted' does not exist on type '{}'.
+src/features/games/QuizGame.jsx(1510,17): error TS2339: Property 'isMuted' does not exist on type '{}'.
+src/features/games/QuizGame.jsx(1869,10): error TS2339: Property 'QuizGame' does not exist on type 'Window & typeof globalThis'.
+src/features/games/QuizGame.jsx(1870,10): error TS2339: Property 'Block5_6_QuizGame' does not exist on type 'Window & typeof globalThis'.
+src/features/games/QuizUI.jsx(434,14): error TS2739: Type '{ active: boolean; setActive: (isDefMode: any) => void; icon: ({ size, className, ...props }: { [x: string]: any; className?: string; size?: number; }) => Element; color: string; title: string; subtitle: string; }' is missing the following properties from type '{ active: any; color: any; disabled: any; extra: any; icon: any; setActive: any; subtitle: any; title: any; }': disabled, extra
+src/features/games/QuizUI.jsx(442,14): error TS2739: Type '{ active: any; setActive: (val: any) => void; icon: ({ size, className, ...props }: { [x: string]: any; className?: string; size?: number; }) => Element; color: string; title: string; subtitle: string; }' is missing the following properties from type '{ active: any; color: any; disabled: any; extra: any; icon: any; setActive: any; subtitle: any; title: any; }': disabled, extra
+src/features/games/QuizUI.jsx(450,14): error TS2741: Property 'extra' is missing in type '{ active: any; setActive: Dispatch<any>; icon: ({ size, className, ...props }: { [x: string]: any; className?: string; size?: number; }) => Element; color: string; title: string; subtitle: string; disabled: boolean; }' but required in type '{ active: any; color: any; disabled: any; extra: any; icon: any; setActive: any; subtitle: any; title: any; }'.
+src/features/games/QuizUI.jsx(459,14): error TS2739: Type '{ active: any; setActive: Dispatch<any>; icon: ({ size, className, ...props }: { [x: string]: any; className?: string; size?: number; }) => Element; color: string; title: string; subtitle: string; }' is missing the following properties from type '{ active: any; color: any; disabled: any; extra: any; icon: any; setActive: any; subtitle: any; title: any; }': disabled, extra
+src/features/games/QuizUI.jsx(470,14): error TS2739: Type '{ active: any; setActive: Dispatch<any>; icon: ({ size, className, ...props }: { [x: string]: any; className?: string; size?: number; }) => Element; color: string; title: string; subtitle: string; }' is missing the following properties from type '{ active: any; color: any; disabled: any; extra: any; icon: any; setActive: any; subtitle: any; title: any; }': disabled, extra
+src/features/games/QuizUI.jsx(478,14): error TS2741: Property 'extra' is missing in type '{ active: any; setActive: Dispatch<any>; icon: ({ size, className, ...props }: { [x: string]: any; className?: string; size?: number; }) => Element; color: string; title: string; subtitle: string; disabled: any; }' but required in type '{ active: any; color: any; disabled: any; extra: any; icon: any; setActive: any; subtitle: any; title: any; }'.
+src/features/games/QuizUI.jsx(487,14): error TS2739: Type '{ active: any; setActive: Dispatch<any>; icon: ({ size, className, ...props }: { [x: string]: any; className?: string; size?: number; }) => Element; color: string; title: string; subtitle: string; }' is missing the following properties from type '{ active: any; color: any; disabled: any; extra: any; icon: any; setActive: any; subtitle: any; title: any; }': disabled, extra
+src/features/games/QuizUI.jsx(495,14): error TS2741: Property 'disabled' is missing in type '{ active: any; setActive: Dispatch<any>; icon: ({ size, className, ...props }: { [x: string]: any; className?: string; size?: number; }) => Element; color: string; title: string; subtitle: string; extra: Element; }' but required in type '{ active: any; color: any; disabled: any; extra: any; icon: any; setActive: any; subtitle: any; title: any; }'.
+src/features/games/QuizUI.jsx(714,8): error TS2741: Property 'onComplete' is missing in type '{ onCancel: () => void; queueLength: number; text: string; mainColor: string; levelStr: string; }' but required in type '{ duration?: number; engine?: any; levelStr?: string; mainColor?: string; onCancel: any; onComplete: any; queueLength?: number; subText?: string; text?: string; }'.
+src/features/games/QuizUI.jsx(1455,10): error TS2339: Property 'Block5_5_QuizSetup' does not exist on type 'Window & typeof globalThis'.
+src/features/games/QuizUI.jsx(1456,10): error TS2339: Property 'QuizSetup' does not exist on type 'Window & typeof globalThis'.
+src/features/games/QuizUI.jsx(1457,10): error TS2339: Property 'Block5_5_GameResult' does not exist on type 'Window & typeof globalThis'.
+src/features/games/QuizUI.jsx(1458,10): error TS2339: Property 'GameResult' does not exist on type 'Window & typeof globalThis'.
+src/features/games/QuizUI.jsx(1459,10): error TS2339: Property 'Block5_5_GamePlayScreen' does not exist on type 'Window & typeof globalThis'.
+src/features/games/QuizUI.jsx(1460,10): error TS2339: Property 'GamePlayScreen' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ReadingGame.jsx(203,11): error TS2554: Expected 0-3 arguments, but got 4.
+src/features/games/ReadingGame.jsx(725,13): error TS2339: Property 'isFinished' does not exist on type '{}'.
+src/features/games/ReadingGame.jsx(726,12): error TS2339: Property 'passageData' does not exist on type '{}'.
+src/features/games/ReadingGame.jsx(728,13): error TS2339: Property 'isGenerating' does not exist on type '{}'.
+src/features/games/ReadingGame.jsx(732,21): error TS2339: Property 'score' does not exist on type '{}'.
+src/features/games/ReadingGame.jsx(733,20): error TS2339: Property 'time' does not exist on type '{}'.
+src/features/games/ReadingGame.jsx(734,22): error TS2339: Property 'config' does not exist on type '{}'.
+src/features/games/ReadingGame.jsx(736,29): error TS2339: Property 'passageData' does not exist on type '{}'.
+src/features/games/ReadingGame.jsx(737,26): error TS2339: Property 'subIndex' does not exist on type '{}'.
+src/features/games/ReadingGame.jsx(738,23): error TS2339: Property 'combo' does not exist on type '{}'.
+src/features/games/ReadingGame.jsx(739,29): error TS2339: Property 'playedCount' does not exist on type '{}'.
+src/features/games/ReadingGame.jsx(740,26): error TS2339: Property 'timeLeft' does not exist on type '{}'.
+src/features/games/ReadingGame.jsx(741,30): error TS2339: Property 'correctCount' does not exist on type '{}'.
+src/features/games/ReadingGame.jsx(742,28): error TS2339: Property 'wrongCount' does not exist on type '{}'.
+src/features/games/ReadingGame.jsx(842,6): error TS2741: Property 'handleNext' is missing in type '{ passageData: any; currentSubQuestion: any; subIndex: any; totalSubQuestions: any; inputBuffer: string; setInputBuffer: Dispatch<SetStateAction<string>>; ... 29 more ...; onBack: () => void; }' but required in type '{ aiCountdown?: number; aiWaitTime?: number; attempts?: number; checkStatus?: string; combo?: number; config: any; correctCount?: number; currentSubQuestion: any; handleFillSubmit: any; handleNext: any; ... 26 more ...; wrongCount?: number; }'.
+src/features/games/ReadingGame.jsx(893,10): error TS2551: Property 'Block5_24_useReadingLogic' does not exist on type 'Window & typeof globalThis'. Did you mean 'Block6_2_useAiLogic'?
+src/features/games/ReadingGame.jsx(894,10): error TS2551: Property 'useReadingLogic' does not exist on type 'Window & typeof globalThis'. Did you mean 'useAiLogic'?
+src/features/games/ReadingGame.jsx(895,10): error TS2339: Property 'Block5_24_ReadingGame' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ReadingGame.jsx(896,10): error TS2339: Property 'ReadingGame' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ReadingUI.jsx(121,14): error TS2741: Property 'disabled' is missing in type '{ active: any; setActive: Dispatch<any>; icon: ({ size, className, ...props }: { [x: string]: any; className?: string; size?: number; }) => Element; color: string; title: string; subtitle: string; extra: Element; }' but required in type '{ active: any; color: any; disabled: any; extra: any; icon: any; setActive: any; subtitle: any; title: any; }'.
+src/features/games/ReadingUI.jsx(266,8): error TS2741: Property 'onComplete' is missing in type '{ duration: number; onCancel: any; queueLength: number; text: string; subText: string; mainColor: string; levelStr: string; }' but required in type '{ duration?: number; engine?: any; levelStr?: string; mainColor?: string; onCancel: any; onComplete: any; queueLength?: number; subText?: string; text?: string; }'.
+src/features/games/ReadingUI.jsx(460,12): error TS2739: Type '{ duration: number; queueLength: number; text: string; mainColor: string; }' is missing the following properties from type '{ duration?: number; engine?: any; levelStr?: string; mainColor?: string; onCancel: any; onComplete: any; queueLength?: number; subText?: string; text?: string; }': onCancel, onComplete
+src/features/games/ReadingUI.jsx(891,10): error TS2339: Property 'Block5_23_ReadingSetup' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ReadingUI.jsx(892,10): error TS2339: Property 'ReadingSetup' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ReadingUI.jsx(893,10): error TS2339: Property 'Block5_23_ReadingPlayScreen' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ReadingUI.jsx(894,10): error TS2339: Property 'ReadingPlayScreen' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ScrambleGame.jsx(174,30): error TS2339: Property 'gameState' does not exist on type '{}'.
+src/features/games/ScrambleGame.jsx(178,60): error TS2339: Property 'deck' does not exist on type '{}'.
+src/features/games/ScrambleGame.jsx(181,32): error TS2339: Property 'gameState' does not exist on type '{}'.
+src/features/games/ScrambleGame.jsx(182,28): error TS2339: Property 'stats' does not exist on type '{}'.
+src/features/games/ScrambleGame.jsx(183,33): error TS2339: Property 'difficulty' does not exist on type '{}'.
+src/features/games/ScrambleGame.jsx(185,31): error TS2339: Property 'timeLeft' does not exist on type '{}'.
+src/features/games/ScrambleGame.jsx(186,33): error TS2339: Property 'aiWaitTime' does not exist on type '{}'.
+src/features/games/ScrambleGame.jsx(588,55): error TS2339: Property 'stats' does not exist on type '{}'.
+src/features/games/ScrambleGame.jsx(867,61): error TS2339: Property 'stats' does not exist on type '{}'.
+src/features/games/ScrambleGame.jsx(906,39): error TS2339: Property 'stats' does not exist on type '{}'.
+src/features/games/ScrambleGame.jsx(909,21): error TS2339: Property 'gameState' does not exist on type '{}'.
+src/features/games/ScrambleGame.jsx(909,66): error TS2339: Property 'gameState' does not exist on type '{}'.
+src/features/games/ScrambleGame.jsx(910,39): error TS2339: Property 'gameState' does not exist on type '{}'.
+src/features/games/ScrambleGame.jsx(911,30): error TS2339: Property 'gameState' does not exist on type '{}'.
+src/features/games/ScrambleGame.jsx(919,32): error TS2339: Property 'gameState' does not exist on type '{}'.
+src/features/games/ScrambleGame.jsx(921,33): error TS2339: Property 'difficulty' does not exist on type '{}'.
+src/features/games/ScrambleGame.jsx(922,27): error TS2339: Property 'deck' does not exist on type '{}'.
+src/features/games/ScrambleGame.jsx(923,31): error TS2339: Property 'timeLeft' does not exist on type '{}'.
+src/features/games/ScrambleGame.jsx(924,33): error TS2339: Property 'aiWaitTime' does not exist on type '{}'.
+src/features/games/ScrambleGame.jsx(1286,10): error TS2339: Property 'ScrambleGame' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ScrambleGame.jsx(1287,10): error TS2339: Property 'Block5_4_ScrambleGame' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ScrambleUI.jsx(180,10): error TS2739: Type '{ active: any; setActive: Dispatch<any>; icon: ({ size, className, ...props }: { [x: string]: any; className?: string; size?: number; }) => Element; color: string; title: string; subtitle: string; }' is missing the following properties from type '{ active: any; color: any; disabled: any; extra: any; icon: any; setActive: any; subtitle: any; title: any; }': disabled, extra
+src/features/games/ScrambleUI.jsx(189,10): error TS2739: Type '{ active: any; setActive: (val: any) => void; icon: ({ size, className, ...props }: { [x: string]: any; className?: string; size?: number; }) => Element; color: string; title: string; subtitle: string; }' is missing the following properties from type '{ active: any; color: any; disabled: any; extra: any; icon: any; setActive: any; subtitle: any; title: any; }': disabled, extra
+src/features/games/ScrambleUI.jsx(206,10): error TS2741: Property 'extra' is missing in type '{ active: any; setActive: Dispatch<any>; icon: ({ size, className, ...props }: { [x: string]: any; className?: string; size?: number; }) => Element; color: string; title: string; subtitle: string; disabled: boolean; }' but required in type '{ active: any; color: any; disabled: any; extra: any; icon: any; setActive: any; subtitle: any; title: any; }'.
+src/features/games/ScrambleUI.jsx(222,10): error TS2739: Type '{ active: any; setActive: Dispatch<any>; icon: ({ size, className, ...props }: { [x: string]: any; className?: string; size?: number; }) => Element; color: string; title: string; subtitle: string; }' is missing the following properties from type '{ active: any; color: any; disabled: any; extra: any; icon: any; setActive: any; subtitle: any; title: any; }': disabled, extra
+src/features/games/ScrambleUI.jsx(231,10): error TS2741: Property 'disabled' is missing in type '{ active: any; setActive: Dispatch<any>; icon: ({ size, className, ...props }: { [x: string]: any; className?: string; size?: number; }) => Element; color: string; title: string; subtitle: string; extra: Element; }' but required in type '{ active: any; color: any; disabled: any; extra: any; icon: any; setActive: any; subtitle: any; title: any; }'.
+src/features/games/ScrambleUI.jsx(382,8): error TS2741: Property 'onComplete' is missing in type '{ onCancel: () => any; queueLength: any; text: string; mainColor: string; levelStr: string; }' but required in type '{ duration?: number; engine?: any; levelStr?: string; mainColor?: string; onCancel: any; onComplete: any; queueLength?: number; subText?: string; text?: string; }'.
+src/features/games/ScrambleUI.jsx(1069,10): error TS2339: Property 'ScrambleSetup' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ScrambleUI.jsx(1070,10): error TS2339: Property 'ScramblePlayScreen' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ScrambleUI.jsx(1071,10): error TS2339: Property 'Block5_3_ScrambleSetup' does not exist on type 'Window & typeof globalThis'.
+src/features/games/ScrambleUI.jsx(1072,10): error TS2339: Property 'Block5_3_ScramblePlayScreen' does not exist on type 'Window & typeof globalThis'.
+src/features/games/SpotMistakeGame.jsx(320,30): error TS2339: Property 'currentQuestion' does not exist on type '{}'.
+src/features/games/SpotMistakeGame.jsx(324,60): error TS2339: Property 'deck' does not exist on type '{}'.
+src/features/games/SpotMistakeGame.jsx(414,39): error TS2339: Property 'wrongCount' does not exist on type '{}'.
+src/features/games/SpotMistakeGame.jsx(415,34): error TS2339: Property 'combo' does not exist on type '{}'.
+src/features/games/SpotMistakeGame.jsx(419,19): error TS2339: Property 'checkStatus' does not exist on type '{}'.
+src/features/games/SpotMistakeGame.jsx(420,19): error TS2339: Property 'checkStatus' does not exist on type '{}'.
+src/features/games/SpotMistakeGame.jsx(421,19): error TS2339: Property 'currentQuestion' does not exist on type '{}'.
+src/features/games/SpotMistakeGame.jsx(423,39): error TS2339: Property 'currentQuestion' does not exist on type '{}'.
+src/features/games/SpotMistakeGame.jsx(424,30): error TS2339: Property 'currentQuestion' does not exist on type '{}'.
+src/features/games/SpotMistakeGame.jsx(641,7): error TS2322: Type '{ wrongWord: string; explanation: any; wrongSentence?: undefined; correction?: undefined; } | { wrongSentence: string; wrongWord: any; correction: any; explanation: any; }' is not assignable to type '{ wrongSentence: string; wrongWord: string; correction: any; explanation: string; }'.
+  Type '{ wrongWord: string; explanation: any; wrongSentence?: undefined; correction?: undefined; }' is not assignable to type '{ wrongSentence: string; wrongWord: string; correction: any; explanation: string; }'.
+    Property 'wrongSentence' is optional in type '{ wrongWord: string; explanation: any; wrongSentence?: undefined; correction?: undefined; }' but required in type '{ wrongSentence: string; wrongWord: string; correction: any; explanation: string; }'.
+src/features/games/SpotMistakeGame.jsx(685,11): error TS2322: Type '{ wrongWord: string; explanation: any; wrongSentence?: undefined; correction?: undefined; } | { wrongSentence: string; wrongWord: any; correction: any; explanation: any; }' is not assignable to type '{ wrongSentence: string; wrongWord: string; correction: any; explanation: string; }'.
+  Type '{ wrongWord: string; explanation: any; wrongSentence?: undefined; correction?: undefined; }' is not assignable to type '{ wrongSentence: string; wrongWord: string; correction: any; explanation: string; }'.
+    Property 'wrongSentence' is optional in type '{ wrongWord: string; explanation: any; wrongSentence?: undefined; correction?: undefined; }' but required in type '{ wrongSentence: string; wrongWord: string; correction: any; explanation: string; }'.
+src/features/games/SpotMistakeGame.jsx(939,51): error TS2339: Property 'correctCount' does not exist on type '{}'.
+src/features/games/SpotMistakeGame.jsx(940,48): error TS2339: Property 'time' does not exist on type '{}'.
+src/features/games/SpotMistakeGame.jsx(941,49): error TS2339: Property 'wrongCount' does not exist on type '{}'.
+src/features/games/SpotMistakeGame.jsx(1459,25): error TS2339: Property 'handleSaveToNotebook' does not exist on type 'Window & typeof globalThis'.
+src/features/games/SpotMistakeGame.jsx(1460,16): error TS2339: Property 'handleSaveToNotebook' does not exist on type 'Window & typeof globalThis'.
+src/features/games/SpotMistakeGame.jsx(1475,7): error TS2322: Type '{ currentQuestion: any; chunks: any; stage: any; selectedIndices: any; inputBuffer: any; setInputBuffer: Dispatch<any>; checkStatus: any; attempts: any; score: any; combo: any; playedCount: any; ... 30 more ...; settings: any; }' is not assignable to type 'IntrinsicAttributes & { aiWaitTime: any; attempts: any; checkStatus: any; chunks: any; combo: any; config: any; correctCount: any; currentQuestion: any; handleCheckSpot: any; ... 26 more ...; wrongCount: any; }'.
+  Property 't' does not exist on type 'IntrinsicAttributes & { aiWaitTime: any; attempts: any; checkStatus: any; chunks: any; combo: any; config: any; correctCount: any; currentQuestion: any; handleCheckSpot: any; ... 26 more ...; wrongCount: any; }'.
+src/features/games/SpotMistakeGame.jsx(1490,10): error TS2339: Property 'Block5_11_useSpotMistakeLogic' does not exist on type 'Window & typeof globalThis'.
+src/features/games/SpotMistakeGame.jsx(1491,10): error TS2339: Property 'useSpotMistakeLogic' does not exist on type 'Window & typeof globalThis'.
+src/features/games/SpotMistakeGame.jsx(1492,10): error TS2339: Property 'Block5_11_SpotMistakeGame' does not exist on type 'Window & typeof globalThis'.
+src/features/games/SpotMistakeGame.jsx(1493,10): error TS2339: Property 'SpotMistakeGame' does not exist on type 'Window & typeof globalThis'.
+src/features/games/SpotMistakeUI.jsx(418,8): error TS2741: Property 'onComplete' is missing in type '{ onCancel: any; queueLength: any; text: string; mainColor: string; levelStr: string; }' but required in type '{ duration?: number; engine?: any; levelStr?: string; mainColor?: string; onCancel: any; onComplete: any; queueLength?: number; subText?: string; text?: string; }'.
+src/features/games/SpotMistakeUI.jsx(1053,10): error TS2339: Property 'Block5_10_SpotMistakeSetup' does not exist on type 'Window & typeof globalThis'.
+src/features/games/SpotMistakeUI.jsx(1054,10): error TS2339: Property 'SpotMistakeSetup' does not exist on type 'Window & typeof globalThis'.
+src/features/games/SpotMistakeUI.jsx(1055,10): error TS2339: Property 'Block5_10_SpotMistakePlayScreen' does not exist on type 'Window & typeof globalThis'.
+src/features/games/SpotMistakeUI.jsx(1056,10): error TS2339: Property 'SpotMistakePlayScreen' does not exist on type 'Window & typeof globalThis'.
+src/features/games/common/GameSharedUI.jsx(712,10): error TS2339: Property 'GameSharedUI' does not exist on type 'Window & typeof globalThis'.
+src/features/games/common/gameHelpers.js(744,10): error TS2339: Property 'GameHelpers' does not exist on type 'Window & typeof globalThis'.
+src/hooks/useAiLogic.js(457,13): error TS2810: Expected 1 argument, but got 0. 'new Promise()' needs a JSDoc hint to produce a 'resolve' that can be called without arguments.
+src/hooks/useCoreState.js(72,10): error TS2339: Property 'rel' does not exist on type 'HTMLElement'.
+src/hooks/useCoreState.js(75,12): error TS2339: Property 'href' does not exist on type 'HTMLElement'.
+src/hooks/useCoreState.js(76,10): error TS2339: Property 'href' does not exist on type 'HTMLElement'.
+src/hooks/useDataIO.js(80,22): error TS2339: Property 'default' does not exist on type 'typeof import("E:/Lap_Trinh/HocTot/node_modules/xlsx/types/index")'.
+src/hooks/useDataIO.js(80,47): error TS2339: Property 'default' does not exist on type 'typeof import("E:/Lap_Trinh/HocTot/node_modules/xlsx/types/index")'.
+src/hooks/useDataIO.js(81,26): error TS2339: Property 'default' does not exist on type 'typeof import("E:/Lap_Trinh/HocTot/node_modules/xlsx/types/index")'.
+src/hooks/useDataIO.js(1634,43): error TS2345: Argument of type 'string | ArrayBuffer' is not assignable to parameter of type 'string'.
+  Type 'ArrayBuffer' is not assignable to type 'string'.
+src/main.jsx(13,8): error TS2882: Cannot find module or type declarations for side-effect import of './index.css'.
+src/services/db.js(127,9): error TS2810: Expected 1 argument, but got 0. 'new Promise()' needs a JSDoc hint to produce a 'resolve' that can be called without arguments.
+src/services/db.js(136,33): error TS2339: Property 'result' does not exist on type 'EventTarget'.
+src/services/db.js(146,32): error TS2339: Property 'result' does not exist on type 'EventTarget'.
+src/services/db.js(203,9): error TS2810: Expected 1 argument, but got 0. 'new Promise()' needs a JSDoc hint to produce a 'resolve' that can be called without arguments.
+src/services/db.js(208,58): error TS2339: Property 'error' does not exist on type 'EventTarget'.
+src/services/db.js(209,29): error TS2339: Property 'error' does not exist on type 'EventTarget'.
+src/services/db.js(254,35): error TS2810: Expected 1 argument, but got 0. 'new Promise()' needs a JSDoc hint to produce a 'resolve' that can be called without arguments.
+src/services/db.js(271,9): error TS2810: Expected 1 argument, but got 0. 'new Promise()' needs a JSDoc hint to produce a 'resolve' that can be called without arguments.
+src/services/db.js(278,35): error TS2810: Expected 1 argument, but got 0. 'new Promise()' needs a JSDoc hint to produce a 'resolve' that can be called without arguments.
+src/services/geminiApi.js(771,3): error TS2740: Type '{}' is missing the following properties from type '{ term: { type: string; }; pronunciation: { type: string; }; definition: { type: string; }; posAnalysis: { type: string; }; partOfSpeech: { type: string; }; topic: { type: string; }; analysis: { type: string; }; sinoViet: { type: string; }; example: { type: string; description: string; }; image_keyword: { type: stri...': term, pronunciation, definition, posAnalysis, and 7 more.
+src/services/geminiApi.js(1128,10): error TS2339: Property 'GeminiApiService' does not exist on type 'Window & typeof globalThis'.

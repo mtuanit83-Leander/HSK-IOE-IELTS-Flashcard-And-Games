@@ -1,0 +1,36 @@
+{
+  "entry": [
+    "src/main.jsx!",
+    "vite.config.js!",
+    "tailwind.config.js!",
+    "postcss.config.js!"
+  ],
+  "project": [
+    "src/**/*.{js,jsx,ts,tsx}"
+  ],
+  "paths": {
+    "@/*": ["./src/*"]
+  },
+  "ignore": [
+    "audit_app.mjs",
+    "bundle_for_ai.js",
+    "src/globals.d.ts",
+    "transshipment-*.js",
+    "tests/**",
+    "vitest.config.js",
+    "playwright.config.js",
+    "dist/**",
+    "build/**"
+  ],
+  "ignoreDependencies": [
+    "@types/react",
+    "@types/react-dom",
+    "autoprefixer",
+    "@playwright/test",
+    "vitest",
+    "jsdom"
+  ],
+  "ignoreBinaries": [
+    "oxlint"
+  ]
+}
