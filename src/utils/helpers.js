@@ -1,16 +1,35 @@
 // ============================================================================
 // FILE 10/85: src/utils/helpers.js
 // NGUỒN GỐC: tang_2.js (Block 2.1b - Core Data Utilities)
-// PHIÊN BẢN: Ver 1.0
-// NGÀY GIỜ NÂNG CẤP: 18/11/2026 - 22:36 (GMT+7)
-// NHIỆM VỤ: Cung cấp các hàm tiện ích thuần túy xử lý chuỗi, mảng, chuẩn hóa ngôn ngữ, giải mã JSON AI, chuẩn hóa URL ảnh minh họa thông minh (isValidImageUrl, buildSmartImageUrl), tính toán SRS, chuyển đổi CSV/TSV và quản lý WakeLock.
+// PHIÊN BẢN: Ver 1.2
+// NGÀY GIỜ NÂNG CẤP: 23/11/2026 - 06:08 (GMT+7)
+// NHIỆM VỤ: Cung cấp tiện ích lõi xử lý chuỗi/mảng/Pinyin/SRS/CSV/TSV/WakeLock;
+//           vận hành Bộ đệm RAM Mirror 0ms cho Kho Master Data (fc_master_data_*)
+//           có kiểm định đồng bộ RAM <-> FcDB, phân tích CSV chuẩn RFC-4180
+//           hỗ trợ ô đa dòng, vá xử lý Pinyin ü/v 2 chiều, chống SRS 0 ngày
+//           và giữ gọn cột image chống phình dung lượng.
 // ============================================================================
 
 import { CONFIG_SAMPLES } from '../config/constants.js';
 import { DEFAULT_PROMPTS } from '../config/prompts.js';
 
+// Tiền tố nhận diện các kho Master Data kích thước lớn (9 Tabs x EN/ZH x Vocab/Sentence)
+export const MASTER_DATA_KEY_PREFIX = 'fc_master_data_';
+
 // Biến lưu trữ trạng thái giữ sáng màn hình (Screen Wake Lock)
 let currentWakeLock = null;
+
+// Bộ đệm RAM dùng chung toàn cục (tránh lệch instance khi Vite HMR hoặc import chéo alias)
+const fallbackMasterCache = new Map();
+const getGlobalMasterCache = () => {
+  if (typeof globalThis !== 'undefined') {
+    if (!(globalThis.__fcMasterDataCache instanceof Map)) {
+      globalThis.__fcMasterDataCache = new Map();
+    }
+    return globalThis.__fcMasterDataCache;
+  }
+  return fallbackMasterCache;
+};
 
 // Danh sách các từ khóa rỗng/rác không được phép dùng làm URL hoặc từ khóa tìm ảnh
 const GARBAGE_IMAGE_TOKENS = new Set([
@@ -20,13 +39,68 @@ const GARBAGE_IMAGE_TOKENS = new Set([
   'n/a',
   'na',
   'false',
+  'true',
   'nan',
   'empty',
   'no image',
   'no_image',
   'khong co',
-  'không có'
+  'không có',
+  '-'
 ]);
+
+/**
+ * Kiểm tra một khóa lưu trữ có thuộc nhóm Kho Master Data cỡ lớn hay không
+ */
+export const isMasterDataKey = (key) => {
+  return typeof key === 'string' && key.startsWith(MASTER_DATA_KEY_PREFIX);
+};
+
+/**
+ * Ghi dữ liệu Kho Master Data vào Bộ đệm RAM 0ms (truyền null/undefined để xóa)
+ */
+export const setMasterDataCache = (key, value) => {
+  if (!isMasterDataKey(key)) return false;
+  const cache = getGlobalMasterCache();
+  if (value === null || value === undefined) {
+    cache.delete(key);
+    return true;
+  }
+  if (typeof value === 'object') {
+    cache.set(key, value);
+    return true;
+  }
+  return false;
+};
+
+/**
+ * Đọc đồng bộ Kho Master Data từ Bộ đệm RAM 0ms
+ */
+export const getMasterDataCache = (key, fallback = null) => {
+  if (!isMasterDataKey(key)) return fallback;
+  const cache = getGlobalMasterCache();
+  return cache.has(key) ? cache.get(key) : fallback;
+};
+
+/**
+ * Kiểm tra một khóa Master Data đã được nạp vào RAM Cache hay chưa
+ */
+export const hasMasterDataCache = (key) => {
+  if (!isMasterDataKey(key)) return false;
+  return getGlobalMasterCache().has(key);
+};
+
+/**
+ * Xóa một khóa cụ thể hoặc toàn bộ Bộ đệm RAM Master Data
+ */
+export const clearMasterDataCache = (key = null) => {
+  const cache = getGlobalMasterCache();
+  if (typeof key === 'string' && key) {
+    cache.delete(key);
+  } else {
+    cache.clear();
+  }
+};
 
 /**
  * Kiểm tra một giá trị có phải là đường dẫn URL hình ảnh hợp lệ hay không
@@ -42,6 +116,20 @@ export const isValidImageUrl = (val) => {
     trimmed.startsWith('data:image/') ||
     trimmed.startsWith('blob:')
   );
+};
+
+/**
+ * Chuẩn hóa gọn nhẹ giá trị cột `image` khi lưu trữ từ Excel/Sheet/JSON:
+ * - Lọc sạch chuỗi rác (null, n/a, none, -, không có...)
+ * - Giữ nguyên URL hợp lệ hoặc từ khóa ngắn gọn (KHÔNG phình thành URL Bing dài khi lưu)
+ * - Việc dựng URL Bing thông minh được thực hiện on-the-fly lúc hiển thị (FlashcardDisplay)
+ */
+export const normalizeStoredImageValue = (rawImage) => {
+  if (!rawImage || typeof rawImage !== 'string') return '';
+  const trimmed = rawImage.trim();
+  if (!trimmed) return '';
+  if (GARBAGE_IMAGE_TOKENS.has(trimmed.toLowerCase())) return '';
+  return trimmed;
 };
 
 /**
@@ -84,7 +172,7 @@ export const buildSmartImageUrl = (
   // 2. Làm sạch từ khóa chính
   let cleanKw = sanitizeImageKeyword(rawImageOrKeyword);
 
-  // 3. Nếu từ khóa chính rỗng, thử dùng fallbackTerm (Chỉ chấp nhận nếu fallbackTerm là từ tiếng Anh không dấu, không chứa chữ Hán)
+  // 3. Nếu từ khóa chính rỗng, thử dùng fallbackTerm (Chỉ chấp nhận từ tiếng Anh không dấu, không chữ Hán)
   if (!cleanKw && fallbackTerm && typeof fallbackTerm === 'string') {
     const hasCjk = /[\u4e00-\u9fff\u3400-\u4dbf]/.test(fallbackTerm);
     const hasVietDiacritics = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(
@@ -123,25 +211,118 @@ export const buildSmartImageUrl = (
 export const resolveSmartImageUrl = buildSmartImageUrl;
 
 /**
- * Đọc và phân tích cú pháp JSON an toàn từ LocalStorage
+ * Đọc và phân tích cú pháp JSON an toàn:
+ * - Với khóa `fc_master_data_*`: Ưu tiên đọc tức thì 0ms từ RAM Mirror;
+ *   nếu chưa có trong RAM thì fallback đọc LocalStorage cũ (trước khi migrate) và nạp vào RAM.
+ * - Với các khóa thường: Đọc và parse JSON an toàn từ LocalStorage (trả fallback nếu giá trị null/undefined).
  */
 export const safeJsonParse = (key, fallback) => {
   try {
+    if (isMasterDataKey(key)) {
+      const cache = getGlobalMasterCache();
+      if (cache.has(key)) {
+        return cache.get(key);
+      }
+      if (typeof localStorage !== 'undefined') {
+        const legacyRaw = localStorage.getItem(key);
+        if (legacyRaw) {
+          const parsed = JSON.parse(legacyRaw);
+          if (parsed && typeof parsed === 'object') {
+            cache.set(key, parsed);
+            return parsed;
+          }
+        }
+      }
+      return fallback;
+    }
+
+    if (typeof localStorage === 'undefined') return fallback;
     const item = localStorage.getItem(key);
-    return item ? JSON.parse(item) : fallback;
+    if (item === null || item === '') return fallback;
+    const parsed = JSON.parse(item);
+    return parsed ?? fallback;
   } catch {
     return fallback;
   }
 };
 
 /**
- * Lưu dữ liệu an toàn vào LocalStorage (Tự động stringify nếu là Object/Array)
+ * Lưu dữ liệu an toàn (trả về boolean để caller biết chắc chắn ghi thành công hay thất bại):
+ * - Với khóa `fc_master_data_*`: Tự giải mã nếu nhận chuỗi JSON legacy, kiểm định thành công
+ *   trên RAM Mirror trước khi dọn LocalStorage & đồng bộ ngầm xuống FcDB (chống lệch RAM <-> DB).
+ * - Với các khóa thường: Xóa key nếu value === null; tự động stringify nếu là Object/Array.
  */
 export const safeLocalStorageSet = (key, value) => {
+  if (!key || typeof key !== 'string' || value === undefined) return false;
+
+  if (isMasterDataKey(key)) {
+    try {
+      let normalizedValue = value;
+      if (typeof normalizedValue === 'string') {
+        try {
+          normalizedValue = JSON.parse(normalizedValue);
+        } catch {
+          console.warn(
+            `[Utils] Invalid JSON string for MasterData (${key}). Write aborted.`
+          );
+          return false;
+        }
+      }
+
+      const ok = setMasterDataCache(key, normalizedValue);
+      if (!ok) {
+        console.warn(
+          `[Utils] Invalid MasterData payload (${key}): expected Object/Array/null. Write aborted.`
+        );
+        return false;
+      }
+
+      // Dọn bản cũ (nếu còn sót) trên localStorage để giải phóng quota 5MB
+      if (typeof localStorage !== 'undefined') {
+        try {
+          if (localStorage.getItem(key) !== null) {
+            localStorage.removeItem(key);
+          }
+        } catch {
+          // Bỏ qua lỗi quyền truy cập storage
+        }
+      }
+
+      // Đồng bộ bất đồng bộ xuống IndexedDB (bảo vệ cho các caller cũ như useAiLogic.js)
+      if (
+        typeof window !== 'undefined' &&
+        window.FcDB &&
+        typeof window.FcDB.set === 'function'
+      ) {
+        Promise.resolve(
+          normalizedValue === null
+            ? window.FcDB.del?.(key)
+            : window.FcDB.set(key, normalizedValue)
+        ).catch((dbErr) => {
+          console.warn(`[Utils] FcDB Sync Error (${key}):`, dbErr);
+        });
+      }
+      return true;
+    } catch (err) {
+      console.warn(`[Utils] MasterData Cache Set Error (${key}):`, err);
+      return false;
+    }
+  }
+
   try {
-    localStorage.setItem(key, typeof value === 'object' ? JSON.stringify(value) : value);
+    if (typeof localStorage === 'undefined') return false;
+    if (value === null) {
+      localStorage.removeItem(key);
+      return true;
+    }
+    localStorage.setItem(
+      key,
+      typeof value === 'object' ? JSON.stringify(value) : String(value)
+    );
+    return true;
   } catch (err) {
-    console.warn('[Utils] LocalStorage Set Error:', err);
+    console.warn(`[Utils] LocalStorage Set Error (${key}):`, err);
+    return false;
   }
 };
 
@@ -170,10 +351,13 @@ export const getFontFamily = (settings) => {
  */
 export const advancedNormalize = (str, langCode) => {
   if (!str) return '';
-  let s = str.toLowerCase();
+  let s = String(str).toLowerCase();
 
   if (langCode === 'vi') {
-    s = s.replace(/\blăm\b/g, 'năm').replace(/\bmốt\b/g, 'một').replace(/\btư\b/g, 'bốn');
+    s = s
+      .replace(/\blăm\b/g, 'năm')
+      .replace(/\bmốt\b/g, 'một')
+      .replace(/\btư\b/g, 'bốn');
   } else if (langCode === 'zh') {
     s = s.replace(/两/g, '二');
   }
@@ -183,21 +367,72 @@ export const advancedNormalize = (str, langCode) => {
     if (isNaN(num)) return match;
 
     if (langCode === 'vi') {
-      const units = ['không', 'một', 'hai', 'ba', 'bốn', 'năm', 'sáu', 'bảy', 'tám', 'chín'];
+      const units = [
+        'không',
+        'một',
+        'hai',
+        'ba',
+        'bốn',
+        'năm',
+        'sáu',
+        'bảy',
+        'tám',
+        'chín'
+      ];
       if (num < 10) return units[num];
       if (num === 10) return 'mười';
       if (num < 20) return 'mười ' + units[num % 10];
       if (num < 100) {
-        return units[Math.floor(num / 10)] + ' mươi ' + (num % 10 !== 0 ? units[num % 10] : '');
+        return (
+          units[Math.floor(num / 10)] +
+          ' mươi ' +
+          (num % 10 !== 0 ? units[num % 10] : '')
+        );
       }
     } else if (langCode === 'en') {
-      const units = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
-      const teens = ['ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
-      const tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+      const units = [
+        'zero',
+        'one',
+        'two',
+        'three',
+        'four',
+        'five',
+        'six',
+        'seven',
+        'eight',
+        'nine'
+      ];
+      const teens = [
+        'ten',
+        'eleven',
+        'twelve',
+        'thirteen',
+        'fourteen',
+        'fifteen',
+        'sixteen',
+        'seventeen',
+        'eighteen',
+        'nineteen'
+      ];
+      const tens = [
+        '',
+        '',
+        'twenty',
+        'thirty',
+        'forty',
+        'fifty',
+        'sixty',
+        'seventy',
+        'eighty',
+        'ninety'
+      ];
       if (num < 10) return units[num];
       if (num < 20) return teens[num - 10];
       if (num < 100) {
-        return tens[Math.floor(num / 10)] + (num % 10 !== 0 ? ' ' + units[num % 10] : '');
+        return (
+          tens[Math.floor(num / 10)] +
+          (num % 10 !== 0 ? ' ' + units[num % 10] : '')
+        );
       }
     } else if (langCode === 'zh') {
       const units = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
@@ -205,7 +440,11 @@ export const advancedNormalize = (str, langCode) => {
       if (num === 10) return '十';
       if (num < 20) return '十' + (num % 10 !== 0 ? units[num % 10] : '');
       if (num < 100) {
-        return units[Math.floor(num / 10)] + '十' + (num % 10 !== 0 ? units[num % 10] : '');
+        return (
+          units[Math.floor(num / 10)] +
+          '十' +
+          (num % 10 !== 0 ? units[num % 10] : '')
+        );
       }
     }
     return match;
@@ -232,7 +471,7 @@ export const shuffleArray = (arr) => {
  */
 export const cleanText = (text) => {
   if (!text) return '';
-  return text
+  return String(text)
     .replace(/[\*#_`~]/g, '')
     .replace(/^\s*-\s/gm, '• ')
     .replace(/\n{3,}/g, '\n\n')
@@ -244,13 +483,17 @@ export const cleanText = (text) => {
  */
 export const parseAiJson = (text) => {
   try {
+    if (typeof text !== 'string') {
+      if (text && typeof text === 'object') return text;
+      throw new Error('Dữ liệu AI trống.');
+    }
     let clean = text.replace(/```json\s*|\s*```/g, '').trim();
 
     // Lưới an toàn: Quét và giải mã Unicode Escaping bị vỡ do AI quên viết dấu \
     clean = clean.replace(/(?:\\+)?u([0-9a-fA-F]{4})/g, (match, hex) => {
       const code = parseInt(hex, 16);
       // Vùng 1: Chữ Hán (CJK Unified Ideographs). Nếu nằm trong vùng này, chắc chắn là AI xuất lỗi -> Giải mã ngay!
-      if (code >= 0x4E00 && code <= 0x9FFF) return String.fromCharCode(code);
+      if (code >= 0x4e00 && code <= 0x9fff) return String.fromCharCode(code);
       // Vùng 2: Nếu có dấu \ đàng hoàng (\uXXXX) thì giải mã theo chuẩn chung
       if (match.includes('\\')) return String.fromCharCode(code);
       // Trả về nguyên trạng để bảo vệ các từ tiếng Anh có chứa chữ u + 4 ký tự hex (VD: cloud1234 -> ud123)
@@ -265,13 +508,14 @@ export const parseAiJson = (text) => {
 };
 
 /**
- * Lấy mẫu câu lệnh (Prompt Template) và điền các tham số động
+ * Lấy mẫu câu lệnh (Prompt Template) và điền các tham số động (chống bẫy .join(undefined))
  */
 export const getPrompt = (key, params = {}) => {
   let template = DEFAULT_PROMPTS[key];
   if (!template) return '';
+  if (!params || typeof params !== 'object') return template;
   for (const [k, v] of Object.entries(params)) {
-    template = template.split(`{${k}}`).join(v);
+    template = template.split(`{${k}}`).join(v == null ? '' : String(v));
   }
   return template;
 };
@@ -287,7 +531,7 @@ export const getStorageConfig = (lang) => {
  * Yêu cầu giữ màn hình luôn sáng (Wake Lock API) cho chế độ Rảnh tay
  */
 export const requestWakeLock = async () => {
-  if ('wakeLock' in navigator) {
+  if (typeof navigator !== 'undefined' && 'wakeLock' in navigator) {
     try {
       currentWakeLock = await navigator.wakeLock.request('screen');
       Utils.wakeLock = currentWakeLock;
@@ -316,25 +560,26 @@ export const releaseWakeLock = async () => {
 
 /**
  * Chuyển đổi mảng dòng thô (từ Excel / CSV) thành danh sách đối tượng Thẻ chuẩn (10 cột)
+ * Giữ gọn cột `image` (URL gốc hoặc từ khóa ngắn sạch rác) để tối ưu dung lượng lưu trữ
  */
 export const convertRawRowsToCards = (rows) => {
-  if (!rows || rows.length === 0) return [];
+  if (!Array.isArray(rows) || rows.length <= 1) return [];
   return rows
     .slice(1)
     .map((row) => {
-      if (!row || row.length === 0 || !row[0]) return null;
-      const rawImg = String(row[6] || '').trim();
-      const resolvedImg = rawImg ? buildSmartImageUrl(rawImg) : '';
+      if (!Array.isArray(row) || row.length === 0) return null;
+      const term = String(row[0] ?? '').trim();
+      if (!term) return null;
       return {
-        term: String(row[0] || '').trim(),
-        pronunciation: String(row[1] || '').trim(),
-        definition: String(row[2] || '').trim(),
-        analysis: String(row[3] || '').trim(),
-        sinoViet: String(row[4] || '').trim(),
-        example: String(row[5] || '').trim(),
-        image: resolvedImg,
-        partOfSpeech: String(row[7] || '').trim(),
-        topic: String(row[8] || '').trim(),
+        term,
+        pronunciation: String(row[1] ?? '').trim(),
+        definition: String(row[2] ?? '').trim(),
+        analysis: String(row[3] ?? '').trim(),
+        sinoViet: String(row[4] ?? '').trim(),
+        example: String(row[5] ?? '').trim(),
+        image: normalizeStoredImageValue(String(row[6] ?? '')),
+        partOfSpeech: String(row[7] ?? '').trim(),
+        topic: String(row[8] ?? '').trim(),
         // Bắt dữ liệu cột J (index 9) và ép vào mảng an toàn
         grammar_type: row[9]
           ? String(row[9])
@@ -348,50 +593,97 @@ export const convertRawRowsToCards = (rows) => {
 };
 
 /**
- * Phân tích chuỗi CSV và ánh xạ thành danh sách Thẻ
+ * Bộ phân tích CSV chuẩn RFC-4180 tuyến tính O(n):
+ * - Hỗ trợ BOM UTF-8, ngắt dòng \r\n / \n / \r
+ * - Hỗ trợ dấu ngoặc kép thoát "" và ô dữ liệu nhiều dòng bên trong "..."
+ */
+const parseCsvRowsRFC4180 = (csvText) => {
+  const text = csvText.replace(/^\uFEFF/, '');
+  const rows = [];
+  let currentRow = [];
+  let currentCell = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          currentCell += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        currentCell += ch;
+      }
+    } else if (ch === '"' && currentCell.trim() === '') {
+      inQuotes = true;
+      currentCell = '';
+    } else if (ch === ',') {
+      currentRow.push(currentCell.trim());
+      currentCell = '';
+    } else if (ch === '\r' || ch === '\n') {
+      if (ch === '\r' && text[i + 1] === '\n') {
+        i++;
+      }
+      currentRow.push(currentCell.trim());
+      if (currentRow.some((cell) => cell !== '')) {
+        rows.push(currentRow);
+      }
+      currentRow = [];
+      currentCell = '';
+    } else {
+      currentCell += ch;
+    }
+  }
+
+  if (currentCell !== '' || currentRow.length > 0) {
+    currentRow.push(currentCell.trim());
+    if (currentRow.some((cell) => cell !== '')) {
+      rows.push(currentRow);
+    }
+  }
+
+  return rows;
+};
+
+/**
+ * Phân tích chuỗi CSV chuẩn RFC-4180 và ánh xạ thành danh sách Thẻ chuẩn
  */
 export const parseAndMapCSV = (csvText) => {
-  if (!csvText || csvText.length < 5) return [];
-  const rows = csvText
-    .split('\n')
-    .filter((l) => l.trim())
-    .map((line) =>
-      line
-        .split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/)
-        .map((p) => p.replace(/^"|"$/g, '').trim())
-    );
+  if (!csvText || typeof csvText !== 'string' || csvText.length < 5) return [];
+  const rows = parseCsvRowsRFC4180(csvText);
   return convertRawRowsToCards(rows);
 };
 
 /**
- * Làm sạch và chuẩn hóa cấu trúc mảng thẻ đầu vào
+ * Làm sạch và chuẩn hóa cấu trúc mảng thẻ đầu vào (giữ gọn cột image, không phình URL)
  */
 export const sanitizeCards = (rawCards) => {
   if (!Array.isArray(rawCards)) return [];
   return rawCards
-    .map((c) => {
-      const rawImg = String(c.image || '').trim();
-      return {
-        term: String(c.term || ''),
-        pronunciation: String(c.pronunciation || ''),
-        definition: String(c.definition || ''),
-        analysis: String(c.analysis || ''),
-        sinoViet: String(c.sinoViet || ''),
-        example: String(c.example || ''),
-        image: rawImg ? buildSmartImageUrl(rawImg) : '',
-        partOfSpeech: String(c.partOfSpeech || ''),
-        topic: String(c.topic || ''),
-        grammar_type: Array.isArray(c.grammar_type)
-          ? c.grammar_type
-          : typeof c.grammar_type === 'string' && c.grammar_type.trim() !== ''
-          ? c.grammar_type
-              .split(',')
-              .map((s) => s.trim())
-              .filter(Boolean)
-          : []
-      };
-    })
-    .filter((c) => c.term.trim() !== '');
+    .filter((c) => c && typeof c === 'object')
+    .map((c) => ({
+      term: String(c.term ?? '').trim(),
+      pronunciation: String(c.pronunciation ?? '').trim(),
+      definition: String(c.definition ?? '').trim(),
+      analysis: String(c.analysis ?? '').trim(),
+      sinoViet: String(c.sinoViet ?? '').trim(),
+      example: String(c.example ?? '').trim(),
+      image: normalizeStoredImageValue(String(c.image ?? '')),
+      partOfSpeech: String(c.partOfSpeech ?? '').trim(),
+      topic: String(c.topic ?? '').trim(),
+      grammar_type: Array.isArray(c.grammar_type)
+        ? c.grammar_type
+        : typeof c.grammar_type === 'string' && c.grammar_type.trim() !== ''
+        ? c.grammar_type
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : []
+    }))
+    .filter((c) => c.term !== '');
 };
 
 /**
@@ -399,7 +691,7 @@ export const sanitizeCards = (rawCards) => {
  */
 export const detectSentence = (text) => {
   if (!text) return false;
-  const str = text.trim();
+  const str = String(text).trim();
   return (
     /[.?!。？！]/.test(str) ||
     str.split(/\s+/).length > 4 ||
@@ -427,7 +719,7 @@ export const jsonToTsv = (data) => {
   const rows = data.map((item) =>
     headers
       .map((key) => {
-        let val = item[key] || '';
+        let val = item?.[key] || '';
         if (Array.isArray(val)) val = val.join(', ');
         val = String(val).replace(/(\r\n|\n|\r)/gm, ' ');
         return val;
@@ -467,14 +759,15 @@ export const calculateSimilarity = (str1, str2) => {
 };
 
 /**
- * Loại bỏ dấu thanh điệu Pinyin về dạng chữ cái Latin không dấu
+ * Loại bỏ dấu thanh điệu Pinyin về dạng chữ cái Latin không dấu (chuẩn hóa ü/ǖ/ǘ/ǚ/ǜ -> v trước NFD)
  */
 export const removePinyinTones = (str) => {
   if (!str) return '';
   return String(str)
+    .normalize('NFC')
+    .replace(/[üǖǘǚǜ]/gi, 'v')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-    .replace(/ü/gi, 'v')
     .replace(/[^a-zA-Z0-9\s]/g, '')
     .toLowerCase()
     .trim();
@@ -482,27 +775,52 @@ export const removePinyinTones = (str) => {
 
 /**
  * So khớp phiên âm Pinyin không dấu (Dùng cho Game Điền Từ Tiếng Trung)
+ * - Hỗ trợ chuẩn bàn phím `v` (lv / nv) lẫn tương thích ngược gõ `u` (lu / nu) khi đáp án gốc có `ü`
+ * - Tuyệt đối không báo đúng nhầm khi đáp án gốc là `u` (VD: lù != lv)
  */
 export const comparePinyin = (input, targetPinyin) => {
   if (!input || !targetPinyin) return false;
-  const cleanStr = (s) =>
+
+  const normalizeKeepV = (s) =>
     String(s)
+      .normalize('NFC')
+      .replace(/[üǖǘǚǜ]/gi, 'v')
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
       .replace(/[^a-zA-Z]/g, '')
       .toLowerCase();
-  const cleanInput = cleanStr(input);
-  const cleanTarget = cleanStr(targetPinyin);
-  return cleanInput.length > 0 && cleanInput === cleanTarget;
+
+  const normalizeAsU = (s) =>
+    String(s)
+      .normalize('NFC')
+      .replace(/[üǖǘǚǜ]/gi, 'u')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z]/g, '')
+      .toLowerCase();
+
+  const targetV = normalizeKeepV(targetPinyin);
+  const inputV = normalizeKeepV(input);
+  if (!targetV || !inputV) return false;
+
+  if (inputV === targetV) return true;
+
+  const targetU = normalizeAsU(targetPinyin);
+  return targetU !== targetV && inputV === targetU;
 };
 
 /**
  * Tạo nhanh một câu hỏi trắc nghiệm cơ bản từ danh sách thẻ
  */
 export const generateQuizQuestion = (cards, correctIndex) => {
+  if (!Array.isArray(cards) || !cards[correctIndex]) {
+    return { question: null, options: [] };
+  }
   const correctCard = cards[correctIndex];
   const options = [correctCard];
-  const pool = cards.filter((_, i) => i !== correctIndex && cards[i].term !== correctCard.term);
+  const pool = cards.filter(
+    (_, i) => i !== correctIndex && cards[i]?.term !== correctCard.term
+  );
 
   while (options.length < 5 && pool.length > 0) {
     const rand = Math.floor(Math.random() * pool.length);
@@ -523,10 +841,10 @@ export const generateQuizQuestion = (cards, correctIndex) => {
  * Phân tích chuỗi cấu hình thời gian SRS (VD: "2d 4h 30m") sang đơn vị Ngày (Float)
  */
 export const parseSrsTime = (str) => {
-  if (!str) return 0;
-  let d = 0,
-    h = 0,
-    m = 0;
+  if (!str || typeof str !== 'string') return 0;
+  let d = 0;
+  let h = 0;
+  let m = 0;
   const matchD = str.match(/(\d+)d/);
   if (matchD) d = parseInt(matchD[1], 10);
   const matchH = str.match(/(\d+)h/);
@@ -540,9 +858,9 @@ export const parseSrsTime = (str) => {
  * Thuật toán Lặp lại Ngắt quãng (Spaced Repetition System - SuperMemo-2 biến thể)
  */
 export const calculateSRS = (card, grade, settings) => {
-  let prevInterval = card.srs_interval || 0;
-  let prevRep = card.srs_repetition || 0;
-  let prevEase = card.srs_ease || 2.5;
+  const prevInterval = card?.srs_interval || 0;
+  const prevRep = card?.srs_repetition || 0;
+  const prevEase = card?.srs_ease || 2.5;
 
   let internalGrade = 0;
   if (grade === 'again') internalGrade = 0;
@@ -550,16 +868,21 @@ export const calculateSRS = (card, grade, settings) => {
   else if (grade === 'good') internalGrade = 4;
   else if (grade === 'easy') internalGrade = 5;
 
-  let nextInterval, nextRep, nextEase;
+  let nextInterval;
+  let nextRep;
+  let nextEase;
+
   if (internalGrade >= 3) {
     if (prevRep === 0) {
       if (grade === 'hard') nextInterval = parseSrsTime(settings?.srsHard) || 2;
-      else if (grade === 'good') nextInterval = parseSrsTime(settings?.srsGood) || 4;
-      else if (grade === 'easy') nextInterval = parseSrsTime(settings?.srsEasy) || 7;
+      else if (grade === 'good')
+        nextInterval = parseSrsTime(settings?.srsGood) || 4;
+      else if (grade === 'easy')
+        nextInterval = parseSrsTime(settings?.srsEasy) || 7;
       else nextInterval = 1;
       if (nextInterval <= 0) nextInterval = 1;
     } else {
-      nextInterval = Math.round(prevInterval * prevEase);
+      nextInterval = Math.max(1, Math.round(prevInterval * prevEase));
     }
     nextRep = prevRep + 1;
   } else {
@@ -567,11 +890,15 @@ export const calculateSRS = (card, grade, settings) => {
     nextRep = 0;
   }
 
-  nextEase = prevEase + (0.1 - (5 - internalGrade) * (0.08 + (5 - internalGrade) * 0.02));
+  nextEase =
+    prevEase +
+    (0.1 - (5 - internalGrade) * (0.08 + (5 - internalGrade) * 0.02));
   if (nextEase < 1.3) nextEase = 1.3;
 
   const now = new Date();
-  const dueDate = new Date(now.getTime() + nextInterval * 24 * 60 * 60 * 1000).getTime();
+  const dueDate = new Date(
+    now.getTime() + nextInterval * 24 * 60 * 60 * 1000
+  ).getTime();
 
   return {
     srs_interval: nextInterval,
@@ -599,15 +926,32 @@ export const getSrsTimeLabel = (days) => {
  * Tạo biến thể gây nhiễu nhanh từ các thẻ khác trong bộ bài
  */
 export const generateTrickyVariant = (correctText, otherCards) => {
-  if (!correctText || !otherCards || otherCards.length === 0) return correctText;
-  const isChinese = !correctText.includes(' ');
-  let words = isChinese ? correctText.split('') : correctText.split(' ');
+  if (!correctText || !Array.isArray(otherCards) || otherCards.length === 0) {
+    return correctText;
+  }
+  const safeText = String(correctText);
+  const isChinese = !safeText.includes(' ');
+  const words = isChinese ? safeText.split('') : safeText.split(' ');
+
+  const pickRandomToken = () => {
+    const validOthers = otherCards.filter(
+      (c) => c && typeof c.definition === 'string' && c.definition.trim() !== ''
+    );
+    if (validOthers.length === 0) return isChinese ? '的' : 'the';
+    const randomCard =
+      validOthers[Math.floor(Math.random() * validOthers.length)];
+    const randomSource = isChinese
+      ? randomCard.definition.split('')
+      : randomCard.definition.split(' ');
+    return (
+      randomSource[Math.floor(Math.random() * randomSource.length)] ||
+      (isChinese ? '的' : 'the')
+    );
+  };
 
   if (words.length <= 1) {
-    const randomCard = otherCards[Math.floor(Math.random() * otherCards.length)];
-    const randomSource = isChinese ? randomCard.definition.split('') : randomCard.definition.split(' ');
-    const randomWord = randomSource[Math.floor(Math.random() * randomSource.length)];
-    return correctText + (isChinese ? '' : ' ') + randomWord;
+    const randomWord = pickRandomToken();
+    return safeText + (isChinese ? '' : ' ') + randomWord;
   }
 
   const strategy = Math.random();
@@ -615,15 +959,9 @@ export const generateTrickyVariant = (correctText, otherCards) => {
   if (strategy < 0.33) {
     [words[lastIdx], words[lastIdx - 1]] = [words[lastIdx - 1], words[lastIdx]];
   } else if (strategy < 0.66) {
-    const randomCard = otherCards[Math.floor(Math.random() * otherCards.length)];
-    const randomSource = isChinese ? randomCard.definition.split('') : randomCard.definition.split(' ');
-    const randomWord = randomSource[Math.floor(Math.random() * randomSource.length)];
-    words.push(randomWord);
+    words.push(pickRandomToken());
   } else {
-    const randomCard = otherCards[Math.floor(Math.random() * otherCards.length)];
-    const randomSource = isChinese ? randomCard.definition.split('') : randomCard.definition.split(' ');
-    const randomWord = randomSource[Math.floor(Math.random() * randomSource.length)];
-    words[lastIdx] = randomWord;
+    words[lastIdx] = pickRandomToken();
   }
   return words.join(isChinese ? '' : ' ');
 };
@@ -632,7 +970,14 @@ export const generateTrickyVariant = (correctText, otherCards) => {
  * Đối tượng tổng hợp Utils để tương thích hoàn toàn với các mô-đun gọi qua namespace Utils.*
  */
 export const Utils = {
+  MASTER_DATA_KEY_PREFIX,
+  isMasterDataKey,
+  setMasterDataCache,
+  getMasterDataCache,
+  hasMasterDataCache,
+  clearMasterDataCache,
   isValidImageUrl,
+  normalizeStoredImageValue,
   buildSmartImageUrl,
   resolveSmartImageUrl,
   safeJsonParse,
