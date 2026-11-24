@@ -1,8 +1,8 @@
 # BÁO CÁO RADAR RÀ SOÁT TOÀN ỨNG DỤNG FLASHCARD-3D
 
-* **Thời điểm quét:** 23/11/2026 - 16:08:16
+* **Thời điểm quét:** 24/11/2026 - 07:49:37
 * **Phạm vi quét:** `80` tệp mã nguồn trong `src/`
-* **Thời gian thực thi:** `282 ms`
+* **Thời gian thực thi:** `304 ms`
 
 ---
 
@@ -12,7 +12,7 @@
 | :--- | :---: | :--- |
 | 🔴 **CRITICAL** | **4** | Lỗi gãy build, crash Runtime, vi phạm Kho Master Lai hoặc StrictMode |
 | 🟠 **HIGH** | **47** | Rủi ro tràn Quota, nhánh `vi` cũ sót, hộp thoại `alert/confirm` chặn UI |
-| 🟡 **MEDIUM** | **55** | Rò rỉ Timer/Listener, phụ thuộc `window.*` legacy |
+| 🟡 **MEDIUM** | **52** | Rò rỉ Timer/Listener, phụ thuộc `window.*` legacy |
 | ⚪ **INFO** | **0** | Thông tin đối chiếu kiểm kê |
 
 ### Thống kê theo Mã Luật Radar
@@ -22,7 +22,7 @@
 | `R03_STRICTMODE_UPDATER_SIDEEFFECT` | 4 |
 | `R05_UNSAFE_LOCALSTORAGE_SET` | 67 |
 | `R06A_DEPRECATED_VI_BRANCH` | 2 |
-| `R06B_LEGACY_WINDOW_GLOBAL` | 33 |
+| `R06B_LEGACY_WINDOW_GLOBAL` | 30 |
 
 ## 2. TOP ĐIỂM NÓNG (TỆP CẦN ƯU TIÊN XỬ LÝ TRƯỚC)
 
@@ -205,7 +205,7 @@
   - Code: `localStorage.setItem(activeStorageKey, usedApiKey);`
   - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
 
-### 🟡 MEDIUM (55 mục)
+### 🟡 MEDIUM (52 mục)
 
 - **`src/components/modals/AiChatModal.jsx:106`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
   - Code: `localStorage.setItem('fc_ai_chat_history', JSON.stringify(messages));`
@@ -363,15 +363,6 @@
 - **`src/main.jsx:27`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
   - Code: `localStorage.setItem('fc_lang', JSON.stringify('en'));`
   - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/utils/helpers.js:294`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.FcDB" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `window.FcDB &&`
-  - Gợi ý vá: Chuyển sang import { FcDB } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/utils/helpers.js:295`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.FcDB" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `typeof window.FcDB.set === 'function'`
-  - Gợi ý vá: Chuyển sang import { FcDB } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/utils/helpers.js:300`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.FcDB" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `: window.FcDB.set(key, normalizedValue)`
-  - Gợi ý vá: Chuyển sang import { FcDB } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
 
 ## 4. KIỂM KÊ KHÓA LƯU TRỮ (`fc_*`) NGOÀI DANH MỤC CHUẨN
 

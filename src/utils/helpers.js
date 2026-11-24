@@ -1,17 +1,19 @@
 // ============================================================================
 // FILE 10/85: src/utils/helpers.js
 // NGUỒN GỐC: tang_2.js (Block 2.1b - Core Data Utilities)
-// PHIÊN BẢN: Ver 1.2
-// NGÀY GIỜ NÂNG CẤP: 23/11/2026 - 06:08 (GMT+7)
+// PHIÊN BẢN: Ver 1.3
+// NGÀY GIỜ NÂNG CẤP: 24/11/2026 - 07:13 (GMT+7)
 // NHIỆM VỤ: Cung cấp tiện ích lõi xử lý chuỗi/mảng/Pinyin/SRS/CSV/TSV/WakeLock;
 //           vận hành Bộ đệm RAM Mirror 0ms cho Kho Master Data (fc_master_data_*)
-//           có kiểm định đồng bộ RAM <-> FcDB, phân tích CSV chuẩn RFC-4180
-//           hỗ trợ ô đa dòng, vá xử lý Pinyin ü/v 2 chiều, chống SRS 0 ngày
-//           và giữ gọn cột image chống phình dung lượng.
+//           với chốt chặn Plain Object (chống lọt Array/dữ liệu dị dạng),
+//           import ES Module trực tiếp FcDB (sạch 100% cảnh báo Radar window.FcDB),
+//           phân tích CSV chuẩn RFC-4180 hỗ trợ ô đa dòng, vá Pinyin ü/v 2 chiều,
+//           chống SRS 0 ngày và giữ gọn cột image chống phình dung lượng.
 // ============================================================================
 
 import { CONFIG_SAMPLES } from '../config/constants.js';
 import { DEFAULT_PROMPTS } from '../config/prompts.js';
+import { FcDB } from '../services/db.js';
 
 // Tiền tố nhận diện các kho Master Data kích thước lớn (9 Tabs x EN/ZH x Vocab/Sentence)
 export const MASTER_DATA_KEY_PREFIX = 'fc_master_data_';
@@ -50,6 +52,21 @@ const GARBAGE_IMAGE_TOKENS = new Set([
 ]);
 
 /**
+ * Kiểm tra giá trị có phải Plain Object hợp lệ cho cấu trúc Kho Master Data hay không
+ * (Chặn tuyệt đối Array, null, Date, Map, Set hoặc kiểu nguyên thủy)
+ * @param {any} value
+ * @returns {boolean}
+ */
+const isPlainMasterObject = (value) => {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Object.prototype.toString.call(value) === '[object Object]'
+  );
+};
+
+/**
  * Kiểm tra một khóa lưu trữ có thuộc nhóm Kho Master Data cỡ lớn hay không
  */
 export const isMasterDataKey = (key) => {
@@ -57,7 +74,7 @@ export const isMasterDataKey = (key) => {
 };
 
 /**
- * Ghi dữ liệu Kho Master Data vào Bộ đệm RAM 0ms (truyền null/undefined để xóa)
+ * Ghi dữ liệu Kho Master Data vào Bộ đệm RAM 0ms (chỉ chấp nhận Plain Object hoặc null/undefined để xóa)
  */
 export const setMasterDataCache = (key, value) => {
   if (!isMasterDataKey(key)) return false;
@@ -66,7 +83,7 @@ export const setMasterDataCache = (key, value) => {
     cache.delete(key);
     return true;
   }
-  if (typeof value === 'object') {
+  if (isPlainMasterObject(value)) {
     cache.set(key, value);
     return true;
   }
@@ -175,9 +192,10 @@ export const buildSmartImageUrl = (
   // 3. Nếu từ khóa chính rỗng, thử dùng fallbackTerm (Chỉ chấp nhận từ tiếng Anh không dấu, không chữ Hán)
   if (!cleanKw && fallbackTerm && typeof fallbackTerm === 'string') {
     const hasCjk = /[\u4e00-\u9fff\u3400-\u4dbf]/.test(fallbackTerm);
-    const hasVietDiacritics = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(
-      fallbackTerm
-    );
+    const hasVietDiacritics =
+      /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(
+        fallbackTerm
+      );
     if (!hasCjk && !hasVietDiacritics) {
       cleanKw = sanitizeImageKeyword(fallbackTerm);
     }
@@ -213,7 +231,7 @@ export const resolveSmartImageUrl = buildSmartImageUrl;
 /**
  * Đọc và phân tích cú pháp JSON an toàn:
  * - Với khóa `fc_master_data_*`: Ưu tiên đọc tức thì 0ms từ RAM Mirror;
- *   nếu chưa có trong RAM thì fallback đọc LocalStorage cũ (trước khi migrate) và nạp vào RAM.
+ *   nếu chưa có trong RAM thì fallback đọc LocalStorage cũ (chỉ nhận Plain Object hợp lệ) và nạp vào RAM.
  * - Với các khóa thường: Đọc và parse JSON an toàn từ LocalStorage (trả fallback nếu giá trị null/undefined).
  */
 export const safeJsonParse = (key, fallback) => {
@@ -227,7 +245,7 @@ export const safeJsonParse = (key, fallback) => {
         const legacyRaw = localStorage.getItem(key);
         if (legacyRaw) {
           const parsed = JSON.parse(legacyRaw);
-          if (parsed && typeof parsed === 'object') {
+          if (isPlainMasterObject(parsed)) {
             cache.set(key, parsed);
             return parsed;
           }
@@ -248,7 +266,7 @@ export const safeJsonParse = (key, fallback) => {
 
 /**
  * Lưu dữ liệu an toàn (trả về boolean để caller biết chắc chắn ghi thành công hay thất bại):
- * - Với khóa `fc_master_data_*`: Tự giải mã nếu nhận chuỗi JSON legacy, kiểm định thành công
+ * - Với khóa `fc_master_data_*`: Tự giải mã nếu nhận chuỗi JSON legacy, kiểm định Plain Object
  *   trên RAM Mirror trước khi dọn LocalStorage & đồng bộ ngầm xuống FcDB (chống lệch RAM <-> DB).
  * - Với các khóa thường: Xóa key nếu value === null; tự động stringify nếu là Object/Array.
  */
@@ -272,7 +290,7 @@ export const safeLocalStorageSet = (key, value) => {
       const ok = setMasterDataCache(key, normalizedValue);
       if (!ok) {
         console.warn(
-          `[Utils] Invalid MasterData payload (${key}): expected Object/Array/null. Write aborted.`
+          `[Utils] Invalid MasterData payload (${key}): expected Plain Object or null. Write aborted.`
         );
         return false;
       }
@@ -288,16 +306,12 @@ export const safeLocalStorageSet = (key, value) => {
         }
       }
 
-      // Đồng bộ bất đồng bộ xuống IndexedDB (bảo vệ cho các caller cũ như useAiLogic.js)
-      if (
-        typeof window !== 'undefined' &&
-        window.FcDB &&
-        typeof window.FcDB.set === 'function'
-      ) {
+      // Đồng bộ bất đồng bộ xuống IndexedDB qua ES Module FcDB (tự động an toàn trên jsdom/Vitest)
+      if (FcDB && typeof FcDB.set === 'function') {
         Promise.resolve(
           normalizedValue === null
-            ? window.FcDB.del?.(key)
-            : window.FcDB.set(key, normalizedValue)
+            ? FcDB.remove(key)
+            : FcDB.set(key, normalizedValue)
         ).catch((dbErr) => {
           console.warn(`[Utils] FcDB Sync Error (${key}):`, dbErr);
         });

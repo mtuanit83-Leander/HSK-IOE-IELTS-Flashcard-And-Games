@@ -1,89 +1,38 @@
 ﻿
 [1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mE:/Lap_Trinh/HocTot[39m
 
-node.exe : [90mstderr[2m | tests/unit/helpers.test.js[2m > [22m[2mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.2) Unit Test Suite[2m > [22m[2m1. Kho Master Lai 
-(safeLocalStorageSet & safeJsonParse)[2m > [22m[2mtß╗▒ ─æß╗Öng parse chuß╗ùi JSON hß╗úp lß╗ç cho fc_master_data_* v├á tß╗½ chß╗æi dß╗» liß╗çu lß╗ùi
-At line:1 char:1
-+ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
-+ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: ([90mstderr[2m...╗» liß╗çu lß╗ùi:String) [], RemoteException
-    + FullyQualifiedErrorId : NativeCommandError
- 
-[22m[39m[Utils] Invalid JSON string for MasterData (fc_master_data_en_sentence). Write aborted.
-
- [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.2) Unit Test Suite[2m > [22m1. Kho Master Lai (safeLocalStorageSet & safeJsonParse)[2m > [22m─æß╗ïnh tuyß║┐n kh├│a fc_master_data_* v├áo RAM Mirror 0ms v├á KH├öNG ghi r├íc v├áo localStorage
- [31m├ù[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.2) Unit Test Suite[2m > [22m1. Kho Master Lai (safeLocalStorageSet & safeJsonParse)[2m > [22mtß╗▒ ─æß╗Öng parse chuß╗ùi JSON hß╗úp lß╗ç cho fc_master_data_* v├á tß╗½ chß╗æi dß╗» liß╗çu lß╗ùi
-[31m   ΓåÆ expected true to be false // Object.is equality[39m
- [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.2) Unit Test Suite[2m > [22m1. Kho Master Lai (safeLocalStorageSet & safeJsonParse)[2m > [22mdß╗ìn sß║ích kh├│a thß╗½a c┼⌐ tr├¬n localStorage khi cß║¡p nhß║¡t kho Master Data mß╗¢i
- [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.2) Unit Test Suite[2m > [22m1. Kho Master Lai (safeLocalStorageSet & safeJsonParse)[2m > [22mxß╗¡ l├╜ chuß║⌐n kh├│a th╞░ß╗¥ng: giß╗» nguy├¬n gi├í trß╗ï falsy (0, false) v├á x├│a kh├│a khi ghi null
- [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.2) Unit Test Suite[2m > [22m2. ─Éß╗æi s├ính Pinyin (comparePinyin)[2m > [22mchß║Ñp nhß║¡n g├╡ kh├┤ng dß║Ñu v├á bß╗Å qua khoß║úng trß║»ng / dß║Ñu thanh
- [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.2) Unit Test Suite[2m > [22m2. ─Éß╗æi s├ính Pinyin (comparePinyin)[2m > [22mchß║Ñp nhß║¡n cß║ú v v├á u khi ─æ├íp ├ín gß╗æc chß╗⌐a ├óm ├╝ (l╟£, n╟Ür├⌐n, l╟Üx├¡ng)
- [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.2) Unit Test Suite[2m > [22m2. ─Éß╗æi s├ính Pinyin (comparePinyin)[2m > [22mKH├öNG b├ío ─æ├║ng nhß║ºm khi g├╡ v cho tß╗½ gß╗æc d├╣ng ├óm u th╞░ß╗¥ng (l├╣, n╟öl├¼)
- [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.2) Unit Test Suite[2m > [22m2. ─Éß╗æi s├ính Pinyin (comparePinyin)[2m > [22mtrß║ú vß╗ü false khi ─æß║ºu v├áo rß╗ùng hoß║╖c thiß║┐u dß╗» liß╗çu
- [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.2) Unit Test Suite[2m > [22m3. parseAndMapCSV, convertRawRowsToCards & sanitizeCards[2m > [22m─æß╗ìc chuß║⌐n RFC-4180: BOM UTF-8, \r\n, ├┤ ─æa d├▓ng, dß║Ñu "" tho├ít v├á KH├öNG ph├¼nh URL ß║únh Bing
- [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.2) Unit Test Suite[2m > [22m3. parseAndMapCSV, convertRawRowsToCards & sanitizeCards[2m > [22msanitizeCards lß╗ìc bß╗Å thß║╗ rß╗ùng, chuß║⌐n h├│a grammar_type v├á giß╗» nguy├¬n tß╗½ kh├│a ß║únh ngß║»n
- [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.2) Unit Test Suite[2m > [22m4. Thuß║¡t to├ín Lß║╖p lß║íi Ngß║»t qu├úng (calculateSRS & parseSrsTime)[2m > [22mparseSrsTime quy ─æß╗òi ch├¡nh x├íc ng├áy, giß╗¥ v├á ph├║t
- [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.2) Unit Test Suite[2m > [22m4. Thuß║¡t to├ín Lß║╖p lß║íi Ngß║»t qu├úng (calculateSRS & parseSrsTime)[2m > [22mt├¡nh to├ín ─æ├║ng cho thß║╗ mß╗¢i ß╗ƒ mß╗⌐c good v├á kh├┤ng bao giß╗¥ r╞íi v├áo bß║½y 0 ng├áy khi prevRep > 0
- [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.2) Unit Test Suite[2m > [22m4. Thuß║¡t to├ín Lß║╖p lß║íi Ngß║»t qu├úng (calculateSRS & parseSrsTime)[2m > [22mreset repetition vß╗ü 0 khi chß╗ìn again v├á giß╗» s├án srs_ease >= 1.3
- [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.2) Unit Test Suite[2m > [22m5. parseAiJson & getPrompt[2m > [22mparseAiJson tß╗▒ giß║úi m├ú chuß╗ùi Unicode CJK thiß║┐u dß║Ñu gß║ích ch├⌐o v├á bß║úo vß╗ç tß╗½ Tiß║┐ng Anh
- [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.2) Unit Test Suite[2m > [22m5. parseAiJson & getPrompt[2m > [22mparseAiJson n├⌐m lß╗ùi r├╡ r├áng khi JSON thß╗▒c sß╗▒ g├úy
- [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.2) Unit Test Suite[2m > [22m5. parseAiJson & getPrompt[2m > [22mgetPrompt kh├┤ng ch├¿n chß╗» "undefined" khi thiß║┐u tham sß╗æ truyß╗ün v├áo
- [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.2) Unit Test Suite[2m > [22m6. advancedNormalize, detectSentence, calculateSimilarity & jsonToTsv[2m > [22mchuß║⌐n h├│a sß╗æ v├á v─ân bß║ún ─æa ng├┤n ngß╗» ch├¡nh x├íc
- [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.2) Unit Test Suite[2m > [22m6. advancedNormalize, detectSentence, calculateSimilarity & jsonToTsv[2m > [22mnhß║¡n diß╗çn ch├¡nh x├íc giß╗»a tß╗½ ─æ╞ín v├á c├óu v─ân
- [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.2) Unit Test Suite[2m > [22m6. advancedNormalize, detectSentence, calculateSimilarity & jsonToTsv[2m > [22mt├¡nh to├ín ─æß╗Ö t╞░╞íng ─æß╗ông chuß╗ùi v├á xuß║Ñt TSV 10 cß╗Öt sß║ích k├╜ tß╗▒ xuß╗æng d├▓ng
- [31m├ù[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.2) Unit Test Suite[2m > [22m7. OfflineDistractorEngine[2m > [22msinh ─æ├íp ├ín nhiß╗àu hß╗úp lß╗ç, kh├┤ng tr├╣ng ─æ├íp ├ín ─æ├║ng cho cß║ú EN v├á ZH
-[31m   ΓåÆ expected undefined to be truthy[39m
+ [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.3) & db.js (Ver 1.1) Unit Test Suite[2m > [22m1. Kho Master Lai (safeLocalStorageSet & safeJsonParse)[2m > [22m─æß╗ïnh tuyß║┐n kh├│a fc_master_data_* v├áo RAM Mirror 0ms v├á KH├öNG ghi r├íc v├áo localStorage
+ [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.3) & db.js (Ver 1.1) Unit Test Suite[2m > [22m1. Kho Master Lai (safeLocalStorageSet & safeJsonParse)[2m > [22mtß╗▒ ─æß╗Öng parse chuß╗ùi JSON hß╗úp lß╗ç cho fc_master_data_* v├á tß╗½ chß╗æi dß╗» liß╗çu lß╗ùi (Array, JSON g├úy, Date, sß╗æ)
+ [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.3) & db.js (Ver 1.1) Unit Test Suite[2m > [22m1. Kho Master Lai (safeLocalStorageSet & safeJsonParse)[2m > [22mdß╗ìn sß║ích kh├│a thß╗½a c┼⌐ tr├¬n localStorage khi cß║¡p nhß║¡t kho Master Data mß╗¢i
+ [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.3) & db.js (Ver 1.1) Unit Test Suite[2m > [22m1. Kho Master Lai (safeLocalStorageSet & safeJsonParse)[2m > [22mxß╗¡ l├╜ chuß║⌐n kh├│a th╞░ß╗¥ng: giß╗» nguy├¬n gi├í trß╗ï falsy (0, false) v├á x├│a kh├│a khi ghi null
+ [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.3) & db.js (Ver 1.1) Unit Test Suite[2m > [22m2. ─Éß╗æi s├ính Pinyin (comparePinyin)[2m > [22mchß║Ñp nhß║¡n g├╡ kh├┤ng dß║Ñu v├á bß╗Å qua khoß║úng trß║»ng / dß║Ñu thanh
+ [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.3) & db.js (Ver 1.1) Unit Test Suite[2m > [22m2. ─Éß╗æi s├ính Pinyin (comparePinyin)[2m > [22mchß║Ñp nhß║¡n cß║ú v v├á u khi ─æ├íp ├ín gß╗æc chß╗⌐a ├óm ├╝ (l╟£, n╟Ür├⌐n, l╟Üx├¡ng)
+ [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.3) & db.js (Ver 1.1) Unit Test Suite[2m > [22m2. ─Éß╗æi s├ính Pinyin (comparePinyin)[2m > [22mKH├öNG b├ío ─æ├║ng nhß║ºm khi g├╡ v cho tß╗½ gß╗æc d├╣ng ├óm u th╞░ß╗¥ng (l├╣, n╟öl├¼)
+ [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.3) & db.js (Ver 1.1) Unit Test Suite[2m > [22m2. ─Éß╗æi s├ính Pinyin (comparePinyin)[2m > [22mtrß║ú vß╗ü false khi ─æß║ºu v├áo rß╗ùng hoß║╖c thiß║┐u dß╗» liß╗çu
+ [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.3) & db.js (Ver 1.1) Unit Test Suite[2m > [22m3. parseAndMapCSV, convertRawRowsToCards & sanitizeCards[2m > [22m─æß╗ìc chuß║⌐n RFC-4180: BOM UTF-8, \r\n, ├┤ ─æa d├▓ng, dß║Ñu "" tho├ít v├á KH├öNG ph├¼nh URL ß║únh Bing
+ [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.3) & db.js (Ver 1.1) Unit Test Suite[2m > [22m3. parseAndMapCSV, convertRawRowsToCards & sanitizeCards[2m > [22msanitizeCards lß╗ìc bß╗Å thß║╗ rß╗ùng, chuß║⌐n h├│a grammar_type v├á giß╗» nguy├¬n tß╗½ kh├│a ß║únh ngß║»n
+ [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.3) & db.js (Ver 1.1) Unit Test Suite[2m > [22m4. Thuß║¡t to├ín Lß║╖p lß║íi Ngß║»t qu├úng (calculateSRS & parseSrsTime)[2m > [22mparseSrsTime quy ─æß╗òi ch├¡nh x├íc ng├áy, giß╗¥ v├á ph├║t
+ [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.3) & db.js (Ver 1.1) Unit Test Suite[2m > [22m4. Thuß║¡t to├ín Lß║╖p lß║íi Ngß║»t qu├úng (calculateSRS & parseSrsTime)[2m > [22mt├¡nh to├ín ─æ├║ng cho thß║╗ mß╗¢i ß╗ƒ mß╗⌐c good v├á kh├┤ng bao giß╗¥ r╞íi v├áo bß║½y 0 ng├áy khi prevRep > 0
+ [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.3) & db.js (Ver 1.1) Unit Test Suite[2m > [22m4. Thuß║¡t to├ín Lß║╖p lß║íi Ngß║»t qu├úng (calculateSRS & parseSrsTime)[2m > [22mreset repetition vß╗ü 0 khi chß╗ìn again v├á giß╗» s├án srs_ease >= 1.3
+ [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.3) & db.js (Ver 1.1) Unit Test Suite[2m > [22m5. parseAiJson & getPrompt[2m > [22mparseAiJson tß╗▒ giß║úi m├ú chuß╗ùi Unicode CJK thiß║┐u dß║Ñu gß║ích ch├⌐o v├á bß║úo vß╗ç tß╗½ Tiß║┐ng Anh
+ [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.3) & db.js (Ver 1.1) Unit Test Suite[2m > [22m5. parseAiJson & getPrompt[2m > [22mparseAiJson n├⌐m lß╗ùi r├╡ r├áng khi JSON thß╗▒c sß╗▒ g├úy
+ [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.3) & db.js (Ver 1.1) Unit Test Suite[2m > [22m5. parseAiJson & getPrompt[2m > [22mgetPrompt kh├┤ng ch├¿n chß╗» "undefined" khi thiß║┐u tham sß╗æ truyß╗ün v├áo
+ [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.3) & db.js (Ver 1.1) Unit Test Suite[2m > [22m6. advancedNormalize, detectSentence, calculateSimilarity & jsonToTsv[2m > [22mchuß║⌐n h├│a sß╗æ v├á v─ân bß║ún ─æa ng├┤n ngß╗» ch├¡nh x├íc
+ [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.3) & db.js (Ver 1.1) Unit Test Suite[2m > [22m6. advancedNormalize, detectSentence, calculateSimilarity & jsonToTsv[2m > [22mnhß║¡n diß╗çn ch├¡nh x├íc giß╗»a tß╗½ ─æ╞ín v├á c├óu v─ân
+ [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.3) & db.js (Ver 1.1) Unit Test Suite[2m > [22m6. advancedNormalize, detectSentence, calculateSimilarity & jsonToTsv[2m > [22mt├¡nh to├ín ─æß╗Ö t╞░╞íng ─æß╗ông chuß╗ùi v├á xuß║Ñt TSV 10 cß╗Öt sß║ích k├╜ tß╗▒ xuß╗æng d├▓ng
+ [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.3) & db.js (Ver 1.1) Unit Test Suite[2m > [22m7. OfflineDistractorEngine (src/utils/offlineDistractor.js)[2m > [22msinh ─æ├íp ├ín nhiß╗àu hß╗úp lß╗ç, kh├┤ng tr├╣ng ─æ├íp ├ín ─æ├║ng cho cß║ú EN v├á ZH
+ [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.3) & db.js (Ver 1.1) Unit Test Suite[2m > [22m8. Cß║ºu nß╗æi FcDB & Atomic Retry Puller (src/services/db.js Ver 1.1)[2m > [22mgß║»n ─æß║ºy ─æß╗º cß║ºu nß╗æi window.FcDB, window.pullRetryCardWithLock v├á hß╗ù trß╗ú alias FcDB.del()
+ [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.3) & db.js (Ver 1.1) Unit Test Suite[2m > [22m8. Cß║ºu nß╗æi FcDB & Atomic Retry Puller (src/services/db.js Ver 1.1)[2m > [22mvß║¡n h├ánh an to├án tr├¬n jsdom/Vitest (kh├┤ng c├│ indexedDB) khi gß╗ìi CRUD
+ [32mΓ£ô[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.3) & db.js (Ver 1.1) Unit Test Suite[2m > [22m8. Cß║ºu nß╗æi FcDB & Atomic Retry Puller (src/services/db.js Ver 1.1)[2m > [22mpullRetryCardWithLock trß║ú null vß╗¢i t├║i rß╗ùng/sai kiß╗âu v├á r├║t ─æ├║ng thß║╗ bß║▒ng tham chiß║┐u trß╗▒c tiß║┐p
  [32mΓ£ô[39m tests/unit/engines.test.js[2m > [22mTß║ºng Engines ΓÇö Kiß╗âm ─æß╗ïnh To├án diß╗çn src/engines/**[2m > [22m1. To├án vß║╣n Nß║íp Module (Zero Load/Import Errors)[2m > [22mph├ít hiß╗çn ─æ╞░ß╗úc c├íc tß╗çp trong src/engines/ v├á nß║íp th├ánh c├┤ng 100% kh├┤ng lß╗ùi
  [32mΓ£ô[39m tests/unit/engines.test.js[2m > [22mTß║ºng Engines ΓÇö Kiß╗âm ─æß╗ïnh To├án diß╗çn src/engines/**[2m > [22m2. IoeDataEngine / Pedagogy Matrix (Multi-select Array Armor)[2m > [22mxß╗¡ l├╜ an to├án Mß║úng nhiß╗üu cß║Ñp ─æß╗Ö, Mß║úng rß╗ùng, Chuß╗ùi ─æ╞ín v├á null/undefined
  [32mΓ£ô[39m tests/unit/engines.test.js[2m > [22mTß║ºng Engines ΓÇö Kiß╗âm ─æß╗ïnh To├án diß╗çn src/engines/**[2m > [22m3. ExamProfiles ΓÇö Sinh Blueprint cho to├án bß╗Ö bß╗Ö ─æß╗ü chuß║⌐n[2m > [22msinh Blueprint hß╗úp lß╗ç cho mß╗ìi profile (IOE, HSK, IELTS ΓÇö Std & Mini) vß╗¢i cß║ú chuß╗ùi v├á mß║úng Level
  [32mΓ£ô[39m tests/unit/engines.test.js[2m > [22mTß║ºng Engines ΓÇö Kiß╗âm ─æß╗ïnh To├án diß╗çn src/engines/**[2m > [22m4. GameAlgoEngine & FallbackDataEngine (Offline Resilience)[2m > [22mFallbackDataEngine c├│ dß╗» liß╗çu dß╗▒ ph├▓ng hß╗úp lß╗ç nß║┐u ─æ╞░ß╗úc khai b├ío
  [32mΓ£ô[39m tests/unit/engines.test.js[2m > [22mTß║ºng Engines ΓÇö Kiß╗âm ─æß╗ïnh To├án diß╗çn src/engines/**[2m > [22m4. GameAlgoEngine & FallbackDataEngine (Offline Resilience)[2m > [22mGameAlgoEngine / GameOfflineEngine vß║¡n h├ánh ß╗òn ─æß╗ïnh kh├┤ng crash tr├¬n bß╗Ö thß║╗ EN & ZH
- [32mΓ£ô[39m tests/unit/engines.test.js[2m > [22mTß║ºng Engines ΓÇö Kiß╗âm ─æß╗ïnh To├án diß╗çn src/engines/**[2m > [22m5. QueueEngine ΓÇö Khß╗ƒi tß║ío & Hß╗ºy sß║ích kh├┤ng r├▓ rß╗ë[2m > [22mcreateQueueCoordinator khß╗ƒi tß║ío, nß║íp thß╗¡ v├á destroy() an to├án[33m 1213[2mms[22m[39m
+ [32mΓ£ô[39m tests/unit/engines.test.js[2m > [22mTß║ºng Engines ΓÇö Kiß╗âm ─æß╗ïnh To├án diß╗çn src/engines/**[2m > [22m5. QueueEngine ΓÇö Khß╗ƒi tß║ío & Hß╗ºy sß║ích kh├┤ng r├▓ rß╗ë[2m > [22mcreateQueueCoordinator khß╗ƒi tß║ío, nß║íp thß╗¡ v├á destroy() an to├án[33m 1209[2mms[22m[39m
 
-[31mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[1m[7m Failed Tests 2 [27m[22mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[39m
-
-[31m[1m[7m FAIL [27m[22m[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.2) Unit Test Suite[2m > [22m1. Kho Master Lai 
-(safeLocalStorageSet & safeJsonParse)[2m > [22mtß╗▒ ─æß╗Öng parse chuß╗ùi JSON hß╗úp lß╗ç cho fc_master_data_* v├á tß╗½ chß╗æi dß╗» liß╗çu lß╗ùi
-[31m[1mAssertionError[22m: expected true to be false // Object.is equality[39m
-
-[32m- Expected[39m
-[31m+ Received[39m
-
-[32m- false[39m
-[31m+ true[39m
-
-[36m [2mΓ¥»[22m tests/unit/helpers.test.js:[2m90:90[22m[39m
-    [90m 88| [39m      [90m// Tß╗½ chß╗æi chuß╗ùi r├íc / kiß╗âu sai (mß║úng hoß║╖c JSON g├úy)[39m
-    [90m 89| [39m      [34mexpect[39m([33mUtils[39m[33m.[39m[34msafeLocalStorageSet[39m([32m'fc_master_data_en_sentence'[39m[33m,[39m [32m'[39mΓÇª
-    [90m 90| [39m      [34mexpect[39m([33mUtils[39m[33m.[39m[34msafeLocalStorageSet[39m([32m'fc_master_data_en_sentence'[39m[33m,[39m [ΓÇª
-    [90m   | [39m                                                                                         [31m^[39m
-    [90m 91| [39m      [34mexpect[39m([33mUtils[39m[33m.[39m[34msafeJsonParse[39m([32m'fc_master_data_en_sentence'[39m[33m,[39m [35mnull[39m))[33m.[39mΓÇª
-    [90m 92| [39m    })[33m;[39m
-
-[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[1/2]ΓÄ»[22m[39m
-
-[31m[1m[7m FAIL [27m[22m[39m tests/unit/helpers.test.js[2m > [22mTß║ºng 2 ΓÇö src/utils/helpers.js (Ver 1.2) Unit Test Suite[2m > [22m7. 
-OfflineDistractorEngine[2m > [22msinh ─æ├íp ├ín nhiß╗àu hß╗úp lß╗ç, kh├┤ng tr├╣ng ─æ├íp ├ín ─æ├║ng cho cß║ú EN v├á ZH
-[31m[1mAssertionError[22m: expected undefined to be truthy[39m
-
-[32m- Expected:[39m 
-true
-
-[31m+ Received:[39m 
-undefined
-
-[36m [2mΓ¥»[22m tests/unit/helpers.test.js:[2m325:39[22m[39m
-    [90m323| [39m  [34mdescribe[39m([32m'7. OfflineDistractorEngine'[39m[33m,[39m () [33m=>[39m {
-    [90m324| [39m    [34mit[39m([32m'sinh ─æ├íp ├ín nhiß╗àu hß╗úp lß╗ç, kh├┤ng tr├╣ng ─æ├íp ├ín ─æ├║ng cho cß║ú EN v├á[39mΓÇª
-    [90m325| [39m      [34mexpect[39m([33mOfflineDistractorEngine[39m)[33m.[39m[34mtoBeTruthy[39m()[33m;[39m
-    [90m   | [39m                                      [31m^[39m
-    [90m326| [39m
-    [90m327| [39m      [35mconst[39m enDeck [33m=[39m [
-
-[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[2/2]ΓÄ»[22m[39m
-
-[2m Test Files [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m1 passed[39m[22m[90m (2)[39m
-[2m      Tests [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m24 passed[39m[22m[90m (26)[39m
-[2m   Start at [22m 16:16:13
-[2m   Duration [22m 4.53s[2m (transform 420ms, setup 0ms, collect 217ms, tests 1.64s, environment 3.36s, prepare 1.62s)[22m
+[2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[32m29 passed[39m[22m[90m (29)[39m
+[2m   Start at [22m 08:16:37
+[2m   Duration [22m 15.24s[2m (transform 482ms, setup 0ms, collect 388ms, tests 1.61s, environment 23.85s, prepare 2.07s)[22m
 
