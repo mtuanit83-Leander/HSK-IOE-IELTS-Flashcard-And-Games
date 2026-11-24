@@ -1,12 +1,14 @@
 // ============================================================================
 // FILE 37/85: src/components/modals/NotebookModal.jsx
 // NGUỒN GỐC: tang_4.js (Block 4.3 - Version 1.05)
-// PHIÊN BẢN: Ver 1.1
-// NGÀY GIỜ NÂNG CẤP: 20/11/2026 - 05:22 (GMT+7)
+// PHIÊN BẢN: Ver 1.2
+// NGÀY GIỜ NÂNG CẤP: 24/11/2026 - 23:05 (GMT+7)
 // NHIỆM VỤ: Modal Sổ tay từ vựng (ReviewDropdown ôn tập vạn năng, Global
-//           Local-First Lookup, hợp nhất tiêu chí thiếu trường chống bẫy Token
-//           grammar_type:[], chống reset bản nháp bằng prevIsOpenRef, dừng Batch
-//           mượt mà với isStoppingBatch, lọc chặt từ khóa ảnh rác và siết Retry).
+//           Local-First Lookup chuẩn NFC, hợp nhất tiêu chí thiếu trường lõi
+//           chống bẫy Token grammar_type:[], sạch 0 CRITICAL / 0 HIGH / 0 MEDIUM
+//           nhờ Utils.safeLocalStorageSet & gỡ 2/2 window.Utils, đọc API Key
+//           tương thích kép fc_gemini_api_key/fc_apikey, bảo vệ bản nháp chuẩn
+//           React 18 StrictMode, bảng màu Tailwind tĩnh và chuẩn A11y Dialog).
 // ============================================================================
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -36,6 +38,78 @@ const INVALID_IMAGE_KEYWORDS = new Set([
   '-'
 ]);
 
+// Bảng ánh xạ lớp Tailwind tĩnh theo mainColor (chống bị Tailwind JIT purge)
+const COLOR_THEMES = {
+  sky: {
+    btnBg: 'bg-sky-600 hover:bg-sky-700',
+    itemHover: 'hover:bg-sky-50 hover:text-sky-700',
+    iconText: 'text-sky-500',
+    headerBg: 'bg-sky-50',
+    headerText: 'text-sky-700',
+    playBtn: 'text-sky-500 hover:bg-sky-50'
+  },
+  red: {
+    btnBg: 'bg-red-600 hover:bg-red-700',
+    itemHover: 'hover:bg-red-50 hover:text-red-700',
+    iconText: 'text-red-500',
+    headerBg: 'bg-red-50',
+    headerText: 'text-red-700',
+    playBtn: 'text-red-500 hover:bg-red-50'
+  },
+  blue: {
+    btnBg: 'bg-blue-600 hover:bg-blue-700',
+    itemHover: 'hover:bg-blue-50 hover:text-blue-700',
+    iconText: 'text-blue-500',
+    headerBg: 'bg-blue-50',
+    headerText: 'text-blue-700',
+    playBtn: 'text-blue-500 hover:bg-blue-50'
+  },
+  indigo: {
+    btnBg: 'bg-indigo-600 hover:bg-indigo-700',
+    itemHover: 'hover:bg-indigo-50 hover:text-indigo-700',
+    iconText: 'text-indigo-500',
+    headerBg: 'bg-indigo-50',
+    headerText: 'text-indigo-700',
+    playBtn: 'text-indigo-500 hover:bg-indigo-50'
+  },
+  emerald: {
+    btnBg: 'bg-emerald-600 hover:bg-emerald-700',
+    itemHover: 'hover:bg-emerald-50 hover:text-emerald-700',
+    iconText: 'text-emerald-500',
+    headerBg: 'bg-emerald-50',
+    headerText: 'text-emerald-700',
+    playBtn: 'text-emerald-500 hover:bg-emerald-50'
+  },
+  purple: {
+    btnBg: 'bg-purple-600 hover:bg-purple-700',
+    itemHover: 'hover:bg-purple-50 hover:text-purple-700',
+    iconText: 'text-purple-500',
+    headerBg: 'bg-purple-50',
+    headerText: 'text-purple-700',
+    playBtn: 'text-purple-500 hover:bg-purple-50'
+  },
+  orange: {
+    btnBg: 'bg-orange-600 hover:bg-orange-700',
+    itemHover: 'hover:bg-orange-50 hover:text-orange-700',
+    iconText: 'text-orange-500',
+    headerBg: 'bg-orange-50',
+    headerText: 'text-orange-700',
+    playBtn: 'text-orange-500 hover:bg-orange-50'
+  },
+  teal: {
+    btnBg: 'bg-teal-600 hover:bg-teal-700',
+    itemHover: 'hover:bg-teal-50 hover:text-teal-700',
+    iconText: 'text-teal-500',
+    headerBg: 'bg-teal-50',
+    headerText: 'text-teal-700',
+    playBtn: 'text-teal-500 hover:bg-teal-50'
+  }
+};
+
+const getColorTheme = (mainColor, fallbackKey = 'sky') => {
+  return COLOR_THEMES[mainColor] || COLOR_THEMES[fallbackKey] || COLOR_THEMES.sky;
+};
+
 // Bộ đếm sinh mã định danh dòng tạm duy nhất trong phiên soạn thảo
 let notebookRowUidCounter = 1;
 
@@ -43,7 +117,7 @@ let notebookRowUidCounter = 1;
  * Helper hiển thị thông báo an toàn qua hệ thống Toast toàn cục
  */
 const notify = (msg, type = 'info') => {
-  if (typeof window !== 'undefined' && window.globalShowToast) {
+  if (typeof window !== 'undefined' && typeof window.globalShowToast === 'function') {
     window.globalShowToast(msg, type);
   } else {
     console.log(`[Toast - ${type}]:`, msg);
@@ -51,28 +125,92 @@ const notify = (msg, type = 'info') => {
 };
 
 /**
- * Đọc trực tiếp ngữ cảnh cấp độ hiện tại từ LocalStorage (Đồng bộ với useAiLogic)
+ * Đọc an toàn chuỗi từ localStorage (chống lỗi khi trình duyệt chặn Storage)
+ */
+const safeReadStorage = (key, fallback = '') => {
+  if (!key || typeof localStorage === 'undefined') return fallback;
+  try {
+    const val = localStorage.getItem(key);
+    return val !== null ? val : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+/**
+ * Cộng dồn tổng Token đã tiêu thụ an toàn qua Utils.safeLocalStorageSet
+ */
+const safeAddTotalTokens = (usedTokens) => {
+  const used = Number(usedTokens);
+  if (!Number.isFinite(used) || used <= 0) return;
+
+  const rawTotal = safeReadStorage('fc_total_tokens', '0');
+  const parsedTotal = parseInt(rawTotal, 10);
+  const safeCurrent =
+    Number.isFinite(parsedTotal) && parsedTotal >= 0 ? parsedTotal : 0;
+
+  Utils.safeLocalStorageSet(
+    'fc_total_tokens',
+    String(safeCurrent + Math.round(used))
+  );
+};
+
+/**
+ * Chuẩn hóa khóa so khớp thuật ngữ theo chuẩn Unicode NFC (đồng bộ 1:1 toàn dự án)
+ */
+const normalizeTermKey = (val) => {
+  if (val === null || val === undefined) return '';
+  return String(val).normalize('NFC').trim().toLowerCase();
+};
+
+/**
+ * Sao chép sâu danh sách thẻ an toàn, lọc bỏ phần tử hỏng/null
+ */
+const cloneCardRowsSafe = (rows) => {
+  if (!Array.isArray(rows)) return [];
+  const cloned = [];
+  for (const item of rows) {
+    if (!item || typeof item !== 'object') continue;
+    try {
+      cloned.push({
+        ...JSON.parse(JSON.stringify(item)),
+        _tempId: `nb_${Date.now()}_${notebookRowUidCounter++}`
+      });
+    } catch {
+      cloned.push({
+        ...item,
+        grammar_type: Array.isArray(item.grammar_type)
+          ? [...item.grammar_type]
+          : [],
+        _tempId: `nb_${Date.now()}_${notebookRowUidCounter++}`
+      });
+    }
+  }
+  return cloned;
+};
+
+/**
+ * Đọc trực tiếp ngữ cảnh cấp độ hiện tại từ LocalStorage (an toàn tuyệt đối với try/catch)
  */
 const getDirectLevelContext = (lang) => {
   const defaultLvl = lang === 'zh' ? 'zh_level_1' : 'en_level_4';
+  const saved = safeReadStorage('fc_current_level_' + lang, '');
+  if (!saved) return [defaultLvl];
+
   try {
-    const saved = localStorage.getItem('fc_current_level_' + lang);
-    if (!saved) return [defaultLvl];
     const parsed = JSON.parse(saved);
     if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    if (typeof parsed === 'string' && parsed.trim() !== '') return [parsed];
-  } catch (e) {
-    const raw = localStorage.getItem('fc_current_level_' + lang);
-    if (raw && typeof raw === 'string') {
-      const clean = raw.replace(/["[\]]/g, '').trim();
-      if (clean) return [clean];
-    }
+    if (typeof parsed === 'string' && parsed.trim() !== '') return [parsed.trim()];
+  } catch {
+    const clean = saved.replace(/["[\]]/g, '').trim();
+    if (clean) return [clean];
   }
   return [defaultLvl];
 };
 
 /**
- * Đọc API Key khả dụng đồng nhất (Props -> fc_apikey -> Paid Key -> Key Pool)
+ * Đọc API Key khả dụng đồng nhất 5 tầng tương thích kép:
+ * Props -> STORAGE_KEYS.API_KEY ('fc_gemini_api_key') -> 'fc_apikey' -> 'fc_paid_apikey' -> 'fc_apikey_pool'
  */
 const resolveActiveApiKey = (propApiKey = '') => {
   const cleanKey = (val) =>
@@ -81,24 +219,24 @@ const resolveActiveApiKey = (propApiKey = '') => {
   const fromProp = cleanKey(propApiKey);
   if (fromProp.length >= 10) return fromProp;
 
-  try {
-    const fromPrimary = cleanKey(
-      localStorage.getItem(STORAGE_KEYS?.API_KEY || 'fc_apikey')
-    );
-    if (fromPrimary.length >= 10) return fromPrimary;
+  const primaryStorageKey = STORAGE_KEYS?.API_KEY || 'fc_gemini_api_key';
+  const fromPrimary = cleanKey(safeReadStorage(primaryStorageKey, ''));
+  if (fromPrimary.length >= 10) return fromPrimary;
 
-    const fromPaid = cleanKey(localStorage.getItem('fc_paid_apikey'));
-    if (fromPaid.length >= 10) return fromPaid;
+  if (primaryStorageKey !== 'fc_apikey') {
+    const fromLegacy = cleanKey(safeReadStorage('fc_apikey', ''));
+    if (fromLegacy.length >= 10) return fromLegacy;
+  }
 
-    const pool = Utils?.safeJsonParse
-      ? Utils.safeJsonParse('fc_apikey_pool', [])
-      : [];
-    if (Array.isArray(pool)) {
-      const firstValid = pool.find((k) => cleanKey(k).length >= 10);
-      if (firstValid) return cleanKey(firstValid);
-    }
-  } catch (e) {
-    // Bỏ qua lỗi truy cập storage
+  const fromPaid = cleanKey(safeReadStorage('fc_paid_apikey', ''));
+  if (fromPaid.length >= 10) return fromPaid;
+
+  const pool = Utils?.safeJsonParse
+    ? Utils.safeJsonParse('fc_apikey_pool', [])
+    : [];
+  if (Array.isArray(pool)) {
+    const firstValid = pool.find((k) => cleanKey(k).length >= 10);
+    if (firstValid) return cleanKey(firstValid);
   }
 
   return '';
@@ -113,10 +251,10 @@ const getDynamicBatchDelayMs = (defaultMs = 4000) => {
       ? Utils.safeJsonParse('fc_ai_config', null)
       : null;
     const configured = parseInt(aiCfg?.delayMs, 10);
-    if (!isNaN(configured) && configured >= 0) {
+    if (Number.isFinite(configured) && configured >= 0) {
       return Math.max(3000, configured);
     }
-  } catch (e) {
+  } catch {
     // Bỏ qua lỗi đọc cấu hình
   }
   return defaultMs;
@@ -139,7 +277,7 @@ const checkIsValidImage = (val) => {
 };
 
 /**
- * [VER 1.1] Lọc sạch ứng viên từ khóa ảnh:
+ * Lọc sạch ứng viên từ khóa ảnh:
  * Chặn chuỗi rác, đường dẫn file tương đối, đuôi tệp ảnh, tiền tố URL gãy và chữ Hán
  */
 const sanitizeImageKeywordCandidate = (raw) => {
@@ -183,8 +321,8 @@ const resolveSafeNotebookImage = (
     typeof buildSmartImageUrl === 'function'
       ? buildSmartImageUrl
       : typeof Utils?.buildSmartImageUrl === 'function'
-      ? Utils.buildSmartImageUrl
-      : null;
+        ? Utils.buildSmartImageUrl
+        : null;
 
   if (!smartBuilder) return '';
 
@@ -220,7 +358,7 @@ const sanitizeCardForStorage = (card) => {
 };
 
 /**
- * [VER 1.1] Bộ kiểm tra trường lõi còn thiếu dùng chung cho cả điền lẻ & điền hàng loạt.
+ * Bộ kiểm tra trường lõi còn thiếu dùng chung cho cả điền lẻ & điền hàng loạt.
  * Lưu ý: KHÔNG đưa điều kiện grammar_type.length === 0 vào cổng kích hoạt để tránh
  * lặp gọi AI vô hạn trên các câu giao tiếp bình thường (vốn hợp lệ với grammar_type: []).
  */
@@ -267,27 +405,15 @@ const getMissingFieldsForRow = (item, lang, dataMode) => {
 };
 
 /**
- * Tra cứu thẻ trong toàn bộ các kho dữ liệu cục bộ (Local-First Lookup)
+ * Tra cứu thẻ trong toàn bộ các kho dữ liệu cục bộ (Local-First Lookup chuẩn NFC)
+ * Sử dụng trực tiếp ES Module Utils.safeJsonParse (đọc 0ms từ RAM Mirror cho Master Data)
  */
 const findCardInLocalPools = (term, lang, sourceData = []) => {
-  if (!term || typeof term !== 'string') return null;
-  const target = term.toLowerCase().trim();
+  const target = normalizeTermKey(term);
   if (!target) return null;
 
-  const safeParse =
-    Utils?.safeJsonParse ||
-    (typeof window !== 'undefined' && window.Utils?.safeJsonParse) ||
-    ((key, def) => {
-      try {
-        const raw = localStorage.getItem(key);
-        return raw ? JSON.parse(raw) : def;
-      } catch (e) {
-        return def;
-      }
-    });
-
   // 1. Tìm trong sourceData (danh sách thẻ đang hiển thị) và fc_data_${lang}
-  const activeDeck = safeParse('fc_data_' + lang, []);
+  const activeDeck = Utils.safeJsonParse('fc_data_' + lang, []);
   const primaryList = [
     ...(Array.isArray(sourceData) ? sourceData : []),
     ...(Array.isArray(activeDeck) ? activeDeck : [])
@@ -297,19 +423,19 @@ const findCardInLocalPools = (term, lang, sourceData = []) => {
     (c) =>
       c &&
       c.term &&
-      c.term.toLowerCase().trim() === target &&
+      normalizeTermKey(c.term) === target &&
       c.definition &&
       c.definition.toString().trim() !== ''
   );
   if (directMatch) return directMatch;
 
-  // 2. Quét sâu vào Kho Master Data 9 cấp độ (Từ vựng & Câu văn)
+  // 2. Quét sâu vào Kho Master Data 9 cấp độ (Từ vựng & Câu văn qua RAM Mirror 0ms)
   const masterKeys = [
     `fc_master_data_${lang}_vocab`,
     `fc_master_data_${lang}_sentence`
   ];
   for (const key of masterKeys) {
-    const pool = safeParse(key, null);
+    const pool = Utils.safeJsonParse(key, null);
     if (pool && typeof pool === 'object') {
       for (const levelArr of Object.values(pool)) {
         if (Array.isArray(levelArr)) {
@@ -317,7 +443,7 @@ const findCardInLocalPools = (term, lang, sourceData = []) => {
             (c) =>
               c &&
               c.term &&
-              c.term.toLowerCase().trim() === target &&
+              normalizeTermKey(c.term) === target &&
               c.definition &&
               c.definition.toString().trim() !== ''
           );
@@ -357,6 +483,20 @@ export const ReviewDropdown = ({
   mainColor = 'blue'
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const theme = getColorTheme(mainColor, 'blue');
+
+  // Cho phép đóng menu bằng phím Escape mà không đóng nhầm Modal cha
+  useEffect(() => {
+    if (!isOpen || typeof window === 'undefined') return;
+    const handleEsc = (e) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        setIsOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleEsc, true);
+    return () => window.removeEventListener('keydown', handleEsc, true);
+  }, [isOpen]);
 
   const games = [
     { id: 'flashcard', name: 'Học Thẻ Lật', min: 1, icon: 'BookOpen' },
@@ -375,9 +515,12 @@ export const ReviewDropdown = ({
   return (
     <div className="relative inline-block text-left">
       <button
-        onClick={() => setIsOpen(!isOpen)}
+        type="button"
+        onClick={() => setIsOpen((prev) => !prev)}
         disabled={dataLength === 0}
-        className={`px-3 sm:px-4 py-2 bg-${mainColor}-600 text-white font-bold rounded-lg shadow-md hover:bg-${mainColor}-700 flex items-center justify-center gap-2 disabled:opacity-50 text-xs sm:text-base transition-all active:scale-95 h-full`}
+        aria-expanded={isOpen}
+        aria-haspopup="menu"
+        className={`px-3 sm:px-4 py-2 ${theme.btnBg} text-white font-bold rounded-lg shadow-md flex items-center justify-center gap-2 disabled:opacity-50 text-xs sm:text-base transition-all active:scale-95 h-full`}
       >
         <Icons.Gamepad2 size={16} className="sm:w-[18px] sm:h-[18px]" />
         <span>Ôn tập lại</span>
@@ -397,7 +540,10 @@ export const ReviewDropdown = ({
       )}
 
       {isOpen && (
-        <div className="absolute bottom-full right-0 sm:left-0 sm:right-auto mb-2 w-[220px] bg-white border border-gray-100 rounded-xl shadow-2xl z-50 py-2 animate-in fade-in slide-in-from-bottom-2 max-h-[50vh] overflow-y-auto custom-scrollbar">
+        <div
+          role="menu"
+          className="absolute bottom-full right-0 sm:left-0 sm:right-auto mb-2 w-[220px] bg-white border border-gray-100 rounded-xl shadow-2xl z-50 py-2 animate-in fade-in slide-in-from-bottom-2 max-h-[50vh] overflow-y-auto custom-scrollbar"
+        >
           <div className="px-3 py-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100 mb-1 sticky top-0 bg-white/90 backdrop-blur-sm z-10">
             Chọn chế độ ôn tập
           </div>
@@ -407,6 +553,8 @@ export const ReviewDropdown = ({
             return (
               <button
                 key={game.id}
+                type="button"
+                role="menuitem"
                 onClick={() => {
                   if (!isDisabled) {
                     if (onSelect) onSelect(game.id);
@@ -417,15 +565,13 @@ export const ReviewDropdown = ({
                 className={`w-full text-left px-4 py-2.5 flex items-center gap-3 transition-colors ${
                   isDisabled
                     ? 'opacity-50 cursor-not-allowed bg-gray-50 text-gray-400'
-                    : `text-gray-700 hover:bg-${mainColor}-50 hover:text-${mainColor}-700`
+                    : `text-gray-700 ${theme.itemHover}`
                 }`}
                 title={isDisabled ? `Cần ít nhất ${game.min} từ để chơi` : ''}
               >
                 <IconComp
                   size={16}
-                  className={
-                    isDisabled ? 'text-gray-400' : `text-${mainColor}-500`
-                  }
+                  className={isDisabled ? 'text-gray-400' : theme.iconText}
                 />
                 <div className="flex flex-col">
                   <span className="font-bold text-sm leading-tight">
@@ -477,6 +623,9 @@ export const NotebookModal = ({
   const editingDataRef = useRef(editingData);
   editingDataRef.current = editingData;
 
+  const fillingRowIdsRef = useRef(fillingRowIds);
+  fillingRowIdsRef.current = fillingRowIds;
+
   const dataRef = useRef(data);
   dataRef.current = data;
 
@@ -489,8 +638,18 @@ export const NotebookModal = ({
   const batchTimerRef = useRef(null);
   const batchTimerResolveRef = useRef(null);
 
+  const showConfirmDeleteRef = useRef(showConfirmDelete);
+  showConfirmDeleteRef.current = showConfirmDelete;
+
+  const pendingFillRowIdsRef = useRef(pendingFillRowIds);
+  pendingFillRowIdsRef.current = pendingFillRowIds;
+
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   const isSentenceMode = dataMode === 'sentence';
   const ImageIcon = Icons.Image || null;
+  const theme = getColorTheme(mainColor, 'sky');
 
   // Chỉ hiển thị Toast khi Modal vẫn đang mở (chặn Toast muộn sau khi đóng)
   const safeNotify = (msg, type = 'info') => {
@@ -528,14 +687,15 @@ export const NotebookModal = ({
       }, ms);
     });
 
-  // Dọn dẹp vòng lặp Batch nếu component unmount
+  // Dọn dẹp vòng lặp Batch và reset cờ StrictMode khi component unmount
   useEffect(() => {
     return () => {
       cancelBatchWorker();
+      prevIsOpenRef.current = false;
     };
   }, []);
 
-  // [VER 1.1] Chỉ khởi tạo bản nháp khi isOpen chuyển false -> true (chống reset khi data đổi từ nền)
+  // Chỉ khởi tạo bản nháp khi isOpen chuyển false -> true (chống reset khi data đổi từ nền)
   useEffect(() => {
     const wasOpen = prevIsOpenRef.current;
     prevIsOpenRef.current = isOpen;
@@ -544,11 +704,7 @@ export const NotebookModal = ({
       cancelBatchWorker();
       isBatchCancelledRef.current = false;
 
-      const safeData = Array.isArray(dataRef.current) ? dataRef.current : [];
-      const loaded = JSON.parse(JSON.stringify(safeData)).map((item) => ({
-        ...item,
-        _tempId: `nb_${Date.now()}_${notebookRowUidCounter++}`
-      }));
+      const loaded = cloneCardRowsSafe(dataRef.current);
       loaded.push(createBlankNotebookRow());
 
       editingDataRef.current = loaded;
@@ -565,6 +721,30 @@ export const NotebookModal = ({
       setIsStoppingBatch(false);
       setFillProgress({ current: 0, total: 0 });
     }
+  }, [isOpen]);
+
+  // Hỗ trợ đóng Modal / popup xác nhận an toàn bằng phím Escape
+  useEffect(() => {
+    if (!isOpen || typeof window === 'undefined') return;
+
+    const handleKeyDown = (e) => {
+      if (e.key !== 'Escape') return;
+      if (showConfirmDeleteRef.current) {
+        setShowConfirmDelete(false);
+        return;
+      }
+      if (pendingFillRowIdsRef.current) {
+        setPendingFillRowIds(null);
+        return;
+      }
+      cancelBatchWorker();
+      if (typeof onCloseRef.current === 'function') {
+        onCloseRef.current();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen]);
 
   // Danh sách các thẻ hợp lệ đang có trên bảng soạn thảo
@@ -615,6 +795,7 @@ export const NotebookModal = ({
   };
 
   const handleSave = () => {
+    cancelBatchWorker();
     const cleanData = validEditingItems.map(sanitizeCardForStorage);
     if (onSave) {
       onSave(cleanData);
@@ -642,14 +823,22 @@ export const NotebookModal = ({
 
     let item = targetIndex >= 0 ? currentRows[targetIndex] : null;
     if (!item || !item.term || item.term.trim() === '') {
-      if (!isBatch) safeNotify('Vui lòng nhập từ vựng trước khi gọi AI!', 'warning');
+      if (!isBatch) {
+        safeNotify('Vui lòng nhập từ vựng trước khi gọi AI!', 'warning');
+      }
       return { filled: false, apiHit: false };
     }
 
     const rowId = item._tempId;
 
+    // Chặn double-click / chạy chồng trên cùng 1 dòng
+    if (fillingRowIdsRef.current.has(rowId)) {
+      return { filled: false, apiHit: false };
+    }
+
     // Helper cập nhật đúng dòng theo _tempId (an toàn tuyệt đối chống lệch chỉ mục)
     const patchRowById = (updaterFn) => {
+      if (!isOpenRef.current) return;
       setEditingData((prev) => {
         const idx = prev.findIndex((r) => r && r._tempId === rowId);
         if (idx === -1) return prev;
@@ -660,7 +849,7 @@ export const NotebookModal = ({
       });
     };
 
-    // [BẢN VÁ V1.04+: GLOBAL LOCAL-FIRST LOOKUP TOÀN DIỆN]
+    // [GLOBAL LOCAL-FIRST LOOKUP TOÀN DIỆN CHUẨN NFC]
     let localUpdated = false;
     const localMatch = findCardInLocalPools(item.term, lang, sourceData);
     if (localMatch) {
@@ -672,8 +861,8 @@ export const NotebookModal = ({
         Array.isArray(item.grammar_type) && item.grammar_type.length > 0
           ? item.grammar_type
           : Array.isArray(localMatch.grammar_type)
-          ? [...localMatch.grammar_type]
-          : [];
+            ? [...localMatch.grammar_type]
+            : [];
 
       const mergedItem = {
         ...item,
@@ -711,7 +900,7 @@ export const NotebookModal = ({
       item = mergedItem;
     }
 
-    // [VER 1.1] Dùng chung 1 tiêu chí thiếu trường lõi (có hỗ trợ bổ sung ảnh cho vocab, không dính bẫy grammar_type: [])
+    // Dùng chung 1 tiêu chí thiếu trường lõi (có hỗ trợ bổ sung ảnh cho vocab, không dính bẫy grammar_type: [])
     const coreMissing = getCoreMissingFieldsForRow(item, lang, dataMode);
     if (coreMissing.length === 0) {
       if (!isBatch) {
@@ -750,14 +939,12 @@ export const NotebookModal = ({
     setFillingRowIds((prev) => {
       const next = new Set(prev);
       next.add(rowId);
+      fillingRowIdsRef.current = next;
       return next;
     });
 
     try {
-      const aiFillFn =
-        fillCardWithAi ||
-        (typeof window !== 'undefined' && window.Utils?.fillCardWithAi);
-      if (!aiFillFn) {
+      if (typeof fillCardWithAi !== 'function') {
         throw new Error('Chức năng fillCardWithAi chưa sẵn sàng.');
       }
 
@@ -767,7 +954,7 @@ export const NotebookModal = ({
         : getDirectLevelContext(lang);
 
       // Truyền đầy đủ 7 tham số (bao gồm item làm existingData) để AI vẽ ảnh sát nghĩa
-      const result = await aiFillFn(
+      const result = await fillCardWithAi(
         item.term,
         lang,
         effectiveApiKey,
@@ -779,15 +966,11 @@ export const NotebookModal = ({
 
       if (result && typeof result === 'object') {
         if (result._tokenUsage?.totalTokenCount) {
-          const used = result._tokenUsage.totalTokenCount || 0;
-          const currentTotal = parseInt(
-            localStorage.getItem('fc_total_tokens') || '0',
-            10
-          );
-          localStorage.setItem(
-            'fc_total_tokens',
-            String(currentTotal + used)
-          );
+          safeAddTotalTokens(result._tokenUsage.totalTokenCount);
+        }
+
+        if (!isOpenRef.current) {
+          return { filled: true, apiHit: true };
         }
 
         patchRowById((currentRow) => {
@@ -806,8 +989,8 @@ export const NotebookModal = ({
               currentRow.grammar_type.length > 0
                 ? currentRow.grammar_type
                 : Array.isArray(result.grammar_type)
-                ? result.grammar_type
-                : [],
+                  ? result.grammar_type
+                  : [],
             level:
               currentRow.level ||
               (Array.isArray(levelContext) ? levelContext[0] : levelContext),
@@ -840,7 +1023,7 @@ export const NotebookModal = ({
     } catch (e) {
       console.error(e);
       if (!isBatch) {
-        safeNotify('Lỗi AI: ' + e.message, 'error');
+        safeNotify('Lỗi AI: ' + (e?.message || 'Không xác định'), 'error');
         return { filled: false, apiHit: true };
       }
       throw e;
@@ -848,6 +1031,7 @@ export const NotebookModal = ({
       setFillingRowIds((prev) => {
         const next = new Set(prev);
         next.delete(rowId);
+        fillingRowIdsRef.current = next;
         return next;
       });
     }
@@ -868,7 +1052,7 @@ export const NotebookModal = ({
       return;
     }
 
-    // [VER 1.1] Đồng bộ tuyệt đối với getCoreMissingFieldsForRow (bao gồm analysis, partOfSpeech, topic, sinoViet, image)
+    // Đồng bộ tuyệt đối với getCoreMissingFieldsForRow (bao gồm analysis, partOfSpeech, topic, sinoViet, image)
     const rowIdsToFill = editingDataRef.current
       .filter((item) => {
         if (!item || !item.term || item.term.trim() === '') return false;
@@ -921,7 +1105,7 @@ export const NotebookModal = ({
           try {
             const res = await handleAiFill(rowId, true);
 
-            // [VER 1.1] Nếu đã gọi AI nhưng kết quả trả về rỗng/không hợp lệ -> kích hoạt luồng Retry chuẩn
+            // Nếu đã gọi AI nhưng kết quả trả về rỗng/không hợp lệ -> kích hoạt luồng Retry chuẩn
             if (res && !res.filled && res.apiHit) {
               throw new Error('AI không trả về dữ liệu hợp lệ');
             }
@@ -988,7 +1172,11 @@ export const NotebookModal = ({
         }
 
         // Chỉ nghỉ làm nguội API khi thực sự có gọi mạng (bỏ qua delay 0ms nếu điền từ Local-First)
-        if (apiHit && i < rowIdsToFill.length - 1 && !isBatchCancelledRef.current) {
+        if (
+          apiHit &&
+          i < rowIdsToFill.length - 1 &&
+          !isBatchCancelledRef.current
+        ) {
           await cancellableBatchDelay(getDynamicBatchDelayMs(4000));
         }
       }
@@ -1020,7 +1208,12 @@ export const NotebookModal = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="notebook-modal-title"
+      className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in"
+    >
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden relative">
         {/* Popup xác nhận xóa toàn bộ */}
         {showConfirmDelete && (
@@ -1038,12 +1231,14 @@ export const NotebookModal = ({
               </p>
               <div className="flex gap-3">
                 <button
+                  type="button"
                   onClick={() => setShowConfirmDelete(false)}
                   className="flex-1 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition-colors"
                 >
                   Hủy bỏ
                 </button>
                 <button
+                  type="button"
                   onClick={confirmDeleteAll}
                   className="flex-1 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-colors shadow-lg shadow-red-200"
                 >
@@ -1072,12 +1267,14 @@ export const NotebookModal = ({
               </p>
               <div className="flex gap-3">
                 <button
+                  type="button"
                   onClick={() => setPendingFillRowIds(null)}
                   className="flex-1 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition-colors"
                 >
                   Hủy bỏ
                 </button>
                 <button
+                  type="button"
                   onClick={executeAiFillAll}
                   className="flex-1 py-3 bg-purple-600 text-white font-bold rounded-xl hover:bg-purple-700 transition-colors shadow-lg shadow-purple-200"
                 >
@@ -1090,14 +1287,21 @@ export const NotebookModal = ({
 
         {/* Header */}
         <div
-          className={`p-4 border-b bg-${mainColor}-50 flex justify-between items-center`}
+          className={`p-4 border-b ${theme.headerBg} flex justify-between items-center`}
         >
           <h2
-            className={`font-bold flex gap-2 text-${mainColor}-700 text-lg items-center`}
+            id="notebook-modal-title"
+            className={`font-bold flex gap-2 ${theme.headerText} text-lg items-center`}
           >
             <Icons.BookOpen /> {t('notebookTitle')} ({validCount})
           </h2>
-          <button onClick={handleCloseModal} data-tooltip={t('ttClose')}>
+          <button
+            type="button"
+            onClick={handleCloseModal}
+            data-tooltip={t('ttClose')}
+            aria-label="Đóng sổ tay"
+            className="p-1 text-gray-500 hover:text-gray-800 rounded transition-colors"
+          >
             <Icons.X />
           </button>
         </div>
@@ -1129,7 +1333,7 @@ export const NotebookModal = ({
                     <div className="col-span-3">
                       <textarea
                         className="w-full p-2 border rounded text-sm font-medium focus:ring-2 focus:ring-blue-200 outline-none resize-none placeholder-gray-300"
-                        rows="2"
+                        rows={2}
                         value={item.term || ''}
                         onChange={(e) =>
                           handleChange(idx, 'term', e.target.value)
@@ -1143,15 +1347,18 @@ export const NotebookModal = ({
                       <div className="flex items-center gap-2 mt-1">
                         {item.term && (
                           <button
+                            type="button"
                             onClick={() => onPlay && onPlay(item.term)}
-                            className={`text-${mainColor}-500 hover:bg-${mainColor}-50 p-1 rounded`}
+                            className={`${theme.playBtn} p-1 rounded transition-colors`}
                             title="Nghe phát âm"
+                            aria-label="Nghe phát âm"
                           >
                             <Icons.Volume2 size={16} />
                           </button>
                         )}
                         {item.term && (
                           <button
+                            type="button"
                             onClick={() => handleAiFill(item._tempId)}
                             disabled={isRowFilling || isAutoFillingAll}
                             className={`text-purple-500 hover:bg-purple-50 p-1 rounded transition-colors ${
@@ -1162,17 +1369,20 @@ export const NotebookModal = ({
                                 ? 'AI tự điền thông tin & ảnh minh họa'
                                 : 'Tự động điền thông minh (Smart Fill)'
                             }
+                            aria-label="Tự động điền thông minh"
                           >
                             <Icons.Sparkles size={16} />
                           </button>
                         )}
                         {item.term && lang === 'zh' && (
                           <button
+                            type="button"
                             onClick={() =>
                               onOpenHanzi && onOpenHanzi(item.term)
                             }
                             className="text-red-500 hover:bg-red-50 p-1 rounded transition-colors"
                             title="Tập viết chữ Hán"
+                            aria-label="Tập viết chữ Hán"
                           >
                             <Icons.Brush size={16} />
                           </button>
@@ -1199,7 +1409,7 @@ export const NotebookModal = ({
                     <div className="col-span-1">
                       <textarea
                         className="w-full p-2 border rounded text-sm text-gray-600 focus:ring-2 focus:ring-blue-200 outline-none resize-none placeholder-gray-300"
-                        rows="2"
+                        rows={2}
                         value={item.partOfSpeech || ''}
                         onChange={(e) =>
                           handleChange(idx, 'partOfSpeech', e.target.value)
@@ -1211,7 +1421,7 @@ export const NotebookModal = ({
                     <div className="col-span-2">
                       <textarea
                         className="w-full p-2 border rounded text-sm text-gray-600 focus:ring-2 focus:ring-blue-200 outline-none resize-none"
-                        rows="2"
+                        rows={2}
                         value={item.pronunciation || ''}
                         onChange={(e) =>
                           handleChange(idx, 'pronunciation', e.target.value)
@@ -1222,7 +1432,7 @@ export const NotebookModal = ({
                     <div className="col-span-3">
                       <textarea
                         className="w-full p-2 border rounded text-sm text-gray-700 focus:ring-2 focus:ring-blue-200 outline-none resize-none"
-                        rows="3"
+                        rows={3}
                         value={item.definition || ''}
                         onChange={(e) =>
                           handleChange(idx, 'definition', e.target.value)
@@ -1233,7 +1443,7 @@ export const NotebookModal = ({
                     <div className="col-span-2">
                       <textarea
                         className="w-full p-2 border rounded text-sm text-gray-600 focus:ring-2 focus:ring-blue-200 outline-none resize-none placeholder-gray-300"
-                        rows="3"
+                        rows={3}
                         value={item.topic || ''}
                         onChange={(e) =>
                           handleChange(idx, 'topic', e.target.value)
@@ -1245,10 +1455,12 @@ export const NotebookModal = ({
                     <div className="col-span-1 flex justify-center items-center h-full">
                       {(idx !== editingData.length - 1 || item.term) && (
                         <button
+                          type="button"
                           onClick={() => handleDelete(idx)}
                           disabled={isAutoFillingAll}
                           className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-full disabled:opacity-40"
                           title={t('removeFromNotebook')}
+                          aria-label={t('removeFromNotebook') || 'Xóa dòng'}
                         >
                           <Icons.Trash2 size={18} />
                         </button>
@@ -1270,21 +1482,22 @@ export const NotebookModal = ({
               mainColor={mainColor}
             />
             <button
+              type="button"
               onClick={handleAiFillAll}
               disabled={(validCount === 0 && !isAutoFillingAll) || isStoppingBatch}
               title={
                 isStoppingBatch
                   ? 'Đang chờ thẻ hiện tại hoàn tất để dừng an toàn...'
                   : isAutoFillingAll
-                  ? 'Bấm để dừng tiến trình AI Tự điền'
-                  : 'AI Tự điền hàng loạt'
+                    ? 'Bấm để dừng tiến trình AI Tự điền'
+                    : 'AI Tự điền hàng loạt'
               }
               className={`px-2 sm:px-4 py-2 border font-bold rounded-lg flex items-center justify-center gap-2 text-xs sm:text-base shadow-sm transition-all active:scale-95 disabled:opacity-50 ${
                 isStoppingBatch
                   ? 'bg-amber-100 text-amber-700 border-amber-300 cursor-wait'
                   : isAutoFillingAll
-                  ? 'bg-orange-100 text-orange-700 border-orange-300 hover:bg-orange-200'
-                  : 'bg-purple-100 text-purple-700 border-purple-200 hover:bg-purple-200'
+                    ? 'bg-orange-100 text-orange-700 border-orange-300 hover:bg-orange-200'
+                    : 'bg-purple-100 text-purple-700 border-purple-200 hover:bg-purple-200'
               }`}
             >
               <Icons.Sparkles
@@ -1297,18 +1510,19 @@ export const NotebookModal = ({
                 {isStoppingBatch
                   ? 'Đang dừng...'
                   : isAutoFillingAll
-                  ? `Dừng AI (${fillProgress.current}/${fillProgress.total})`
-                  : 'AI Tự điền'}
+                    ? `Dừng AI (${fillProgress.current}/${fillProgress.total})`
+                    : 'AI Tự điền'}
               </span>
               <span className="sm:hidden">
                 {isStoppingBatch
                   ? 'Dừng...'
                   : isAutoFillingAll
-                  ? `${fillProgress.current}/${fillProgress.total}`
-                  : 'AI'}
+                    ? `${fillProgress.current}/${fillProgress.total}`
+                    : 'AI'}
               </span>
             </button>
             <button
+              type="button"
               onClick={handleDeleteAllClick}
               disabled={validCount === 0 || isAutoFillingAll}
               title="Xóa toàn bộ"
@@ -1320,6 +1534,7 @@ export const NotebookModal = ({
 
           <div className="grid grid-cols-2 sm:flex gap-2 w-full sm:w-auto mt-2 sm:mt-0">
             <button
+              type="button"
               onClick={() =>
                 onCopy &&
                 onCopy(validEditingItems.map(sanitizeCardForStorage))
@@ -1335,6 +1550,7 @@ export const NotebookModal = ({
               Copy
             </button>
             <button
+              type="button"
               onClick={handleSave}
               disabled={isAutoFillingAll}
               className="px-2 sm:px-6 py-2 bg-green-600 text-white font-bold rounded-lg shadow-md hover:bg-green-700 flex items-center justify-center gap-2 text-xs sm:text-base active:scale-95 transition-all disabled:opacity-50"

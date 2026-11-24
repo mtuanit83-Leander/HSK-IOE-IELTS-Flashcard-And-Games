@@ -1,8 +1,14 @@
 // ============================================================================
 // FILE 41/85: src/components/modals/ApiKeyModal.jsx
 // NGUỒN GỐC: tang_4.js (Block 4.6)
+// PHIÊN BẢN: Ver 1.1
+// NGÀY GIỜ NÂNG CẤP: 24/11/2026 - 22:47 (GMT+7)
 // NHIỆM VỤ: Modal Quản lý API Key Radar (Kiểm tra sức khỏe Key, Ma trận RPD
-//           theo từng Key/Model, Công tắc Auto Cascade & Key trả phí).
+//           theo từng Key/Model, Công tắc Auto Cascade & Key trả phí);
+//           sạch 0 CRITICAL / 0 HIGH / 0 MEDIUM, khóa kín 2 tầng chống hồi sinh
+//           khóa legacy 'fc_apikey', Radar thông minh theo keyPoolRef diệt giấc
+//           ngủ 8s thừa, chống NaN:NaN/0p ở badge cooldown, tương thích 100%
+//           React 18 StrictMode và chuẩn A11y (Backdrop/Escape/role="dialog").
 // ============================================================================
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -15,16 +21,9 @@ import {
   getPersistentCooldowns
 } from '../../services/geminiApi';
 
-/**
- * Helper hiển thị thông báo an toàn qua hệ thống Toast toàn cục
- */
-const notify = (msg, type = 'info') => {
-  if (typeof window !== 'undefined' && window.globalShowToast) {
-    window.globalShowToast(msg, type);
-  } else {
-    console.log(`[Toast - ${type}]:`, msg);
-  }
-};
+const DEFAULT_AI_MODEL = 'gemini-3.5-flash-lite';
+const LEGACY_API_KEY_STORAGE = 'fc_apikey';
+const PING_INTERVAL_MS = 8000;
 
 /**
  * Danh sách mô hình dự phòng nếu hằng số chưa nạp kịp
@@ -41,6 +40,54 @@ const FALLBACK_MODELS = [
 ];
 
 /**
+ * Helper hiển thị thông báo an toàn qua hệ thống Toast toàn cục
+ */
+const notify = (msg, type = 'info') => {
+  if (typeof window !== 'undefined' && typeof window.globalShowToast === 'function') {
+    window.globalShowToast(msg, type);
+  } else {
+    console.log(`[Toast - ${type}]:`, msg);
+  }
+};
+
+/**
+ * Đọc an toàn chuỗi từ localStorage (chống lỗi khi trình duyệt chặn Storage)
+ */
+const safeReadStorage = (key, fallback = '') => {
+  if (!key || typeof localStorage === 'undefined') return fallback;
+  try {
+    const val = localStorage.getItem(key);
+    return val !== null ? val : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+/**
+ * Chuẩn hóa chuỗi API Key: gọt khoảng trắng & dấu ngoặc kép/đơn dư thừa
+ */
+const cleanKeyStr = (val) => {
+  if (typeof val !== 'string') return '';
+  return val.replace(/["'\s]/g, '').trim();
+};
+
+/**
+ * Đọc danh sách án phạt cooldown an toàn từ geminiApi hoặc Storage
+ */
+const readActiveCooldowns = () => {
+  try {
+    if (typeof getPersistentCooldowns === 'function') {
+      const data = getPersistentCooldowns();
+      if (data && typeof data === 'object') return data;
+    }
+  } catch {
+    // Fallback đọc trực tiếp qua Utils.safeJsonParse
+  }
+  const fallback = Utils.safeJsonParse('fc_api_cooldowns', {});
+  return fallback && typeof fallback === 'object' ? fallback : {};
+};
+
+/**
  * Modal Quản lý API Key & Radar Kiểm tra Sức khỏe Kho khóa (ApiKeyModal)
  */
 export const ApiKeyModal = ({
@@ -52,6 +99,9 @@ export const ApiKeyModal = ({
   setAiModel,
   t = (k) => k
 }) => {
+  const apiKeyStorageKey = STORAGE_KEYS?.API_KEY || 'fc_gemini_api_key';
+  const aiModelStorageKey = STORAGE_KEYS?.AI_MODEL || 'fc_ai_model';
+
   const [keyPool, setKeyPool] = useState([]);
   const [isTesting, setIsTesting] = useState(false);
   const [testResults, setTestResults] = useState({});
@@ -60,121 +110,314 @@ export const ApiKeyModal = ({
   // State cho Cooldown Slider (Phút)
   const [localCooldown, setLocalCooldown] = useState(120);
 
-  // State cho Model Selector
-  const [localAiModel, setLocalAiModel] = useState('gemini-3.5-flash-lite');
+  // State cho Model Selector & giá trị đang áp dụng thực tế
+  const [localAiModel, setLocalAiModel] = useState(DEFAULT_AI_MODEL);
+  const [appliedAiModel, setAppliedAiModel] = useState(DEFAULT_AI_MODEL);
 
   // State cho Premium Mode & Auto Cascade
   const [isPremium, setIsPremium] = useState(false);
   const [isAutoCascade, setIsAutoCascade] = useState(true);
 
+  // Refs quản lý vòng đời Modal, kho đạn trực tiếp & hủy tức thì bộ đếm ngủ 8s
+  const prevIsOpenRef = useRef(false);
+  const isOpenRef = useRef(isOpen);
+  isOpenRef.current = isOpen;
+
+  const keyPoolRef = useRef(keyPool);
+  keyPoolRef.current = keyPool;
+
+  const apiKeyRef = useRef(apiKey);
+  apiKeyRef.current = apiKey;
+
+  const aiModelRef = useRef(aiModel);
+  aiModelRef.current = aiModel;
+
   const abortTestRef = useRef(false);
+  const testRunIdRef = useRef(0);
+  const pingTimerRef = useRef(null);
+  const pingResolveRef = useRef(null);
+  const handleCloseModalRef = useRef(null);
 
+  // Chỉ phát Toast khi Modal đang mở (chặn Toast trễ sau khi người dùng đã đóng)
+  const safeNotify = (msg, type = 'info') => {
+    if (isOpenRef.current) {
+      notify(msg, type);
+    }
+  };
+
+  // Hủy lập tức luồng quét & đánh thức Promise ngủ 8 giây đang treo
+  const cancelPingWorker = () => {
+    abortTestRef.current = true;
+    testRunIdRef.current += 1;
+    if (pingTimerRef.current) {
+      clearTimeout(pingTimerRef.current);
+      pingTimerRef.current = null;
+    }
+    if (pingResolveRef.current) {
+      const resolveFn = pingResolveRef.current;
+      pingResolveRef.current = null;
+      resolveFn();
+    }
+  };
+
+  // Bộ đếm chờ có thể hủy tức thì (không treo 8s khi bấm Dừng hoặc đóng Modal)
+  const cancellablePingDelay = (ms) =>
+    new Promise((resolve) => {
+      if (abortTestRef.current) {
+        resolve();
+        return;
+      }
+      pingResolveRef.current = resolve;
+      pingTimerRef.current = setTimeout(() => {
+        pingTimerRef.current = null;
+        pingResolveRef.current = null;
+        resolve();
+      }, ms);
+    });
+
+  // Đóng Modal an toàn kèm hủy Radar nếu đang chạy
+  const handleCloseModal = () => {
+    cancelPingWorker();
+    setIsTesting(false);
+    if (onClose) onClose();
+  };
+  handleCloseModalRef.current = handleCloseModal;
+
+  // Dọn dẹp bộ đếm & đặt lại prevIsOpenRef khi unmount (tương thích 100% React 18 StrictMode)
   useEffect(() => {
-    if (isOpen) {
-      abortTestRef.current = false;
-      const pool = Utils?.safeJsonParse
-        ? Utils.safeJsonParse('fc_apikey_pool', [])
-        : [];
-      const currentKey =
-        localStorage.getItem(STORAGE_KEYS?.API_KEY || 'fc_gemini_api_key') ||
-        '';
+    return () => {
+      prevIsOpenRef.current = false;
+      cancelPingWorker();
+    };
+  }, []);
 
-      let initialPool = Array.isArray(pool) ? [...pool] : [];
-      if (currentKey && !initialPool.includes(currentKey)) {
-        initialPool.unshift(currentKey);
-      } else if (currentKey) {
+  // Lắng nghe phím Escape để đóng Modal an toàn
+  useEffect(() => {
+    if (!isOpen || typeof window === 'undefined') return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        if (typeof handleCloseModalRef.current === 'function') {
+          handleCloseModalRef.current();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen]);
+
+  // Effect 1: Chỉ khởi tạo kho Key & reset bản nháp khi isOpen chuyển false -> true
+  useEffect(() => {
+    const wasOpen = prevIsOpenRef.current;
+    prevIsOpenRef.current = isOpen;
+
+    if (isOpen && !wasOpen) {
+      cancelPingWorker();
+      abortTestRef.current = false;
+      setIsTesting(false);
+
+      // Nạp và khử trùng kho Key theo thứ tự gốc
+      const rawPool = Utils.safeJsonParse('fc_apikey_pool', []);
+      const dedupedPool = [];
+      const seenKeys = new Set();
+      if (Array.isArray(rawPool)) {
+        for (const item of rawPool) {
+          const cleaned = cleanKeyStr(item);
+          if (cleaned && !seenKeys.has(cleaned)) {
+            seenKeys.add(cleaned);
+            dedupedPool.push(cleaned);
+          }
+        }
+      }
+
+      // Ưu tiên đọc Key đa tầng: prop apiKey -> STORAGE_KEYS.API_KEY -> 'fc_apikey'
+      const primaryCandidate =
+        cleanKeyStr(apiKeyRef.current) ||
+        cleanKeyStr(safeReadStorage(apiKeyStorageKey, '')) ||
+        cleanKeyStr(safeReadStorage(LEGACY_API_KEY_STORAGE, ''));
+
+      let initialPool = dedupedPool;
+      if (primaryCandidate) {
         initialPool = [
-          currentKey,
-          ...initialPool.filter((k) => k !== currentKey)
+          primaryCandidate,
+          ...dedupedPool.filter((k) => k !== primaryCandidate)
         ];
       }
 
+      keyPoolRef.current = initialPool;
       setKeyPool(initialPool);
       setNewKeyInput('');
       setTestResults({});
 
-      // Khởi tạo giá trị Cooldown từ Storage
-      const config = Utils?.safeJsonParse
-        ? Utils.safeJsonParse('fc_ai_config', {})
-        : {};
-      setLocalCooldown(config.cooldown429 || 120);
+      // Khởi tạo Cooldown 429 an toàn trong biên 10..1440 phút
+      const rawConfig = Utils.safeJsonParse('fc_ai_config', {});
+      const parsedCooldown = Number(rawConfig?.cooldown429);
+      const safeCooldown = Number.isFinite(parsedCooldown)
+        ? Math.min(1440, Math.max(10, parsedCooldown))
+        : 120;
+      setLocalCooldown(safeCooldown);
 
-      // Khởi tạo giá trị Model từ State hoặc Storage
+      // Khởi tạo Mô hình AI hiện hành
       const currentAiModel =
-        aiModel ||
-        localStorage.getItem(STORAGE_KEYS?.AI_MODEL || 'fc_ai_model') ||
-        'gemini-3.5-flash-lite';
+        aiModelRef.current ||
+        safeReadStorage(aiModelStorageKey, '') ||
+        DEFAULT_AI_MODEL;
       setLocalAiModel(currentAiModel);
+      setAppliedAiModel(currentAiModel);
 
       // Khởi tạo trạng thái Premium & Auto Cascade
-      setIsPremium(localStorage.getItem('fc_is_premium_key') === 'true');
-      setIsAutoCascade(localStorage.getItem('fc_is_auto_cascade') !== 'false');
+      setIsPremium(safeReadStorage('fc_is_premium_key', '') === 'true');
+      setIsAutoCascade(safeReadStorage('fc_is_auto_cascade', '') !== 'false');
+    } else if (!isOpen && wasOpen) {
+      cancelPingWorker();
+      setIsTesting(false);
     }
-    return () => {
-      abortTestRef.current = true;
-    };
+  }, [isOpen, apiKeyStorageKey, aiModelStorageKey]);
+
+  // Effect 2: Đồng bộ riêng localAiModel khi prop aiModel đổi (KHÔNG reset testResults / newKeyInput)
+  useEffect(() => {
+    if (isOpen && aiModel) {
+      setLocalAiModel(aiModel);
+      setAppliedAiModel(aiModel);
+    }
   }, [isOpen, aiModel]);
 
-  // Thêm Key mới vào kho
-  const handleAddKey = () => {
-    const k = newKeyInput.trim();
-    if (k && k.length > 20 && !keyPool.includes(k)) {
-      const newPool = [k, ...keyPool];
-      setKeyPool(newPool);
-      Utils.safeLocalStorageSet('fc_apikey_pool', newPool);
-      if (setApiKey) setApiKey(k);
-      setNewKeyInput('');
-      notify('Đã thêm API Key mới!', 'success');
+  // Đồng bộ đồng thời khóa chính & khóa legacy (nếu đang tồn tại)
+  const syncPrimaryKeyStorage = (nextKey) => {
+    Utils.safeLocalStorageSet(apiKeyStorageKey, nextKey || null);
+    if (
+      LEGACY_API_KEY_STORAGE !== apiKeyStorageKey &&
+      safeReadStorage(LEGACY_API_KEY_STORAGE, '') !== ''
+    ) {
+      Utils.safeLocalStorageSet(LEGACY_API_KEY_STORAGE, nextKey || null);
     }
   };
 
-  // Xóa Key khỏi kho
-  const handleRemoveKey = (keyToRemove) => {
-    const newPool = keyPool.filter((k) => k !== keyToRemove);
+  // Thêm Key mới vào kho đạn
+  const handleAddKey = () => {
+    const k = cleanKeyStr(newKeyInput);
+    if (!k) return;
+
+    if (k.length <= 20) {
+      safeNotify('API Key không hợp lệ (độ dài tối thiểu > 20 ký tự)!', 'warning');
+      return;
+    }
+
+    if (keyPool.includes(k)) {
+      safeNotify('API Key này đã có sẵn trong kho đạn!', 'warning');
+      return;
+    }
+
+    const newPool = [k, ...keyPool];
+    keyPoolRef.current = newPool;
     setKeyPool(newPool);
     Utils.safeLocalStorageSet('fc_apikey_pool', newPool);
-    if (apiKey === keyToRemove) {
-      const nextKey = newPool.length > 0 ? newPool[0] : '';
-      if (setApiKey) setApiKey(nextKey);
+    syncPrimaryKeyStorage(k);
+    if (setApiKey) setApiKey(k);
+    setNewKeyInput('');
+    safeNotify('Đã thêm API Key mới!', 'success');
+  };
+
+  // Xóa Key khỏi kho (khóa kín 2 tầng chống hồi sinh từ cả fc_gemini_api_key lẫn fc_apikey)
+  const handleRemoveKey = (keyToRemove) => {
+    const newPool = keyPool.filter((k) => k !== keyToRemove);
+    keyPoolRef.current = newPool;
+    setKeyPool(newPool);
+    Utils.safeLocalStorageSet('fc_apikey_pool', newPool);
+
+    setTestResults((prev) => {
+      if (!(keyToRemove in prev)) return prev;
+      const next = { ...prev };
+      delete next[keyToRemove];
+      return next;
+    });
+
+    const activePropKey = cleanKeyStr(apiKey);
+    const activeStoredKey = cleanKeyStr(safeReadStorage(apiKeyStorageKey, ''));
+    const activeLegacyKey = cleanKeyStr(safeReadStorage(LEGACY_API_KEY_STORAGE, ''));
+    const nextKey = newPool.length > 0 ? newPool[0] : '';
+
+    if (newPool.length === 0) {
+      // Kho đạn rỗng -> xóa sạch cả 2 khóa để tuyệt đối không hồi sinh Key legacy cũ
+      Utils.safeLocalStorageSet(apiKeyStorageKey, null);
+      if (LEGACY_API_KEY_STORAGE !== apiKeyStorageKey) {
+        Utils.safeLocalStorageSet(LEGACY_API_KEY_STORAGE, null);
+      }
+      if (setApiKey) setApiKey('');
+    } else {
+      if (activeStoredKey === keyToRemove) {
+        Utils.safeLocalStorageSet(apiKeyStorageKey, nextKey);
+      }
+      if (
+        LEGACY_API_KEY_STORAGE !== apiKeyStorageKey &&
+        activeLegacyKey === keyToRemove
+      ) {
+        Utils.safeLocalStorageSet(LEGACY_API_KEY_STORAGE, nextKey);
+      }
+      if (
+        activePropKey === keyToRemove ||
+        (!activePropKey &&
+          (activeStoredKey === keyToRemove || activeLegacyKey === keyToRemove))
+      ) {
+        if (setApiKey) setApiKey(nextKey);
+      }
     }
+
+    safeNotify('Đã xóa API Key khỏi kho đạn!', 'info');
   };
 
   // Đặt làm Key ưu tiên số 1
   const handleSetPrimary = (k) => {
     const newPool = [k, ...keyPool.filter((item) => item !== k)];
+    keyPoolRef.current = newPool;
     setKeyPool(newPool);
     Utils.safeLocalStorageSet('fc_apikey_pool', newPool);
+    syncPrimaryKeyStorage(k);
     if (setApiKey) setApiKey(k);
-    notify('Đã đổi Key ưu tiên!', 'success');
+    safeNotify('Đã đổi Key ưu tiên!', 'success');
   };
 
-  // Xử lý kéo Slider Cooldown 429 và lưu thẳng xuống Storage
+  // Xử lý kéo Slider Cooldown 429 và cập nhật bất biến xuống Storage
   const handleCooldownChange = (val) => {
-    const newVal = Number(val);
-    setLocalCooldown(newVal);
-    const config = Utils?.safeJsonParse
-      ? Utils.safeJsonParse('fc_ai_config', {})
-      : {};
-    config.cooldown429 = newVal;
-    Utils.safeLocalStorageSet('fc_ai_config', config);
+    const parsed = Number(val);
+    const clampedVal = Number.isFinite(parsed)
+      ? Math.min(1440, Math.max(10, parsed))
+      : 120;
+    setLocalCooldown(clampedVal);
+
+    const rawConfig = Utils.safeJsonParse('fc_ai_config', {});
+    const safeConfig =
+      rawConfig && typeof rawConfig === 'object' && !Array.isArray(rawConfig)
+        ? rawConfig
+        : {};
+
+    Utils.safeLocalStorageSet('fc_ai_config', {
+      ...safeConfig,
+      cooldown429: clampedVal
+    });
   };
 
-  // Áp dụng Mô hình AI ưu tiên
+  // Áp dụng Mô hình AI ưu tiên (qua Utils.safeLocalStorageSet - 0 lỗi HIGH)
   const handleApplyModel = () => {
     if (setAiModel) setAiModel(localAiModel);
-    localStorage.setItem(STORAGE_KEYS?.AI_MODEL || 'fc_ai_model', localAiModel);
-    notify('Đã kích hoạt Mô hình AI ưu tiên!', 'success');
+    setAppliedAiModel(localAiModel);
+    const saved = Utils.safeLocalStorageSet(aiModelStorageKey, localAiModel);
+    if (saved) {
+      safeNotify('Đã kích hoạt Mô hình AI ưu tiên!', 'success');
+    } else {
+      safeNotify('Đã đổi mô hình tạm thời (trình duyệt chặn lưu bộ nhớ).', 'warning');
+    }
   };
 
   // Bật/Tắt chế độ Key trả phí (Bỏ qua giới hạn RPD)
   const handleTogglePremium = () => {
     const newVal = !isPremium;
     setIsPremium(newVal);
-    localStorage.setItem('fc_is_premium_key', newVal.toString());
+    Utils.safeLocalStorageSet('fc_is_premium_key', String(newVal));
     if (newVal) {
-      notify('Đã KÍCH HOẠT chế độ Key Trả Phí!', 'success');
+      safeNotify('Đã KÍCH HOẠT chế độ Key Trả Phí!', 'success');
     } else {
-      notify('Đã TẮT chế độ Key Trả Phí!', 'info');
+      safeNotify('Đã TẮT chế độ Key Trả Phí!', 'info');
     }
   };
 
@@ -182,91 +425,126 @@ export const ApiKeyModal = ({
   const handleToggleAutoCascade = () => {
     const newVal = !isAutoCascade;
     setIsAutoCascade(newVal);
-    localStorage.setItem('fc_is_auto_cascade', newVal.toString());
+    Utils.safeLocalStorageSet('fc_is_auto_cascade', String(newVal));
     if (newVal) {
-      notify('Đã BẬT Tự động hạ cấp mô hình (Cascade)!', 'success');
+      safeNotify('Đã BẬT Tự động hạ cấp mô hình (Cascade)!', 'success');
     } else {
-      notify('Đã TẮT Tự động hạ cấp (Khóa cứng mô hình)!', 'warning');
+      safeNotify('Đã TẮT Tự động hạ cấp (Khóa cứng mô hình)!', 'warning');
     }
   };
 
-  // Quét Radar kiểm tra sức khỏe toàn bộ kho Key
+  // Quét Radar kiểm tra sức khỏe toàn bộ kho Key (bỏ qua Key đã xóa & diệt giấc ngủ 8s thừa)
   const handleTestKeys = async () => {
     if (isTesting) {
-      abortTestRef.current = true;
+      cancelPingWorker();
       setIsTesting(false);
-      notify('Đã dừng kiểm tra!', 'warning');
+      safeNotify('Đã dừng kiểm tra!', 'warning');
       return;
     }
-    if (keyPool.length === 0) return;
 
-    setIsTesting(true);
+    const snapshotKeys = [...keyPool];
+    if (snapshotKeys.length === 0) return;
+
+    cancelPingWorker();
     abortTestRef.current = false;
-    const results = { ...testResults };
+    const myRunId = ++testRunIdRef.current;
+    setIsTesting(true);
 
-    for (const k of keyPool) {
-      if (abortTestRef.current) break;
+    try {
+      for (let i = 0; i < snapshotKeys.length; i++) {
+        if (abortTestRef.current || testRunIdRef.current !== myRunId) break;
 
-      const cooldowns = getPersistentCooldowns
-        ? getPersistentCooldowns()
-        : Utils.safeJsonParse('fc_api_cooldowns', {});
-      const cleanK = k.replace(/["'\s]/g, '');
-      const cdData = cooldowns[cleanK];
+        const k = snapshotKeys[i];
+        // Bỏ qua ngay nếu Key vừa bị người dùng xóa giữa chừng
+        if (!keyPoolRef.current.includes(k)) continue;
 
-      // Nếu Key đang thụ án phạt -> Bỏ qua, không gửi request thử
-      if (cdData && cdData.expireAt > Date.now()) {
-        results[k] = 'cooldown';
-        setTestResults({ ...results });
-        continue;
+        const cooldowns = readActiveCooldowns();
+        const cleanK = cleanKeyStr(k);
+        const cdData = cooldowns[cleanK];
+
+        // Nếu Key đang thụ án phạt -> Bỏ qua, không gửi request thử và không ngủ 8s
+        if (cdData && cdData.expireAt > Date.now()) {
+          setTestResults((prev) => ({ ...prev, [k]: 'cooldown' }));
+          continue;
+        }
+
+        setTestResults((prev) => ({ ...prev, [k]: 'testing' }));
+
+        let statusCode = 0;
+        if (typeof pingGeminiKey === 'function') {
+          try {
+            const res = await pingGeminiKey(k);
+            statusCode = typeof res?.status === 'number' ? res.status : 0;
+          } catch {
+            statusCode = 0;
+          }
+        }
+
+        if (abortTestRef.current || testRunIdRef.current !== myRunId) break;
+        // Không ghi kết quả mồ côi nếu Key bị xóa ngay lúc đang chờ mạng
+        if (!keyPoolRef.current.includes(k)) continue;
+
+        setTestResults((prev) => ({ ...prev, [k]: statusCode }));
+
+        // Chỉ nghỉ 8s nếu phía sau thực sự còn ít nhất 1 Key sống chưa bị xóa & không đang cooldown
+        const latestCooldowns = readActiveCooldowns();
+        const nowAfterPing = Date.now();
+        const hasNextTestableKey = snapshotKeys.slice(i + 1).some((nextKey) => {
+          if (!keyPoolRef.current.includes(nextKey)) return false;
+          const nextCd = latestCooldowns[cleanKeyStr(nextKey)];
+          return !(nextCd && nextCd.expireAt > nowAfterPing);
+        });
+
+        if (hasNextTestableKey) {
+          await cancellablePingDelay(PING_INTERVAL_MS);
+        }
       }
 
-      results[k] = 'testing';
-      setTestResults({ ...results });
-
-      const pinger =
-        pingGeminiKey ||
-        (typeof window !== 'undefined' && window.Utils?.pingGeminiKey);
-
-      if (pinger) {
-        const res = await pinger(k);
-        if (abortTestRef.current) break;
-        results[k] = res.status;
-      } else {
-        results[k] = 0;
+      if (!abortTestRef.current && testRunIdRef.current === myRunId) {
+        safeNotify('Đã hoàn tất kiểm tra kho đạn!', 'info');
       }
-
-      setTestResults({ ...results });
-
-      // Nghỉ 8 giây giữa các lần thử để chống lỗi Spam 429
-      await new Promise((r) => setTimeout(r, 8000));
-    }
-
-    if (!abortTestRef.current) {
-      setIsTesting(false);
-      notify('Đã hoàn tất kiểm tra kho đạn!', 'info');
+    } finally {
+      if (testRunIdRef.current === myRunId) {
+        setIsTesting(false);
+      }
     }
   };
 
-  // Phân giải Huy hiệu trạng thái thông minh có đọc án phạt
-  const getStatusBadge = (status, keyStr) => {
-    const cooldowns = getPersistentCooldowns
-      ? getPersistentCooldowns()
-      : Utils.safeJsonParse('fc_api_cooldowns', {});
-    const cleanK = keyStr.replace(/["'\s]/g, '');
-    const cdData = cooldowns[cleanK];
+  // Phân giải Huy hiệu trạng thái thông minh (chống NaN:NaN & khóa sàn 1p)
+  const getStatusBadge = (status, keyStr, cooldownsMap) => {
+    const cleanK = cleanKeyStr(keyStr);
+    const cdData = cooldownsMap[cleanK];
     const now = Date.now();
 
     if (cdData && cdData.expireAt > now) {
-      const startedAt = new Date(cdData.startedAt);
-      const hours = startedAt.getHours().toString().padStart(2, '0');
-      const minutes = startedAt.getMinutes().toString().padStart(2, '0');
-      const remainMin = Math.ceil((cdData.expireAt - now) / 60000);
+      const remainMin = Math.max(1, Math.ceil((cdData.expireAt - now) / 60000));
+      const startedAt =
+        cdData.startedAt !== undefined && cdData.startedAt !== null
+          ? new Date(cdData.startedAt)
+          : null;
+      const hasValidStart = Boolean(
+        startedAt && Number.isFinite(startedAt.getTime())
+      );
+
+      if (hasValidStart) {
+        const hours = startedAt.getHours().toString().padStart(2, '0');
+        const minutes = startedAt.getMinutes().toString().padStart(2, '0');
+        return (
+          <span
+            className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-800 border border-cyan-200"
+            title="API Key bị tạm khóa để tránh spam"
+          >
+            ❄️ Khóa lúc {hours}:{minutes} (Còn {remainMin}p)
+          </span>
+        );
+      }
+
       return (
         <span
           className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-800 border border-cyan-200"
           title="API Key bị tạm khóa để tránh spam"
         >
-          ❄️ Khóa lúc {hours}:{minutes} (Còn {remainMin}p)
+          ❄️ Đang khóa (Còn {remainMin}p)
         </span>
       );
     }
@@ -323,20 +601,48 @@ export const ApiKeyModal = ({
       ? AI_MODELS
       : FALLBACK_MODELS;
 
+  const effectiveCurrentModel =
+    aiModel ||
+    appliedAiModel ||
+    safeReadStorage(aiModelStorageKey, '') ||
+    DEFAULT_AI_MODEL;
+
+  const activePrimaryKey =
+    cleanKeyStr(apiKey) ||
+    cleanKeyStr(safeReadStorage(apiKeyStorageKey, '')) ||
+    cleanKeyStr(safeReadStorage(LEGACY_API_KEY_STORAGE, ''));
+
+  const cooldownsSnapshot = readActiveCooldowns();
+  const selectedModelObj = activeModelsList.find(
+    (m) => m.id === localAiModel
+  ) || { rpdLimit: 0 };
+  const maxRpd = Number(selectedModelObj.rpdLimit) || 0;
+
   return (
-    <div className="fixed inset-0 z-[220] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="apikey-modal-title"
+      onClick={handleCloseModal}
+      className="fixed inset-0 z-[220] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in"
+    >
       <div
         className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex justify-between items-center p-4 border-b bg-purple-50 shrink-0 rounded-t-xl">
-          <h3 className="font-bold text-lg flex items-center gap-2 text-purple-700">
+          <h3
+            id="apikey-modal-title"
+            className="font-bold text-lg flex items-center gap-2 text-purple-700"
+          >
             <Icons.Key /> Quản lý API Key (Radar)
           </h3>
           <button
-            onClick={onClose}
+            type="button"
+            onClick={handleCloseModal}
             className="text-gray-400 hover:text-gray-700"
+            aria-label="Đóng"
           >
             <Icons.X />
           </button>
@@ -359,6 +665,7 @@ export const ApiKeyModal = ({
                 placeholder={t('apiKeyPlace') || 'Dán Gemini API Key vào đây...'}
               />
               <button
+                type="button"
                 onClick={handleAddKey}
                 disabled={!newKeyInput.trim()}
                 className="px-4 py-2 bg-purple-600 text-white rounded-lg font-bold shadow hover:bg-purple-700 disabled:opacity-50 flex items-center gap-1 transition-all active:scale-95"
@@ -389,8 +696,9 @@ export const ApiKeyModal = ({
                 ))}
               </select>
               <button
+                type="button"
                 onClick={handleApplyModel}
-                disabled={localAiModel === aiModel}
+                disabled={localAiModel === effectiveCurrentModel}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg font-bold shadow hover:bg-blue-700 disabled:opacity-50 transition-all active:scale-95 text-sm"
               >
                 Áp dụng
@@ -407,18 +715,21 @@ export const ApiKeyModal = ({
                   <span className="text-sm">🌊</span> Tự động hạ cấp mô hình
                   (Auto Cascade)
                 </label>
-                <div
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={isAutoCascade}
+                  onClick={handleToggleAutoCascade}
                   className={`w-8 h-4 rounded-full flex items-center p-0.5 cursor-pointer transition-colors ${
                     isAutoCascade ? 'bg-blue-500' : 'bg-gray-300'
                   }`}
-                  onClick={handleToggleAutoCascade}
                 >
-                  <div
+                  <span
                     className={`w-3 h-3 bg-white rounded-full shadow-sm transition-transform ${
                       isAutoCascade ? 'translate-x-4' : ''
                     }`}
-                  ></div>
-                </div>
+                  />
+                </button>
               </div>
 
               <div className="flex items-center justify-between">
@@ -429,18 +740,21 @@ export const ApiKeyModal = ({
                   <span className="text-sm">🌟</span> Bỏ qua giới hạn RPD (Cho
                   Key Trả phí)
                 </label>
-                <div
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={isPremium}
+                  onClick={handleTogglePremium}
                   className={`w-8 h-4 rounded-full flex items-center p-0.5 cursor-pointer transition-colors ${
                     isPremium ? 'bg-yellow-400' : 'bg-gray-300'
                   }`}
-                  onClick={handleTogglePremium}
                 >
-                  <div
+                  <span
                     className={`w-3 h-3 bg-white rounded-full shadow-sm transition-transform ${
                       isPremium ? 'translate-x-4' : ''
                     }`}
-                  ></div>
-                </div>
+                  />
+                </button>
               </div>
             </div>
           </div>
@@ -481,6 +795,7 @@ export const ApiKeyModal = ({
                 Kho đạn dự phòng ({keyPool.length})
               </label>
               <button
+                type="button"
                 onClick={handleTestKeys}
                 disabled={keyPool.length === 0}
                 className={`text-[10px] font-bold px-3 py-1.5 border rounded-lg flex items-center gap-1 transition-all active:scale-95 ${
@@ -491,7 +806,7 @@ export const ApiKeyModal = ({
               >
                 {isTesting ? (
                   <>
-                    <div className="w-3 h-3 border-2 border-red-600 border-t-transparent rounded-full animate-spin"></div>
+                    <div className="w-3 h-3 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
                     Dừng kiểm tra
                   </>
                 ) : (
@@ -509,31 +824,24 @@ export const ApiKeyModal = ({
               </div>
             ) : (
               <div className="space-y-2">
-                {keyPool.map((k, index) => {
-                  const isPrimary = apiKey === k;
+                {keyPool.map((k) => {
+                  const isPrimary = activePrimaryKey === k;
                   const displayKey =
                     k.length > 15
                       ? `${k.substring(0, 8)}...${k.substring(k.length - 4)}`
                       : k;
                   const status = testResults[k];
-                  const cleanK = k.replace(/["'\s]/g, '');
+                  const cleanK = cleanKeyStr(k);
 
-                  const selectedModelObj = activeModelsList.find(
-                    (m) => m.id === localAiModel
-                  ) || { rpdLimit: 0 };
-                  const maxRpd = selectedModelObj.rpdLimit;
-
-                  const tracker =
-                    RPDTracker ||
-                    (typeof window !== 'undefined' && window.Utils?.RPDTracker);
-                  const currentUsage = tracker
-                    ? tracker.getUsage(cleanK, localAiModel)
-                    : 0;
-                  const isDanger = currentUsage >= maxRpd;
+                  const currentUsage =
+                    typeof RPDTracker?.getUsage === 'function'
+                      ? RPDTracker.getUsage(cleanK, localAiModel)
+                      : 0;
+                  const isDanger = maxRpd > 0 && currentUsage >= maxRpd;
 
                   return (
                     <div
-                      key={index}
+                      key={k}
                       className={`flex items-center justify-between p-3 rounded-xl border transition-all shadow-sm ${
                         isPrimary
                           ? 'bg-purple-50 border-purple-200'
@@ -550,17 +858,19 @@ export const ApiKeyModal = ({
                           </div>
                         ) : (
                           <button
+                            type="button"
                             onClick={() => handleSetPrimary(k)}
                             className="w-6 h-6 rounded-full border-2 border-gray-200 hover:border-purple-400 flex items-center justify-center shrink-0 transition-colors"
                             title="Đặt làm Key chính"
-                          ></button>
+                            aria-label="Đặt làm Key chính"
+                          />
                         )}
                         <div className="flex flex-col">
                           <span className="font-mono text-sm font-bold text-gray-700">
                             {displayKey}
                           </span>
                           <div className="mt-0.5">
-                            {getStatusBadge(status, k)}
+                            {getStatusBadge(status, k, cooldownsSnapshot)}
                           </div>
                         </div>
                       </div>
@@ -576,19 +886,21 @@ export const ApiKeyModal = ({
                               isPremium
                                 ? 'text-yellow-500'
                                 : isDanger
-                                  ? 'text-red-500'
-                                  : 'text-blue-600'
+                                ? 'text-red-500'
+                                : 'text-blue-600'
                             }`}
                             title={`Hạn mức theo mô hình: ${localAiModel}`}
                           >
                             {isPremium ? '∞' : `${currentUsage}/${maxRpd}`}
                           </div>
                         </div>
-                        <div className="w-px h-8 bg-gray-200"></div>
+                        <div className="w-px h-8 bg-gray-200" />
                         <button
+                          type="button"
                           onClick={() => handleRemoveKey(k)}
                           className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                           title="Xóa Key"
+                          aria-label="Xóa Key"
                         >
                           <Icons.Trash2 size={16} />
                         </button>
@@ -607,7 +919,8 @@ export const ApiKeyModal = ({
             * Các key hỏng (400) bạn có thể tự xóa bằng tay.
           </p>
           <button
-            onClick={onClose}
+            type="button"
+            onClick={handleCloseModal}
             className="px-6 py-2 bg-purple-600 text-white rounded-lg font-bold shadow hover:bg-purple-700 transition-all active:scale-95"
           >
             Đóng

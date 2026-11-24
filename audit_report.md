@@ -1,8 +1,8 @@
 # BÁO CÁO RADAR RÀ SOÁT TOÀN ỨNG DỤNG FLASHCARD-3D
 
-* **Thời điểm quét:** 24/11/2026 - 07:49:37
+* **Thời điểm quét:** 24/11/2026 - 15:08:37
 * **Phạm vi quét:** `80` tệp mã nguồn trong `src/`
-* **Thời gian thực thi:** `304 ms`
+* **Thời gian thực thi:** `1009 ms`
 
 ---
 
@@ -10,8 +10,8 @@
 
 | Mức độ | Số lượng phát hiện | Ý nghĩa |
 | :--- | :---: | :--- |
-| 🔴 **CRITICAL** | **4** | Lỗi gãy build, crash Runtime, vi phạm Kho Master Lai hoặc StrictMode |
-| 🟠 **HIGH** | **47** | Rủi ro tràn Quota, nhánh `vi` cũ sót, hộp thoại `alert/confirm` chặn UI |
+| 🔴 **CRITICAL** | **0** | Lỗi gãy build, crash Runtime, vi phạm Kho Master Lai hoặc StrictMode |
+| 🟠 **HIGH** | **30** | Rủi ro tràn Quota, nhánh `vi` cũ sót, hộp thoại `alert/confirm` chặn UI |
 | 🟡 **MEDIUM** | **52** | Rò rỉ Timer/Listener, phụ thuộc `window.*` legacy |
 | ⚪ **INFO** | **0** | Thông tin đối chiếu kiểm kê |
 
@@ -19,8 +19,7 @@
 
 | Mã luật | Số lượng |
 | :--- | :---: |
-| `R03_STRICTMODE_UPDATER_SIDEEFFECT` | 4 |
-| `R05_UNSAFE_LOCALSTORAGE_SET` | 67 |
+| `R05_UNSAFE_LOCALSTORAGE_SET` | 50 |
 | `R06A_DEPRECATED_VI_BRANCH` | 2 |
 | `R06B_LEGACY_WINDOW_GLOBAL` | 30 |
 
@@ -28,9 +27,6 @@
 
 | Tệp mã nguồn | 🔴 Critical | 🟠 High | 🟡 Medium | Tổng |
 | :--- | :---: | :---: | :---: | :---: |
-| `src/hooks/useExamLogic.js` | 2 | 16 | 0 | **18** |
-| `src/context/AppContext.jsx` | 1 | 1 | 0 | **2** |
-| `src/hooks/useStudyProgress.js` | 1 | 0 | 0 | **1** |
 | `src/services/geminiApi.js` | 0 | 7 | 0 | **7** |
 | `src/components/modals/ApiKeyModal.jsx` | 0 | 3 | 2 | **5** |
 | `src/features/games/OddOneOutGame.jsx` | 0 | 2 | 2 | **4** |
@@ -43,25 +39,13 @@
 | `src/hooks/useAiLogic.js` | 0 | 1 | 1 | **2** |
 | `src/App.jsx` | 0 | 1 | 0 | **1** |
 | `src/components/modals/ManualInputModal.jsx` | 0 | 1 | 0 | **1** |
+| `src/components/modals/SettingsModal.jsx` | 0 | 1 | 0 | **1** |
+| `src/features/games/FillBlankUI.jsx` | 0 | 1 | 0 | **1** |
+| `src/features/games/ImageQuizUI.jsx` | 0 | 1 | 0 | **1** |
 
 ## 3. CHI TIẾT PHÁT HIỆN THEO MỨC ĐỘ
 
-### 🔴 CRITICAL (4 mục)
-
-- **`src/context/AppContext.jsx:142`** [`R03_STRICTMODE_UPDATER_SIDEEFFECT`] — Phát hiện side-effect (safeLocalStorageSet()) nằm bên trong hàm updater của setState — vi phạm tính thuần khiết React 18 StrictMode (dễ ghi DB 2 lần hoặc bắn 2 Toast).
-  - Code: `setCards((prevCards) => {`
-  - Gợi ý vá: Tính toán mảng/object mới bên ngoài updater (hoặc lưu trong useEffect), sau đó mới gọi setState(nextVal) và thực thi DB/Toast tuần tự.
-- **`src/hooks/useExamLogic.js:88`** [`R03_STRICTMODE_UPDATER_SIDEEFFECT`] — Phát hiện side-effect (FcDB.set/del(), localStorage.setItem/removeItem()) nằm bên trong hàm updater của setState — vi phạm tính thuần khiết React 18 StrictMode (dễ ghi DB 2 lần hoặc bắn 2 Toast).
-  - Code: `setExamState((prev) => {`
-  - Gợi ý vá: Tính toán mảng/object mới bên ngoài updater (hoặc lưu trong useEffect), sau đó mới gọi setState(nextVal) và thực thi DB/Toast tuần tự.
-- **`src/hooks/useExamLogic.js:737`** [`R03_STRICTMODE_UPDATER_SIDEEFFECT`] — Phát hiện side-effect (FcDB.set/del()) nằm bên trong hàm updater của setState — vi phạm tính thuần khiết React 18 StrictMode (dễ ghi DB 2 lần hoặc bắn 2 Toast).
-  - Code: `setExamState((prev) => {`
-  - Gợi ý vá: Tính toán mảng/object mới bên ngoài updater (hoặc lưu trong useEffect), sau đó mới gọi setState(nextVal) và thực thi DB/Toast tuần tự.
-- **`src/hooks/useStudyProgress.js:51`** [`R03_STRICTMODE_UPDATER_SIDEEFFECT`] — Phát hiện side-effect (safeLocalStorageSet()) nằm bên trong hàm updater của setState — vi phạm tính thuần khiết React 18 StrictMode (dễ ghi DB 2 lần hoặc bắn 2 Toast).
-  - Code: `core.setCards((prev) => {`
-  - Gợi ý vá: Tính toán mảng/object mới bên ngoài updater (hoặc lưu trong useEffect), sau đó mới gọi setState(nextVal) và thực thi DB/Toast tuần tự.
-
-### 🟠 HIGH (47 mục)
+### 🟠 HIGH (30 mục)
 
 - **`src/App.jsx:407`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
   - Code: `onSaveSettings={(k, v) => localStorage.setItem(k, v)}`
@@ -83,9 +67,6 @@
   - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
 - **`src/components/modals/SettingsModal.jsx:324`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
   - Code: `localStorage.setItem('fc_total_tokens', '0');`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/context/AppContext.jsx:28`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem('fc_lang', JSON.stringify('en'));`
   - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
 - **`src/engines/pedagogyEngine.js:829`** [`R06A_DEPRECATED_VI_BRANCH`] — Còn sót vết tích ngôn ngữ học Tiếng Việt ('vi') đã khai tử: "lang === 'vi'".
   - Code: `lang === 'zh' ? 'Tiếng Trung' : lang === 'vi' ? 'Tiếng Việt' : 'Tiếng Anh';`
@@ -134,54 +115,6 @@
   - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
 - **`src/hooks/useAiLogic.js:202`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
   - Code: `localStorage.setItem('fc_total_tokens', String(newTotal));`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/hooks/useExamLogic.js:103`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem('fc_ai_memory_en', '[]');`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/hooks/useExamLogic.js:104`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem('fc_ai_memory_zh', '[]');`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/hooks/useExamLogic.js:236`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem('fc_ai_memory_en', '[]');`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/hooks/useExamLogic.js:237`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem('fc_ai_memory_zh', '[]');`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/hooks/useExamLogic.js:424`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem('fc_ai_memory_en', '[]');`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/hooks/useExamLogic.js:425`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem('fc_ai_memory_zh', '[]');`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/hooks/useExamLogic.js:518`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem(activeExamKey, sessionId);`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/hooks/useExamLogic.js:625`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem('fc_ai_memory_en', '[]');`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/hooks/useExamLogic.js:626`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem('fc_ai_memory_zh', '[]');`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/hooks/useExamLogic.js:643`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem('fc_ai_memory_en', '[]');`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/hooks/useExamLogic.js:644`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem('fc_ai_memory_zh', '[]');`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/hooks/useExamLogic.js:749`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem('fc_ai_memory_en', '[]');`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/hooks/useExamLogic.js:750`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem('fc_ai_memory_zh', '[]');`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/hooks/useExamLogic.js:854`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem(activeExamKey, sessionId);`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/hooks/useExamLogic.js:898`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem('fc_ai_memory_en', '[]');`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/hooks/useExamLogic.js:899`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem('fc_ai_memory_zh', '[]');`
   - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
 - **`src/services/geminiApi.js:55`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
   - Code: `localStorage.setItem('fc_api_cooldowns', JSON.stringify(cooldowns));`

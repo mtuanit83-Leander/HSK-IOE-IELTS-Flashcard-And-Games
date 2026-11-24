@@ -1,12 +1,20 @@
 // ============================================================================
 // FILE 84/85: src/App.jsx
 // NGUỒN GỐC: Tầng 7 (Block 7.1 - Version 1.15)
-// NHIỆM VỤ: Gom tất cả các Block lại thành ứng dụng hoàn chỉnh (Main Entry Point),
-//           điều phối Layout (Trái/Giữa/Phải), Learn/Game View và hệ thống Modals.
+// PHIÊN BẢN: Ver 1.0
+// NGÀY GIỜ NÂNG CẤP: 24/11/2026 - 22:00 (GMT+7)
+// NHIỆM VỤ: Điểm lắp ráp chính (Main Entry Point), điều phối Layout
+//           (Trái/Giữa/Phải), Learn/Game View và hệ thống 15 Modals;
+//           vá trọn vẹn 3/3 lỗi Hợp đồng Props (ApiKeyModal, NotebookModal,
+//           LinkManagerModal), diệt 1/1 lỗi HIGH localStorage.setItem trần qua
+//           Utils.safeLocalStorageSet, tĩnh hóa nền Tailwind và gia cố Toast.
 // ============================================================================
+
 
 import React, { useContext } from 'react';
 import { AppContext, AppProvider, useAppContext } from '@/context/AppContext';
+import { Utils } from '@/utils/helpers';
+
 
 // Common & Layout Components (Giai đoạn 4A)
 import { AiModeSwitch } from '@/components/common/Controls';
@@ -15,8 +23,10 @@ import { FlashcardDisplay } from '@/components/layout/FlashcardDisplay';
 import { ControlBar } from '@/components/layout/ControlBar';
 import { BottomNav } from '@/components/layout/BottomNav';
 
+
 // Game Router (Giai đoạn 5A)
 import { GameView } from '@/features/games/GameView';
+
 
 // Feature Modals (Giai đoạn 4B)
 import { HanziWriterModal } from '@/components/modals/HanziWriterModal';
@@ -33,6 +43,23 @@ import { WordSelectorModal, HanziSelectorModal } from '@/components/modals/Helpe
 import { HelpModal } from '@/components/modals/HelpModal';
 import { ExamPoolManagerModal } from '@/components/modals/ExamPoolManagerModal';
 
+
+// Bảng tra cứu tĩnh màu nền ứng dụng (chống Tailwind CSS purge class động)
+const APP_BG_CLASSES = {
+  red: 'bg-red-50',
+  sky: 'bg-sky-50'
+};
+
+
+// Bảng tra cứu tĩnh màu nền Toast
+const TOAST_BG_CLASSES = {
+  error: 'bg-red-500',
+  success: 'bg-green-500',
+  warning: 'bg-orange-500',
+  info: 'bg-gray-800'
+};
+
+
 const MainAppContent = () => {
   const {
     coreState,
@@ -44,6 +71,7 @@ const MainAppContent = () => {
     handleSmartBookmark,
     handleUpdateCards
   } = useAppContext();
+
 
   // ============================================================================
   // 1. CHỐT CHẶN CƠ SỞ DỮ LIỆU INDEXEDDB (EARLY RETURN)
@@ -59,16 +87,59 @@ const MainAppContent = () => {
     );
   }
 
+
   // ============================================================================
-  // 2. TÍNH TOÁN RENDER, MÀU CHỦ ĐẠO & BỐ CỤC KHÔNG GIAN (V1.15)
+  // 2. TÍNH TOÁN RENDER, MÀU CHỦ ĐẠO & BỐ CỤC KHÔNG GIAN
   // ============================================================================
   const appMainColor = coreState.lang === 'zh' ? 'red' : 'sky';
+  const appBgClass = APP_BG_CLASSES[appMainColor] || APP_BG_CLASSES.sky;
+
+
+  const notebookCount = Array.isArray(coreState.notebook)
+    ? coreState.notebook.length
+    : 0;
+  const masteredCount = Array.isArray(coreState.mastered)
+    ? coreState.mastered.length
+    : 0;
+  const incorrectCount = Array.isArray(coreState.incorrectList)
+    ? coreState.incorrectList.length
+    : 0;
+
+
+  // Fallback mở hộp thoại API Key an toàn cho Learn Mode
+  const handleMissingKey =
+    actions?.onMissingKey || (() => coreState.setShowApiKeyModal(true));
+
+
+  // Lưu cài đặt liên kết qua Utils.safeLocalStorageSet (diệt lỗi HIGH Quota)
+  const handleSaveLinkSetting = (key, value) => {
+    if (!key || typeof key !== 'string') return;
+    const cleanValue =
+      typeof value === 'string'
+        ? value.trim()
+        : value == null
+        ? ''
+        : value;
+
+
+    const saved = Utils.safeLocalStorageSet(key, cleanValue);
+    if (saved) {
+      handleGlobalToast?.('Đã lưu cài đặt liên kết mặc định!', 'success');
+    } else {
+      handleGlobalToast?.(
+        'Không thể lưu liên kết (bộ nhớ trình duyệt bị chặn hoặc đã đầy).',
+        'warning'
+      );
+    }
+  };
+
 
   let alignClass = 'mx-auto';
   let mainParentClass =
     'flex-1 w-full max-w-7xl mx-auto p-4 flex flex-col overflow-y-scroll overflow-x-hidden custom-scrollbar pb-6';
   let bottomWrapperClass =
     'w-full max-w-4xl px-4 mb-3 transition-all duration-500 ease-in-out ';
+
 
   if (coreState.viewMode === 'learn' && coreState.layoutAlign) {
     if (coreState.layoutAlign === 'left') {
@@ -83,10 +154,24 @@ const MainAppContent = () => {
   }
   bottomWrapperClass += alignClass;
 
+
+  // Chuẩn hóa an toàn dữ liệu Toast (chấp nhận cả chuỗi lẫn object { text, message, type })
+  const toastContent =
+    typeof coreState.toast === 'string'
+      ? coreState.toast
+      : coreState.toast?.text || coreState.toast?.message || '';
+  const toastType =
+    typeof coreState.toast === 'object' && coreState.toast !== null
+      ? coreState.toast.type || 'info'
+      : 'info';
+  const toastBgClass = TOAST_BG_CLASSES[toastType] || TOAST_BG_CLASSES.info;
+
+
   // ============================================================================
   // 3. VIEW ROUTING (LEARN MODE vs GAME MODE)
   // ============================================================================
   let mainContent = null;
+
 
   if (coreState.viewMode === 'game') {
     mainContent = (
@@ -133,9 +218,9 @@ const MainAppContent = () => {
         <AppHeader
           lang={coreState.lang}
           setLang={coreState.setLang}
-          notebookCount={coreState.notebook.length}
-          masteredCount={coreState.mastered.length}
-          incorrectCount={coreState.incorrectList.length}
+          notebookCount={notebookCount}
+          masteredCount={masteredCount}
+          incorrectCount={incorrectCount}
           onOpenNotebook={() => coreState.setShowNotebook(true)}
           onOpenMastered={() => coreState.setShowMastered(true)}
           onOpenIncorrect={actions?.handleOpenIncorrect}
@@ -168,7 +253,7 @@ const MainAppContent = () => {
             isAiMode={coreState.isAiModeLearn}
             setAiMode={coreState.setIsAiModeLearn}
             t={actions?.t}
-            onMissingKey={actions?.onMissingKey}
+            onMissingKey={handleMissingKey}
             isLoading={coreState.isAiLoading}
             AiModeSwitch={AiModeSwitch}
             onEnrichCard={actions?.handleAiEnrichCard}
@@ -190,6 +275,7 @@ const MainAppContent = () => {
       </div>
     );
   }
+
 
   // ============================================================================
   // 3.5. WIDGET TÙY CHỈNH LAYOUT CĂN LỀ (TRÁI / GIỮA / PHẢI)
@@ -224,6 +310,7 @@ const MainAppContent = () => {
           </svg>
         </button>
 
+
         <button
           type="button"
           onClick={() => coreState.setLayoutAlign('center')}
@@ -250,6 +337,7 @@ const MainAppContent = () => {
             <line x1={4} y1={18} x2={20} y2={18} />
           </svg>
         </button>
+
 
         <button
           type="button"
@@ -279,6 +367,7 @@ const MainAppContent = () => {
         </button>
       </div>
     ) : null;
+
 
   // ============================================================================
   // 4. BẢNG ĐIỀU KHIỂN ĐÁY (CONTROL BAR + BOTTOM NAV)
@@ -322,16 +411,18 @@ const MainAppContent = () => {
     </div>
   ) : null;
 
+
   // ============================================================================
-  // 5. MAIN LAYOUT & MODALS
+  // 5. MAIN LAYOUT & MODALS (KHỚP 100% HỢP ĐỒNG PROPS)
   // ============================================================================
   return (
     <div
-      className={`w-full h-[100dvh] flex flex-col relative overflow-hidden bg-${appMainColor}-50`}
+      className={`w-full h-[100dvh] flex flex-col relative overflow-hidden ${appBgClass}`}
     >
       {layoutWidget}
       <div className={mainParentClass}>{mainContent}</div>
       {bottomArea}
+
 
       {coreState.showSettings && (
         <SettingsModal
@@ -356,15 +447,19 @@ const MainAppContent = () => {
         />
       )}
 
+
       {coreState.showApiKeyModal && (
         <ApiKeyModal
           isOpen={true}
           onClose={() => coreState.setShowApiKeyModal(false)}
           apiKey={coreState.apiKey}
           setApiKey={coreState.setApiKey}
+          aiModel={coreState.aiModel}
+          setAiModel={coreState.setAiModel}
           t={actions?.t}
         />
       )}
+
 
       {coreState.showNotebook && (
         <NotebookModal
@@ -375,7 +470,6 @@ const MainAppContent = () => {
           onPlay={actions?.speak}
           t={actions?.t}
           mainColor={appMainColor}
-          onDelete={() => {}}
           apiKey={coreState.apiKey}
           lang={coreState.lang}
           onCopy={actions?.handleCopyForSheet}
@@ -386,17 +480,14 @@ const MainAppContent = () => {
         />
       )}
 
+
       {coreState.showLinkManager && (
         <LinkManagerModal
           isOpen={true}
           onClose={() => coreState.setShowLinkManager(false)}
           t={actions?.t}
-          defaultUrl={coreState.defaultUrl}
-          setDefaultUrl={coreState.setDefaultUrl}
           exportUrl={coreState.exportUrl}
           setExportUrl={coreState.setExportUrl}
-          importUrl={coreState.importUrl}
-          setImportUrl={coreState.setImportUrl}
           apiKeySheetUrl={coreState.apiKeySheetUrl}
           setApiKeySheetUrl={coreState.setApiKeySheetUrl}
           onImport={actions?.handleImport}
@@ -404,17 +495,16 @@ const MainAppContent = () => {
           onExportLink={actions?.handleExportLink}
           onExportExcel={actions?.handleExportExcel}
           onFileImport={actions?.handleFileImport}
-          onSaveSettings={(k, v) => localStorage.setItem(k, v)}
+          onSaveSettings={handleSaveLinkSetting}
           onFetchKey={actions?.handleFetchApiKey}
           onDownloadTemplate={actions?.handleDownloadTemplate}
           lang={coreState.lang}
           aiHarvestPool={coreState.aiHarvestPool}
           onExportHarvestToExcel={actions?.handleExportHarvestToExcel}
           onClearHarvestPool={actions?.handleClearHarvestPool}
-          onApply={actions?.handleApplyLink}
-          onSaveLink={actions?.handleSaveLink}
         />
       )}
+
 
       {coreState.showManual && (
         <ManualInputModal
@@ -427,6 +517,7 @@ const MainAppContent = () => {
           mainColor={appMainColor}
         />
       )}
+
 
       {coreState.showIncorrectModal && (
         <IncorrectModal
@@ -442,6 +533,7 @@ const MainAppContent = () => {
         />
       )}
 
+
       {coreState.showMastered && (
         <MasteredModal
           isOpen={true}
@@ -453,6 +545,7 @@ const MainAppContent = () => {
           mainColor={appMainColor}
         />
       )}
+
 
       {coreState.showWordSelect && (
         <WordSelectorModal
@@ -466,6 +559,7 @@ const MainAppContent = () => {
         />
       )}
 
+
       {coreState.showHelp && (
         <HelpModal
           isOpen={true}
@@ -475,15 +569,17 @@ const MainAppContent = () => {
         />
       )}
 
+
       {coreState.showHanziSelector && (
         <HanziSelectorModal
           isOpen={true}
           onClose={actions?.handleCloseHanziSelector}
           text={coreState.wordSelectTarget}
           onSelect={actions?.handleStartWriting}
-          t={actions?.t}
+        
         />
       )}
+
 
       {coreState.showHanziWriter && (
         <HanziWriterModal
@@ -494,6 +590,7 @@ const MainAppContent = () => {
           mainColor={appMainColor}
         />
       )}
+
 
       {coreState.showAiChat && (
         <AiChatModal
@@ -506,6 +603,7 @@ const MainAppContent = () => {
         />
       )}
 
+
       {coreState.showSaveLoadModal && (
         <SaveLoadModal
           isOpen={true}
@@ -517,6 +615,7 @@ const MainAppContent = () => {
         />
       )}
 
+
       {coreState.showExamPoolManager && (
         <ExamPoolManagerModal
           isOpen={true}
@@ -525,6 +624,7 @@ const MainAppContent = () => {
           examPoolData={examPoolData}
         />
       )}
+
 
       {coreState.showAiConfigModal && (
         <AiConfigModal
@@ -536,24 +636,20 @@ const MainAppContent = () => {
         />
       )}
 
-      {coreState.toast && (
+
+      {toastContent && (
         <div
-          className={`fixed top-6 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl z-[300] font-bold text-white animate-in slide-in-from-top-4 fade-in duration-300 flex items-center gap-2 ${
-            coreState.toast.type === 'error'
-              ? 'bg-red-500'
-              : coreState.toast.type === 'success'
-              ? 'bg-green-500'
-              : coreState.toast.type === 'warning'
-              ? 'bg-orange-500'
-              : 'bg-gray-800'
-          }`}
+          role="status"
+          aria-live="polite"
+          className={`fixed top-6 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl z-[300] font-bold text-white animate-in slide-in-from-top-4 fade-in duration-300 flex items-center gap-2 ${toastBgClass}`}
         >
-          {coreState.toast.text || coreState.toast.message}
+          {toastContent}
         </div>
       )}
     </div>
   );
 };
+
 
 export const App = () => {
   const existingContext = useContext(AppContext);
@@ -567,4 +663,6 @@ export const App = () => {
   );
 };
 
+
 export default App;
+
