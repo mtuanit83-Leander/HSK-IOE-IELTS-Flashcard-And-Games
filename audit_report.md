@@ -1,8 +1,8 @@
 # BÁO CÁO RADAR RÀ SOÁT TOÀN ỨNG DỤNG FLASHCARD-3D
 
-* **Thời điểm quét:** 24/11/2026 - 15:08:37
+* **Thời điểm quét:** 25/11/2026 - 22:21:42
 * **Phạm vi quét:** `80` tệp mã nguồn trong `src/`
-* **Thời gian thực thi:** `1009 ms`
+* **Thời gian thực thi:** `287 ms`
 
 ---
 
@@ -11,59 +11,44 @@
 | Mức độ | Số lượng phát hiện | Ý nghĩa |
 | :--- | :---: | :--- |
 | 🔴 **CRITICAL** | **0** | Lỗi gãy build, crash Runtime, vi phạm Kho Master Lai hoặc StrictMode |
-| 🟠 **HIGH** | **30** | Rủi ro tràn Quota, nhánh `vi` cũ sót, hộp thoại `alert/confirm` chặn UI |
-| 🟡 **MEDIUM** | **52** | Rò rỉ Timer/Listener, phụ thuộc `window.*` legacy |
+| 🟠 **HIGH** | **25** | Rủi ro tràn Quota, nhánh `vi` cũ sót, hộp thoại `alert/confirm` chặn UI |
+| 🟡 **MEDIUM** | **42** | Rò rỉ Timer/Listener, phụ thuộc `window.*` legacy |
 | ⚪ **INFO** | **0** | Thông tin đối chiếu kiểm kê |
 
 ### Thống kê theo Mã Luật Radar
 
 | Mã luật | Số lượng |
 | :--- | :---: |
-| `R05_UNSAFE_LOCALSTORAGE_SET` | 50 |
+| `R05_UNSAFE_LOCALSTORAGE_SET` | 42 |
 | `R06A_DEPRECATED_VI_BRANCH` | 2 |
-| `R06B_LEGACY_WINDOW_GLOBAL` | 30 |
+| `R06B_LEGACY_WINDOW_GLOBAL` | 23 |
 
 ## 2. TOP ĐIỂM NÓNG (TỆP CẦN ƯU TIÊN XỬ LÝ TRƯỚC)
 
 | Tệp mã nguồn | 🔴 Critical | 🟠 High | 🟡 Medium | Tổng |
 | :--- | :---: | :---: | :---: | :---: |
 | `src/services/geminiApi.js` | 0 | 7 | 0 | **7** |
-| `src/components/modals/ApiKeyModal.jsx` | 0 | 3 | 2 | **5** |
 | `src/features/games/OddOneOutGame.jsx` | 0 | 2 | 2 | **4** |
 | `src/features/games/ImageQuizGame.jsx` | 0 | 2 | 1 | **3** |
-| `src/components/modals/NotebookModal.jsx` | 0 | 1 | 2 | **3** |
 | `src/engines/pedagogyEngine.js` | 0 | 1 | 1 | **2** |
 | `src/features/games/FillBlankGame.jsx` | 0 | 1 | 1 | **2** |
 | `src/features/games/PronunciationGame.jsx` | 0 | 1 | 1 | **2** |
 | `src/features/games/SpotMistakeGame.jsx` | 0 | 1 | 1 | **2** |
 | `src/hooks/useAiLogic.js` | 0 | 1 | 1 | **2** |
-| `src/App.jsx` | 0 | 1 | 0 | **1** |
 | `src/components/modals/ManualInputModal.jsx` | 0 | 1 | 0 | **1** |
 | `src/components/modals/SettingsModal.jsx` | 0 | 1 | 0 | **1** |
 | `src/features/games/FillBlankUI.jsx` | 0 | 1 | 0 | **1** |
 | `src/features/games/ImageQuizUI.jsx` | 0 | 1 | 0 | **1** |
+| `src/features/games/ListeningUI.jsx` | 0 | 1 | 0 | **1** |
+| `src/features/games/MatchGame.jsx` | 0 | 1 | 0 | **1** |
+| `src/features/games/MatchUI.jsx` | 0 | 1 | 0 | **1** |
 
 ## 3. CHI TIẾT PHÁT HIỆN THEO MỨC ĐỘ
 
-### 🟠 HIGH (30 mục)
+### 🟠 HIGH (25 mục)
 
-- **`src/App.jsx:407`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `onSaveSettings={(k, v) => localStorage.setItem(k, v)}`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/components/modals/ApiKeyModal.jsx:165`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem(STORAGE_KEYS?.AI_MODEL || 'fc_ai_model', localAiModel);`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/components/modals/ApiKeyModal.jsx:173`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem('fc_is_premium_key', newVal.toString());`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/components/modals/ApiKeyModal.jsx:185`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem('fc_is_auto_cascade', newVal.toString());`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
 - **`src/components/modals/ManualInputModal.jsx:132`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
   - Code: `localStorage.setItem('fc_total_tokens', String(currentTotal + used));`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/components/modals/NotebookModal.jsx:787`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem(`
   - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
 - **`src/components/modals/SettingsModal.jsx:324`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
   - Code: `localStorage.setItem('fc_total_tokens', '0');`
@@ -138,7 +123,7 @@
   - Code: `localStorage.setItem(activeStorageKey, usedApiKey);`
   - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
 
-### 🟡 MEDIUM (52 mục)
+### 🟡 MEDIUM (42 mục)
 
 - **`src/components/modals/AiChatModal.jsx:106`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
   - Code: `localStorage.setItem('fc_ai_chat_history', JSON.stringify(messages));`
@@ -148,27 +133,6 @@
   - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
 - **`src/components/modals/AiChatModal.jsx:177`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.Utils" từ thời HTML 1 file thay vì import ES Module chuẩn.
   - Code: `(typeof window !== 'undefined' && window.Utils?.callGeminiApi);`
-  - Gợi ý vá: Chuyển sang import { Utils } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/components/modals/ApiKeyModal.jsx:228`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.Utils" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `(typeof window !== 'undefined' && window.Utils?.pingGeminiKey);`
-  - Gợi ý vá: Chuyển sang import { Utils } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/components/modals/ApiKeyModal.jsx:528`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.Utils" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `(typeof window !== 'undefined' && window.Utils?.RPDTracker);`
-  - Gợi ý vá: Chuyển sang import { Utils } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/components/modals/LinkManagerModal.jsx:55`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.DEFAULT_SHEETS" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `const fallbackSheets = DEFAULT_SHEETS || window.DEFAULT_SHEETS || {};`
-  - Gợi ý vá: Chuyển sang import { DEFAULT_SHEETS } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/components/modals/LinkManagerModal.jsx:64`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.DEFAULT_SHEETS" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `const fallbackSheets = DEFAULT_SHEETS || window.DEFAULT_SHEETS || {};`
-  - Gợi ý vá: Chuyển sang import { DEFAULT_SHEETS } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/components/modals/LinkManagerModal.jsx:76`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.DEFAULT_SHEETS" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `const fallbackSheets = DEFAULT_SHEETS || window.DEFAULT_SHEETS || {};`
-  - Gợi ý vá: Chuyển sang import { DEFAULT_SHEETS } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/components/modals/NotebookModal.jsx:279`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.Utils" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `(typeof window !== 'undefined' && window.Utils?.safeJsonParse) ||`
-  - Gợi ý vá: Chuyển sang import { Utils } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/components/modals/NotebookModal.jsx:759`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.Utils" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `(typeof window !== 'undefined' && window.Utils?.fillCardWithAi);`
   - Gợi ý vá: Chuyển sang import { Utils } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
 - **`src/engines/aiFactory.js:91`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.ExamProfiles" từ thời HTML 1 file thay vì import ES Module chuẩn.
   - Code: `window.ExamProfiles &&`
@@ -233,12 +197,6 @@
 - **`src/features/games/FillBlankGame.jsx:455`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
   - Code: `localStorage.setItem(`
   - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/features/games/GameMenu.jsx:124`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
-  - Code: `localStorage.setItem('fc_mock_delay', val.toString());`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/features/games/GameMenu.jsx:134`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
-  - Code: `localStorage.setItem('fc_debug_legacy_ai', String(nextState));`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
 - **`src/features/games/ImageQuizGame.jsx:474`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
   - Code: `localStorage.setItem(`
   - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
@@ -272,9 +230,6 @@
 - **`src/features/games/QuizUI.jsx:225`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.IoeDataEngine" từ thời HTML 1 file thay vì import ES Module chuẩn.
   - Code: `return window.IoeDataEngine.getGrammarTopics('quiz', lang, repLevel) || [];`
   - Gợi ý vá: Chuyển sang import { IoeDataEngine } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/features/games/ReadingUI.jsx:42`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
-  - Code: `localStorage.setItem('fc_reading_config', JSON.stringify(config));`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
 - **`src/features/games/ScrambleGame.jsx:356`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
   - Code: `localStorage.setItem('fc_ai_memory', JSON.stringify(historyQueueRef.current));`
   - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
@@ -303,26 +258,26 @@ Các khóa dưới đây chưa có trong danh mục chuẩn `CANONICAL_FC_KEYS` 
 
 | Khóa `fc_*` | Số lần xuất hiện | Vị trí mẫu |
 | :--- | :---: | :--- |
-| `fc_active_exam` | 3 | `src/config/constants.js:20`, `src/features/games/GameMenu.jsx:81`, `src/features/games/GameMenu.jsx:111` |
+| `fc_active_exam` | 3 | `src/config/constants.js:20`, `src/features/games/GameMenu.jsx:35`, `src/features/games/GameMenu.jsx:37` |
 | `fc_ai_memory_vi` | 1 | `src/hooks/useCoreState.js:522` |
 | `fc_aichat_size` | 2 | `src/components/modals/AiChatModal.jsx:66`, `src/components/modals/AiChatModal.jsx:116` |
-| `fc_api_cooldowns` | 5 | `src/components/modals/ApiKeyModal.jsx:212`, `src/components/modals/ApiKeyModal.jsx:254`, `src/services/geminiApi.js:47` |
-| `fc_apikey_sheet_url` | 2 | `src/components/modals/LinkManagerModal.jsx:199`, `src/config/constants.js:16` |
+| `fc_api_cooldowns` | 4 | `src/components/modals/ApiKeyModal.jsx:86`, `src/services/geminiApi.js:47`, `src/services/geminiApi.js:55` |
+| `fc_apikey_sheet_url` | 2 | `src/components/modals/LinkManagerModal.jsx:381`, `src/config/constants.js:16` |
 | `fc_cards` | 1 | `src/config/constants.js:10` |
 | `fc_current_lang` | 1 | `src/config/constants.js:18` |
 | `fc_current_level_vi` | 1 | `src/hooks/useCoreState.js:518` |
 | `fc_current_topic_vi` | 1 | `src/hooks/useCoreState.js:519` |
 | `fc_data_vi` | 1 | `src/hooks/useCoreState.js:517` |
-| `fc_debug_legacy_ai` | 3 | `src/engines/exam/index.js:1312`, `src/features/games/GameMenu.jsx:91`, `src/features/games/GameMenu.jsx:134` |
+| `fc_debug_legacy_ai` | 3 | `src/engines/exam/index.js:1312`, `src/features/games/GameMenu.jsx:66`, `src/features/games/GameMenu.jsx:240` |
 | `fc_fillblank_config` | 2 | `src/features/games/FillBlankUI.jsx:18`, `src/features/games/FillBlankUI.jsx:48` |
 | `fc_game_auto_next_delay` | 1 | `src/features/games/QuizGame.jsx:76` |
-| `fc_gemini_api_key` | 9 | `src/components/modals/AiChatModal.jsx:135`, `src/components/modals/ApiKeyModal.jsx:79`, `src/components/modals/SettingsModal.jsx:217` |
+| `fc_gemini_api_key` | 10 | `src/components/modals/AiChatModal.jsx:135`, `src/components/modals/ApiKeyModal.jsx:102`, `src/components/modals/NotebookModal.jsx:222` |
 | `fc_global_api_pause` | 2 | `src/services/geminiApi.js:73`, `src/services/geminiApi.js:78` |
 | `fc_global_retry_bag_vi` | 1 | `src/hooks/useCoreState.js:540` |
 | `fc_imagequiz_config` | 2 | `src/features/games/ImageQuizUI.jsx:21`, `src/features/games/ImageQuizUI.jsx:46` |
 | `fc_incorrect_list_vi` | 1 | `src/hooks/useCoreState.js:538` |
-| `fc_is_auto_cascade` | 3 | `src/components/modals/ApiKeyModal.jsx:111`, `src/components/modals/ApiKeyModal.jsx:185`, `src/services/geminiApi.js:290` |
-| `fc_is_premium_key` | 3 | `src/components/modals/ApiKeyModal.jsx:110`, `src/components/modals/ApiKeyModal.jsx:173`, `src/services/geminiApi.js:291` |
+| `fc_is_auto_cascade` | 3 | `src/components/modals/ApiKeyModal.jsx:270`, `src/components/modals/ApiKeyModal.jsx:428`, `src/services/geminiApi.js:290` |
+| `fc_is_premium_key` | 3 | `src/components/modals/ApiKeyModal.jsx:269`, `src/components/modals/ApiKeyModal.jsx:416`, `src/services/geminiApi.js:291` |
 | `fc_key_pointer` | 2 | `src/services/geminiApi.js:288`, `src/services/geminiApi.js:449` |
 | `fc_listening_config` | 2 | `src/features/games/ListeningUI.jsx:22`, `src/features/games/ListeningUI.jsx:51` |
 | `fc_master_data_vi_sentence` | 1 | `src/hooks/useCoreState.js:521` |
@@ -336,7 +291,7 @@ Các khóa dưới đây chưa có trong danh mục chuẩn `CANONICAL_FC_KEYS` 
 | `fc_oddoneout_config` | 2 | `src/features/games/OddOneOutUI.jsx:21`, `src/features/games/OddOneOutUI.jsx:47` |
 | `fc_pronunciation_config` | 2 | `src/features/games/PronunciationUI.jsx:25`, `src/features/games/PronunciationUI.jsx:49` |
 | `fc_quota_tracker` | 3 | `src/config/constants.js:22`, `src/services/geminiApi.js:184`, `src/services/geminiApi.js:195` |
-| `fc_reading_config` | 2 | `src/features/games/ReadingUI.jsx:20`, `src/features/games/ReadingUI.jsx:42` |
+| `fc_reading_config` | 2 | `src/features/games/ReadingUI.jsx:152`, `src/features/games/ReadingUI.jsx:178` |
 | `fc_scramble_config` | 3 | `src/features/games/ScrambleGame.jsx:27`, `src/features/games/ScrambleUI.jsx:18`, `src/features/games/ScrambleUI.jsx:52` |
 | `fc_spotmistake_config` | 2 | `src/features/games/SpotMistakeUI.jsx:17`, `src/features/games/SpotMistakeUI.jsx:51` |
 

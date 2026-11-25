@@ -1,49 +1,182 @@
 // ============================================================================
 // FILE 70/85: src/features/games/ReadingUI.jsx
 // NGUỒN GỐC: tang_5.js (Block 5.23 - Reading Setup & PlayScreen UI V1.05)
+// PHIÊN BẢN: Ver 1.1
+// NGÀY GIỜ NÂNG CẤP: 25/11/2026 - 21:38 (GMT+7)
 // NHIỆM VỤ: Giao diện Cài đặt (ReadingSetup) và Màn hình chơi chia đôi
 //           (ReadingPlayScreen - Split View) cho trò chơi Thám Tử Đọc Hiểu.
+//           Nâng cấp Ver 1.1 (Vá sạch 3/3 lỗi tsc / checkJs):
+//           1. Diệt ts(2741) tại <MenuToggle>: Truyền tường minh disabled={false}.
+//           2. Diệt ts(2741) & ts(2739) tại 2 thẻ <GlobalLoadingScreen>:
+//              Truyền tường minh onComplete={undefined} và onCancel={onBackAction}.
+//           3. Gán mặc định = undefined cho toàn bộ prop tùy chọn của
+//              ReadingSetup & ReadingPlayScreen đảm bảo 0 lỗi khi ReadingGame gọi.
+//           4. Bảo toàn 100% nâng cấp Ver 1.0 (0/0/0 Radar, gỡ khóa oan Phanh AI
+//              giữa các câu con, Utils.advancedNormalize, Bookmark TFNG chuẩn 12 cột,
+//              bảng màu tĩnh READING_COLOR_THEMES & A11y Modal/Escape).
 // ============================================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Icons } from '@/components/common/Icons';
 import { MenuToggle } from '@/components/common/Controls';
 import { GlobalLoadingScreen } from '@/components/common/GlobalLoadingScreen';
+import { Utils } from '@/utils/helpers';
 import { getSafeLevelString, formatGameTime } from './common/gameHelpers';
+
+// Bảng màu tĩnh an toàn tuyệt đối với Tailwind JIT Compiler
+const READING_COLOR_THEMES = {
+  slate: {
+    selectedCard: 'border-slate-500 bg-slate-50 shadow-md',
+    selectedIcon: 'bg-slate-600 text-white',
+    selectedText: 'text-slate-700',
+    checkIcon: 'text-slate-600',
+    primaryBtn: 'bg-slate-700 hover:bg-slate-800',
+    awardBadge: 'bg-slate-100 text-slate-600',
+    scoreText: 'text-slate-700',
+    progressBar: 'bg-slate-600',
+    headerTitle: 'text-slate-700',
+    timerNormal: 'text-slate-700',
+    optionHover: 'hover:bg-slate-50 hover:border-slate-300',
+    subHeaderLabel: 'text-slate-600',
+    blankBorder: 'border-slate-400',
+    inputNormal: 'border-slate-200 focus:border-slate-500'
+  },
+  indigo: {
+    selectedCard: 'border-indigo-500 bg-indigo-50 shadow-md',
+    selectedIcon: 'bg-indigo-600 text-white',
+    selectedText: 'text-indigo-700',
+    checkIcon: 'text-indigo-600',
+    primaryBtn: 'bg-indigo-600 hover:bg-indigo-700',
+    awardBadge: 'bg-indigo-100 text-indigo-600',
+    scoreText: 'text-indigo-600',
+    progressBar: 'bg-indigo-500',
+    headerTitle: 'text-indigo-700',
+    timerNormal: 'text-indigo-700',
+    optionHover: 'hover:bg-indigo-50 hover:border-indigo-300',
+    subHeaderLabel: 'text-indigo-600',
+    blankBorder: 'border-indigo-300',
+    inputNormal: 'border-indigo-200 focus:border-indigo-500'
+  },
+  sky: {
+    selectedCard: 'border-sky-500 bg-sky-50 shadow-md',
+    selectedIcon: 'bg-sky-600 text-white',
+    selectedText: 'text-sky-700',
+    checkIcon: 'text-sky-600',
+    primaryBtn: 'bg-sky-600 hover:bg-sky-700',
+    awardBadge: 'bg-sky-100 text-sky-600',
+    scoreText: 'text-sky-600',
+    progressBar: 'bg-sky-500',
+    headerTitle: 'text-sky-700',
+    timerNormal: 'text-sky-700',
+    optionHover: 'hover:bg-sky-50 hover:border-sky-300',
+    subHeaderLabel: 'text-sky-600',
+    blankBorder: 'border-sky-300',
+    inputNormal: 'border-sky-200 focus:border-sky-500'
+  },
+  red: {
+    selectedCard: 'border-red-500 bg-red-50 shadow-md',
+    selectedIcon: 'bg-red-600 text-white',
+    selectedText: 'text-red-700',
+    checkIcon: 'text-red-600',
+    primaryBtn: 'bg-red-600 hover:bg-red-700',
+    awardBadge: 'bg-red-100 text-red-600',
+    scoreText: 'text-red-600',
+    progressBar: 'bg-red-500',
+    headerTitle: 'text-red-700',
+    timerNormal: 'text-red-700',
+    optionHover: 'hover:bg-red-50 hover:border-red-300',
+    subHeaderLabel: 'text-red-600',
+    blankBorder: 'border-red-300',
+    inputNormal: 'border-red-200 focus:border-red-500'
+  },
+  emerald: {
+    selectedCard: 'border-emerald-500 bg-emerald-50 shadow-md',
+    selectedIcon: 'bg-emerald-600 text-white',
+    selectedText: 'text-emerald-700',
+    checkIcon: 'text-emerald-600',
+    primaryBtn: 'bg-emerald-600 hover:bg-emerald-700',
+    awardBadge: 'bg-emerald-100 text-emerald-600',
+    scoreText: 'text-emerald-600',
+    progressBar: 'bg-emerald-500',
+    headerTitle: 'text-emerald-700',
+    timerNormal: 'text-emerald-700',
+    optionHover: 'hover:bg-emerald-50 hover:border-emerald-300',
+    subHeaderLabel: 'text-emerald-600',
+    blankBorder: 'border-emerald-300',
+    inputNormal: 'border-emerald-200 focus:border-emerald-500'
+  }
+};
+
+const VALID_TIME_LIMITS = [180, 300, 420, 600];
+const OPTION_LABELS = ['A', 'B', 'C', 'D', 'E', 'F'];
+
+// Trích xuất tiêu đề hiển thị sạch cho bài đọc
+const resolvePassageTitle = (passageData) => {
+  const explicitTitle = String(passageData?.title || '').trim();
+  if (explicitTitle) return explicitTitle;
+
+  const firstLine = String(passageData?.passage || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .find(Boolean);
+
+  if (!firstLine) return 'Reading Passage';
+  return firstLine.length > 65 ? `${firstLine.slice(0, 65).trim()}...` : firstLine;
+};
+
+// Định dạng nhãn cấp độ đẹp cho màn hình chờ
+const formatReadingLevelBadge = (levelStr) => {
+  const cleaned = String(levelStr || '')
+    .replace(/^(en|zh)_/i, '')
+    .replace(/^level_/i, 'LEVEL ')
+    .replace(/_/g, ' ')
+    .trim();
+  return cleaned.toUpperCase();
+};
+
+// Lấy chuỗi văn bản sạch từ phương án (hỗ trợ cả string lẫn object { text })
+const extractOptionText = (opt) =>
+  typeof opt === 'object' && opt !== null ? String(opt.text || opt.term || '') : String(opt || '');
 
 // ============================================================================
 // 1. MÀN HÌNH CÀI ĐẶT (READING SETUP)
 // ============================================================================
-export const ReadingSetup = ({ mainColor = 'slate', onStart, onBack }) => {
-  const savedConfig = (() => {
-    try {
-      const raw = localStorage.getItem('fc_reading_config');
-      return raw ? JSON.parse(raw) : null;
-    } catch (e) {
-      console.warn('Load fc_reading_config failed:', e);
-      return null;
-    }
-  })();
+export const ReadingSetup = ({
+  mainColor = 'slate',
+  onStart = undefined,
+  onBack = undefined
+}) => {
+  const theme = READING_COLOR_THEMES[mainColor] || READING_COLOR_THEMES.slate;
+
+  const savedConfig = useMemo(() => {
+    const parsed = Utils.safeJsonParse('fc_reading_config', null);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  }, []);
 
   const [sourceMode, setSourceMode] = useState(
-    () => savedConfig?.sourceMode ?? 'ai_pure'
+    () => savedConfig?.sourceMode || 'ai_pure'
   );
   // Đọc hiểu thường cần canh giờ tổng cho cả đoạn văn (Mặc định: 5 phút = 300s)
   const [timerMode, setTimerMode] = useState(
-    () => savedConfig?.timerMode ?? true
+    () => (savedConfig?.timerMode !== undefined ? Boolean(savedConfig.timerMode) : true)
   );
-  const [timeLimit, setTimeLimit] = useState(
-    () => savedConfig?.timeLimit ?? 300
-  );
+  const [timeLimit, setTimeLimit] = useState(() => {
+    const num = Number(savedConfig?.timeLimit);
+    return VALID_TIME_LIMITS.includes(num) ? num : 300;
+  });
 
   const handleStart = () => {
-    const config = { sourceMode, aiMode: true, timerMode, timeLimit };
-    try {
-      localStorage.setItem('fc_reading_config', JSON.stringify(config));
-    } catch (e) {
-      console.warn('Save fc_reading_config failed:', e);
-    }
-    if (onStart) onStart(config);
+    const safeLimit = VALID_TIME_LIMITS.includes(Number(timeLimit))
+      ? Number(timeLimit)
+      : 300;
+    const config = {
+      sourceMode,
+      aiMode: true,
+      timerMode: Boolean(timerMode),
+      timeLimit: safeLimit
+    };
+    Utils.safeLocalStorageSet('fc_reading_config', config);
+    if (typeof onStart === 'function') onStart(config);
   };
 
   return (
@@ -54,6 +187,8 @@ export const ReadingSetup = ({ mainColor = 'slate', onStart, onBack }) => {
             type="button"
             onClick={onBack}
             className="p-2 rounded-full hover:bg-gray-100 text-gray-500 transition-colors"
+            title="Quay lại"
+            aria-label="Quay lại Menu"
           >
             <Icons.ChevronLeft size={24} />
           </button>
@@ -75,14 +210,14 @@ export const ReadingSetup = ({ mainColor = 'slate', onStart, onBack }) => {
                 onClick={() => setSourceMode('ai_pure')}
                 className={`p-4 rounded-2xl border-2 flex items-center gap-4 transition-all ${
                   sourceMode === 'ai_pure'
-                    ? `border-${mainColor}-500 bg-${mainColor}-50 shadow-md`
+                    ? theme.selectedCard
                     : 'border-gray-100 bg-white hover:border-gray-300'
                 }`}
               >
                 <div
                   className={`p-3 rounded-xl ${
                     sourceMode === 'ai_pure'
-                      ? `bg-${mainColor}-500 text-white`
+                      ? theme.selectedIcon
                       : 'bg-gray-100 text-gray-500'
                   }`}
                 >
@@ -92,7 +227,7 @@ export const ReadingSetup = ({ mainColor = 'slate', onStart, onBack }) => {
                   <div
                     className={`font-bold text-lg ${
                       sourceMode === 'ai_pure'
-                        ? `text-${mainColor}-700`
+                        ? theme.selectedText
                         : 'text-gray-700'
                     }`}
                   >
@@ -103,10 +238,7 @@ export const ReadingSetup = ({ mainColor = 'slate', onStart, onBack }) => {
                   </div>
                 </div>
                 {sourceMode === 'ai_pure' && (
-                  <Icons.CheckCircle
-                    size={20}
-                    className={`text-${mainColor}-500`}
-                  />
+                  <Icons.CheckCircle size={20} className={theme.checkIcon} />
                 )}
               </button>
             </div>
@@ -123,10 +255,11 @@ export const ReadingSetup = ({ mainColor = 'slate', onStart, onBack }) => {
               setActive={setTimerMode}
               icon={Icons.Clock}
               color="orange"
+              disabled={false}
               title="Canh giờ (Cho 1 Đoạn Văn)"
               subtitle={
                 timerMode
-                  ? `${timeLimit / 60} phút / đoạn`
+                  ? `${Math.round(timeLimit / 60)} phút / đoạn`
                   : 'Thoải mái thời gian'
               }
               extra={
@@ -135,7 +268,7 @@ export const ReadingSetup = ({ mainColor = 'slate', onStart, onBack }) => {
                     Khuyến nghị: 5 phút/đoạn (IELTS)
                   </span>
                   <div className="flex gap-2 w-full">
-                    {[180, 300, 420, 600].map((sec) => (
+                    {VALID_TIME_LIMITS.map((sec) => (
                       <button
                         key={sec}
                         type="button"
@@ -163,7 +296,7 @@ export const ReadingSetup = ({ mainColor = 'slate', onStart, onBack }) => {
           <button
             type="button"
             onClick={handleStart}
-            className={`w-full py-4 bg-${mainColor}-600 text-white rounded-2xl font-bold shadow-lg hover:bg-${mainColor}-700 flex items-center justify-center gap-3 active:scale-95 transition-transform text-lg`}
+            className={`w-full py-4 text-white rounded-2xl font-bold shadow-lg flex items-center justify-center gap-3 active:scale-95 transition-transform text-lg ${theme.primaryBtn}`}
           >
             <Icons.BookOpen size={24} fill="currentColor" /> LUYỆN ĐỌC NGAY
           </button>
@@ -178,14 +311,14 @@ export const ReadingSetup = ({ mainColor = 'slate', onStart, onBack }) => {
 // ============================================================================
 export const ReadingPlayScreen = ({
   mainColor = 'slate',
-  config,
-  passageData,
-  currentSubQuestion,
+  config = undefined,
+  passageData = undefined,
+  currentSubQuestion = undefined,
   subIndex = 0,
   totalSubQuestions = 0,
   inputBuffer = '',
-  setInputBuffer,
-  typeInputRef,
+  setInputBuffer = undefined,
+  typeInputRef = undefined,
   checkStatus = 'idle',
   selectedOptionIndex = null,
   attempts = 0,
@@ -203,42 +336,91 @@ export const ReadingPlayScreen = ({
   resultTimer = 0,
   isResultPaused = false,
   aiWaitTime = 0,
-  handleOptionClick,
-  handleFillSubmit,
-  handleSkip,
-  nextRound,
-  handleNext,
-  handleSaveAndBack,
-  onBack,
-  onSaveToNotebook,
+  handleOptionClick = undefined,
+  handleFillSubmit = undefined,
+  handleSkip = undefined,
+  nextRound = undefined,
+  handleNext = undefined,
+  handleSaveAndBack = undefined,
+  onBack = undefined,
+  onSaveToNotebook = undefined,
   isBookmarked = false,
-  toggleResultPause,
-  onEndGame
+  toggleResultPause = undefined,
+  onEndGame = undefined
 }) => {
   const [showConfirmEnd, setShowConfirmEnd] = useState(false);
 
+  const theme = READING_COLOR_THEMES[mainColor] || READING_COLOR_THEMES.slate;
+  const effectiveLang = config?.lang === 'zh' ? 'zh' : 'en';
   const safeLevelStr = getSafeLevelString(config?.level, 'level_8_academic');
   const onBackAction = onBack || handleSaveAndBack;
   const onNextAction = nextRound || handleNext;
 
+  // Chỉ áp dụng Phanh AI (aiWaitTime) ở câu cuối cùng trước khi chuyển sang đoạn văn mới
+  const isLastSubQuestion =
+    totalSubQuestions > 0 && subIndex >= totalSubQuestions - 1;
+  const isBlockedByAiCooldown = isLastSubQuestion && aiWaitTime > 0;
+
+  // Đóng Modal xác nhận thoát bằng phím Escape (A11y)
+  useEffect(() => {
+    if (!showConfirmEnd) return undefined;
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setShowConfirmEnd(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showConfirmEnd]);
+
+  // So sánh chuẩn hóa NFC / không phân biệt hoa thường / dấu câu khớp 100% ReadingGame.jsx
+  const isMatchingAnswer = (optVal, expectedVal) => {
+    const cleanOpt = Utils.advancedNormalize(extractOptionText(optVal), effectiveLang);
+    const cleanTarget = Utils.advancedNormalize(String(expectedVal || ''), effectiveLang);
+    return Boolean(cleanTarget) && cleanOpt === cleanTarget;
+  };
+
+  // Lưu câu hỏi / đáp án vào Sổ tay (nâng cấp riêng cho dạng TFNG tránh lưu độc chữ "True"/"False")
   const handleBookmark = (e) => {
     e.stopPropagation();
-    if (!onSaveToNotebook || !currentSubQuestion) return;
+    if (typeof onSaveToNotebook !== 'function' || !currentSubQuestion) return;
+
+    const isTfng = currentSubQuestion.type === 'tfng';
+    const qText = String(currentSubQuestion.questionText || '').trim();
+    const ansText = String(currentSubQuestion.correctAnswer || '').trim();
+    const expText = String(currentSubQuestion.explanation || '').trim();
+
+    if (isTfng) {
+      const saveTerm = qText || ansText || 'Đọc hiểu';
+      const tfngDef = `Đáp án: ${ansText || 'True'}${expText ? ` — ${expText}` : ''}`;
+      onSaveToNotebook({
+        isSmartTarget: true,
+        save: saveTerm,
+        term: saveTerm,
+        display: `[${ansText || 'TFNG'}] ${qText}`,
+        definition: tfngDef,
+        meaning: tfngDef,
+        analysis: `Trích dẫn trong bài: "${expText}"`,
+        language: effectiveLang
+      });
+      return;
+    }
+
+    const saveTerm = ansText || qText || 'Đọc hiểu';
+    const defText = expText || qText || 'Kiến thức Đọc hiểu';
     onSaveToNotebook({
       isSmartTarget: true,
-      save: currentSubQuestion.correctAnswer || 'Đọc hiểu',
-      display: currentSubQuestion.questionText || 'Câu hỏi đọc hiểu',
-      analysis: `Trích dẫn trong bài: "${currentSubQuestion.explanation || ''}"`
+      save: saveTerm,
+      term: saveTerm,
+      display: qText || 'Câu hỏi đọc hiểu',
+      definition: defText,
+      meaning: defText,
+      analysis: `Trích dẫn trong bài: "${expText}"`,
+      language: effectiveLang
     });
   };
 
   const getOptionClass = (opt, i) => {
     if (checkStatus === 'correct' || checkStatus === 'failed') {
-      const isCorrectOpt =
-        String(opt).toLowerCase().trim() ===
-        String(currentSubQuestion?.correctAnswer || '')
-          .toLowerCase()
-          .trim();
+      const isCorrectOpt = isMatchingAnswer(opt, currentSubQuestion?.correctAnswer);
       if (isCorrectOpt) {
         return 'bg-green-100 border-green-500 text-green-900 shadow-md transform scale-[1.02] font-bold z-10';
       }
@@ -250,10 +432,8 @@ export const ReadingPlayScreen = ({
     if (checkStatus === 'wrong_retry' && i === selectedOptionIndex) {
       return 'bg-red-50 border-red-300 text-red-400 opacity-80 cursor-not-allowed animate-[shake_0.4s_ease-in-out]';
     }
-    return `bg-white border-gray-200 text-gray-700 hover:bg-${mainColor}-50 hover:border-${mainColor}-300 hover:shadow-md active:scale-95`;
+    return `bg-white border-gray-200 text-gray-700 ${theme.optionHover} hover:shadow-md active:scale-95`;
   };
-
-  const labels = ['A', 'B', 'C', 'D', 'E', 'F'];
 
   // MÀN HÌNH CHỜ (LOADING) ĐẦU GAME
   if (isGenerating && !passageData) {
@@ -265,6 +445,7 @@ export const ReadingPlayScreen = ({
     return (
       <GlobalLoadingScreen
         duration={aiCountdown > 0 ? aiCountdown : 0}
+        onComplete={undefined}
         onCancel={onBackAction}
         queueLength={queueLength}
         text={
@@ -282,7 +463,7 @@ export const ReadingPlayScreen = ({
         mainColor={mainColor}
         levelStr={
           config?.sourceMode === 'ai_pure' && safeLevelStr
-            ? safeLevelStr.replace('level_', '').replace(/_/g, ' ').toUpperCase()
+            ? formatReadingLevelBadge(safeLevelStr)
             : ''
         }
       />
@@ -325,7 +506,7 @@ export const ReadingPlayScreen = ({
     return (
       <div className="w-full h-full flex flex-col items-center justify-center p-6 bg-gray-50 rounded-2xl animate-in fade-in zoom-in duration-300 absolute inset-0 z-50">
         <div
-          className={`w-24 h-24 bg-${mainColor}-100 text-${mainColor}-500 rounded-full flex items-center justify-center mb-6 shadow-inner`}
+          className={`w-24 h-24 rounded-full flex items-center justify-center mb-6 shadow-inner ${theme.awardBadge}`}
         >
           <Icons.Award size={48} />
         </div>
@@ -338,7 +519,7 @@ export const ReadingPlayScreen = ({
             <div className="text-[10px] text-gray-400 font-bold uppercase mb-1">
               Điểm
             </div>
-            <div className={`text-xl font-bold text-${mainColor}-600`}>
+            <div className={`text-xl font-bold ${theme.scoreText}`}>
               {score || 0}
             </div>
           </div>
@@ -370,7 +551,7 @@ export const ReadingPlayScreen = ({
               wrong: wrongCount
             })
           }
-          className={`w-full max-w-xs py-4 rounded-xl bg-${mainColor}-600 text-white font-bold text-lg hover:bg-${mainColor}-700 shadow-lg active:scale-95 transition-all`}
+          className={`w-full max-w-xs py-4 rounded-xl text-white font-bold text-lg shadow-lg active:scale-95 transition-all ${theme.primaryBtn}`}
         >
           Hoàn tất
         </button>
@@ -383,6 +564,11 @@ export const ReadingPlayScreen = ({
   const isFillBlank = currentSubQuestion.type === 'fill_blank';
   const isInteractive =
     checkStatus !== 'correct' && checkStatus !== 'failed' && !isGenerating;
+  const safeTotalTime = Math.max(1, Number(config?.timeLimit) || 300);
+  const passageTitle = resolvePassageTitle(passageData);
+  const blankParts = isFillBlank
+    ? String(currentSubQuestion.questionText || '').split(/(?:\[[\s_]+\]|_{3,})/g)
+    : [];
 
   return (
     <div className="flex flex-col h-full w-full mx-auto bg-gray-100 relative overflow-hidden">
@@ -399,10 +585,10 @@ export const ReadingPlayScreen = ({
         <div className="absolute top-0 left-0 w-full h-1.5 bg-gray-200 z-50">
           <div
             className={`h-full transition-all duration-1000 ease-linear ${
-              timeLeft <= 30 ? 'bg-red-500' : `bg-${mainColor}-500`
+              timeLeft <= 30 ? 'bg-red-500' : theme.progressBar
             }`}
             style={{
-              width: `${Math.min(100, Math.max(0, (timeLeft / (config.timeLimit || 300)) * 100))}%`
+              width: `${Math.min(100, Math.max(0, (timeLeft / safeTotalTime) * 100))}%`
             }}
           ></div>
         </div>
@@ -410,16 +596,28 @@ export const ReadingPlayScreen = ({
 
       {/* POPUP Xác nhận thoát */}
       {showConfirmEnd && (
-        <div className="absolute inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white p-6 rounded-2xl shadow-2xl max-w-sm w-full text-center border-2 border-red-100">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="reading-exit-modal-title"
+          className="absolute inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in"
+          onClick={() => setShowConfirmEnd(false)}
+        >
+          <div
+            className="bg-white p-6 rounded-2xl shadow-2xl max-w-sm w-full text-center border-2 border-red-100"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
               <Icons.AlertCircle size={32} />
             </div>
-            <h3 className="text-xl font-black text-gray-800 mb-2">
+            <h3
+              id="reading-exit-modal-title"
+              className="text-xl font-black text-gray-800 mb-2"
+            >
               Thoát ngay?
             </h3>
             <p className="text-gray-600 text-sm mb-6">
-              Bạn sẽ mất điểm của câu này. Bạn có chắc không?
+              Bạn sẽ kết thúc phiên luyện đọc và tổng kết điểm hiện tại. Bạn có chắc không?
             </p>
             <div className="flex gap-3">
               <button
@@ -459,6 +657,8 @@ export const ReadingPlayScreen = ({
         ) : (
           <GlobalLoadingScreen
             duration={0}
+            onComplete={undefined}
+            onCancel={onBackAction}
             queueLength={queueLength}
             text="Đang chuyển sang tổ kén mới..."
             mainColor={mainColor}
@@ -471,14 +671,15 @@ export const ReadingPlayScreen = ({
           type="button"
           onClick={onBackAction}
           className="p-2 text-gray-400 hover:bg-gray-100 rounded-lg transition-colors"
-          title="Quay lại"
+          title="Quay lại (Tự lưu tiến độ)"
+          aria-label="Quay lại Menu"
         >
           <Icons.ChevronLeft size={24} />
         </button>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <div
-            className={`text-sm font-black text-${mainColor}-700 uppercase tracking-widest hidden sm:block`}
+            className={`text-sm font-black uppercase tracking-widest hidden sm:block ${theme.headerTitle}`}
           >
             Reading Passage
           </div>
@@ -502,9 +703,7 @@ export const ReadingPlayScreen = ({
           {config?.timerMode && (
             <div
               className={`text-sm font-mono font-bold ${
-                timeLeft <= 30
-                  ? 'text-red-500 animate-pulse'
-                  : `text-${mainColor}-700`
+                timeLeft <= 30 ? 'text-red-500 animate-pulse' : theme.timerNormal
               } flex items-center gap-1`}
             >
               <Icons.Clock size={16} /> {formatGameTime(timeLeft)}
@@ -549,11 +748,11 @@ export const ReadingPlayScreen = ({
               </span>
             )}
 
-          {/* ĐỒNG HỒ PHANH AI GÓC PHẢI */}
-          {aiWaitTime > 0 && (
+          {/* ĐỒNG HỒ PHANH AI GÓC PHẢI (Chỉ báo khi cần chờ chuyển đoạn mới) */}
+          {isBlockedByAiCooldown && (
             <span
               className="hidden sm:flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shadow-sm bg-indigo-50 text-indigo-600 border border-indigo-200 animate-pulse"
-              title="Thời gian chờ an toàn"
+              title="Thời gian chờ an toàn trước khi nạp đoạn văn mới"
             >
               <Icons.Clock size={12} className="text-indigo-500" /> {aiWaitTime}s
             </span>
@@ -567,7 +766,7 @@ export const ReadingPlayScreen = ({
         <div className="flex-1 lg:w-1/2 h-1/2 lg:h-full bg-white border-b lg:border-b-0 lg:border-r border-gray-200 overflow-y-auto custom-scrollbar p-5 md:p-8">
           <div className="w-full max-w-2xl mx-auto pb-safe">
             <h2 className="text-xl md:text-2xl font-serif font-black text-gray-800 mb-6 pb-4 border-b-2 border-gray-100 leading-tight">
-              {(passageData.passage || '').split('\n')[0].substring(0, 50)}...
+              {passageTitle}
             </h2>
             <div className="text-base md:text-lg text-gray-700 font-serif leading-loose text-justify whitespace-pre-wrap">
               {passageData.passage}
@@ -582,7 +781,7 @@ export const ReadingPlayScreen = ({
               {/* Header câu hỏi con */}
               <div className="flex items-center justify-between bg-white px-4 py-2 rounded-xl border border-gray-200 shadow-sm">
                 <span
-                  className={`text-xs font-bold uppercase text-${mainColor}-600 tracking-widest`}
+                  className={`text-xs font-bold uppercase tracking-widest ${theme.subHeaderLabel}`}
                 >
                   {currentSubQuestion.type === 'tfng'
                     ? 'True / False / Not Given'
@@ -597,25 +796,23 @@ export const ReadingPlayScreen = ({
 
               {/* Nội dung câu hỏi */}
               <div className="text-lg md:text-xl font-bold text-gray-800 leading-snug">
-                {isFillBlank
-                  ? (currentSubQuestion.questionText || '')
-                      .split('[__________]')
-                      .map((part, i, arr) => (
-                        <React.Fragment key={i}>
-                          {part}
-                          {i < arr.length - 1 && (
-                            <span
-                              className={`inline-block w-20 border-b-4 mx-1 ${
-                                checkStatus === 'correct'
-                                  ? 'border-green-400'
-                                  : checkStatus === 'failed'
-                                  ? 'border-red-400'
-                                  : `border-${mainColor}-300`
-                              }`}
-                            ></span>
-                          )}
-                        </React.Fragment>
-                      ))
+                {isFillBlank && blankParts.length > 1
+                  ? blankParts.map((part, i, arr) => (
+                      <React.Fragment key={i}>
+                        {part}
+                        {i < arr.length - 1 && (
+                          <span
+                            className={`inline-block w-20 border-b-4 mx-1 align-baseline ${
+                              checkStatus === 'correct'
+                                ? 'border-green-400'
+                                : checkStatus === 'failed'
+                                ? 'border-red-400'
+                                : theme.blankBorder
+                            }`}
+                          ></span>
+                        )}
+                      </React.Fragment>
+                    ))
                   : currentSubQuestion.questionText}
               </div>
 
@@ -643,7 +840,7 @@ export const ReadingPlayScreen = ({
                           ? 'border-red-400 bg-red-50 text-red-700'
                           : checkStatus === 'wrong_retry'
                           ? 'border-orange-400 bg-orange-50 text-orange-700 animate-[shake_0.4s_ease-in-out]'
-                          : `border-${mainColor}-200 focus:border-${mainColor}-500 bg-white text-gray-800`
+                          : `${theme.inputNormal} bg-white text-gray-800`
                       }`}
                       placeholder="Gõ đáp án..."
                       autoComplete="off"
@@ -653,31 +850,32 @@ export const ReadingPlayScreen = ({
                       type="button"
                       onClick={handleFillSubmit}
                       disabled={!inputBuffer.trim() || !isInteractive}
-                      className={`px-5 bg-${mainColor}-600 text-white rounded-xl font-bold shadow-md hover:bg-${mainColor}-700 disabled:opacity-50 active:scale-95 transition-transform shrink-0`}
+                      className={`px-5 text-white rounded-xl font-bold shadow-md disabled:opacity-50 active:scale-95 transition-transform shrink-0 ${theme.primaryBtn}`}
+                      aria-label="Kiểm tra đáp án"
                     >
                       <Icons.Check size={24} />
                     </button>
                   </div>
                   {attempts > 0 && isInteractive && (
                     <p className="text-xs text-orange-500 font-bold text-center">
-                      Còn {3 - attempts} lượt sửa.
+                      Còn {Math.max(1, 3 - attempts)} lượt sửa.
                     </p>
                   )}
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
-                  {(currentSubQuestion.options || []).map((optText, i) => {
-                    const btnClass = getOptionClass(optText, i);
-                    const isCorrectOpt =
-                      checkStatus !== 'idle' &&
-                      String(optText).toLowerCase().trim() ===
-                        String(currentSubQuestion.correctAnswer || '')
-                          .toLowerCase()
-                          .trim();
+                  {(currentSubQuestion.options || []).map((optItem, i) => {
+                    const optText = extractOptionText(optItem);
+                    const btnClass = getOptionClass(optItem, i);
+                    const isRightAnswer = isMatchingAnswer(
+                      optItem,
+                      currentSubQuestion.correctAnswer
+                    );
+                    const isCorrectOpt = checkStatus !== 'idle' && isRightAnswer;
                     const isSelectedWrong =
                       checkStatus !== 'idle' &&
                       i === selectedOptionIndex &&
-                      !isCorrectOpt;
+                      !isRightAnswer;
 
                     return (
                       <button
@@ -686,13 +884,7 @@ export const ReadingPlayScreen = ({
                         onClick={() =>
                           isInteractive &&
                           handleOptionClick &&
-                          handleOptionClick(
-                            i,
-                            String(optText).toLowerCase().trim() ===
-                              String(currentSubQuestion.correctAnswer || '')
-                                .toLowerCase()
-                                .trim()
-                          )
+                          handleOptionClick(i, isRightAnswer)
                         }
                         disabled={!isInteractive}
                         className={`w-full p-4 border-2 rounded-xl transition-all text-left flex items-center justify-between shadow-sm ${btnClass}`}
@@ -708,7 +900,7 @@ export const ReadingPlayScreen = ({
                                   : 'bg-gray-100 text-gray-500'
                               }`}
                             >
-                              {labels[i]}
+                              {OPTION_LABELS[i] || i + 1}
                             </span>
                           )}
                           <span className="text-base font-bold leading-snug">
@@ -760,6 +952,7 @@ export const ReadingPlayScreen = ({
                       type="button"
                       onClick={handleBookmark}
                       className="bg-white/20 hover:bg-white/30 px-3 py-1 rounded-lg flex items-center gap-1.5 text-xs transition-colors shadow-sm"
+                      aria-label={isBookmarked ? 'Đã lưu vào Sổ tay' : 'Lưu vào Sổ tay'}
                     >
                       <Icons.Bookmark
                         size={12}
@@ -785,7 +978,8 @@ export const ReadingPlayScreen = ({
                         <Icons.Sparkles size={14} /> Trích dẫn trong bài
                       </span>
                       <p className="text-blue-900 text-sm leading-relaxed font-medium">
-                        {currentSubQuestion.explanation}
+                        {currentSubQuestion.explanation ||
+                          'Hãy đối chiếu trực tiếp thông tin trong đoạn văn bên trái.'}
                       </p>
                     </div>
                   </div>
@@ -803,6 +997,7 @@ export const ReadingPlayScreen = ({
               onClick={() => setShowConfirmEnd(true)}
               className="absolute left-2 sm:left-4 text-red-500 hover:text-red-700 font-bold text-xs flex items-center gap-1 transition-colors px-2 py-2 hover:bg-red-50 rounded-lg"
               title="Kết thúc"
+              aria-label="Kết thúc phiên luyện đọc"
             >
               <Icons.X size={16} />{' '}
               <span className="hidden sm:inline">Kết thúc</span>
@@ -825,6 +1020,10 @@ export const ReadingPlayScreen = ({
                       <>
                         <Icons.Play size={16} /> Đã dừng
                       </>
+                    ) : resultTimer === 0 && isBlockedByAiCooldown ? (
+                      <>
+                        <Icons.Clock size={16} /> Đợi AI ({aiWaitTime}s)
+                      </>
                     ) : (
                       <>
                         <Icons.Pause size={16} /> Đợi ({resultTimer}s)
@@ -834,19 +1033,15 @@ export const ReadingPlayScreen = ({
                   <button
                     type="button"
                     onClick={onNextAction}
-                    disabled={isGenerating || aiWaitTime > 0}
-                    className={`flex-[2] py-3 bg-${
+                    disabled={isGenerating || isBlockedByAiCooldown}
+                    className={`flex-[2] py-3 text-white font-bold text-sm sm:text-base rounded-xl shadow-lg flex justify-center items-center gap-1.5 sm:gap-2 transition-all ${
                       checkStatus === 'correct'
-                        ? 'green-500'
-                        : mainColor + '-600'
-                    } text-white font-bold text-sm sm:text-base rounded-xl shadow-lg flex justify-center items-center gap-1.5 sm:gap-2 active:scale-95 transition-transform ${
-                      isGenerating || aiWaitTime > 0
+                        ? 'bg-green-500 hover:bg-green-600'
+                        : theme.primaryBtn
+                    } ${
+                      isGenerating || isBlockedByAiCooldown
                         ? 'opacity-70 cursor-not-allowed'
-                        : `hover:bg-${
-                            checkStatus === 'correct'
-                              ? 'green-600'
-                              : mainColor + '-700'
-                          }`
+                        : 'active:scale-95'
                     }`}
                   >
                     {isGenerating ? (
@@ -854,9 +1049,13 @@ export const ReadingPlayScreen = ({
                         <div className="w-4 h-4 sm:w-5 sm:h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>{' '}
                         Đang tải...
                       </>
+                    ) : isBlockedByAiCooldown ? (
+                      <>
+                        <Icons.Clock size={18} /> Đợi AI ({aiWaitTime}s)
+                      </>
                     ) : (
                       <>
-                        {subIndex === totalSubQuestions - 1
+                        {isLastSubQuestion
                           ? 'Hoàn thành Đoạn văn'
                           : 'Câu tiếp theo'}{' '}
                         <Icons.ChevronRight size={20} />
@@ -868,9 +1067,9 @@ export const ReadingPlayScreen = ({
                 <button
                   type="button"
                   onClick={handleSkip}
-                  disabled={isGenerating || aiWaitTime > 0}
+                  disabled={isGenerating}
                   className={`w-full py-3 bg-gray-100 text-gray-600 font-bold text-xs sm:text-sm rounded-xl hover:bg-gray-200 border border-gray-200 flex items-center justify-center gap-2 ${
-                    isGenerating || aiWaitTime > 0
+                    isGenerating
                       ? 'opacity-50 cursor-not-allowed'
                       : 'active:scale-95'
                   }`}

@@ -1,19 +1,19 @@
 // ============================================================================
 // FILE 51/85: src/features/games/GameView.jsx
 // NGUỒN GỐC: tang_5.js (Block 5.7 - GameView V1.09)
-// PHIÊN BẢN: Ver 1.1
-// NGÀY GIỜ NÂNG CẤP: 20/11/2026 - 22:24 (GMT+7)
+// PHIÊN BẢN: Ver 1.4
+// NGÀY GIỜ NÂNG CẤP: 25/11/2026 - 21:33 (GMT+7)
 // NHIỆM VỤ: Bộ định tuyến trung tâm điều hướng giữa GameMenu, 10 màn hình Setup,
 //           10 Mini-games PlayScreen, GameResult và ExamUIShell.
-//           Nâng cấp Ver 1.1: Tách restoredSession chống re-render mỗi 5s,
-//           chốt chặn đồng bộ activeSessionIdRef + stopAllSpeech, tách unmount
-//           cleanup cho setIsGamePlaying, chuẩn hóa ngưỡng thẻ tối thiểu chống
-//           0 thẻ, hợp nhất sharedGameProps cho 10 Mini-games và gia cố
-//           VALID_GAME_ROUTES / fallback id-first cho onUpdateCards.
+//           Nâng cấp Ver 1.4 (Chốt 0/28 Problems tsc / checkJs):
+//           1. Khôi phục prop bắt buộc t={t} cho <ScrambleSetup /> (vá ts(2741)).
+//           2. Gỡ bỏ prop di sản thừa AiModeSwitch khỏi <QuizGame /> (vá ts(2322))
+//              và dọn sạch import AiModeSwitch không còn sử dụng (chuẩn Knip 0 hints).
+//           3. Bảo toàn 100% logic điều phối, Auto-save, Resume, Âm thanh & 7 prop
+//              dùng chung từ Ver 1.2–1.3.
 // ============================================================================
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { AiModeSwitch } from '../../components/common/Controls';
 import { resolveActiveApiKey } from './common/gameHelpers';
 
 // Menu chính
@@ -159,11 +159,10 @@ export const GameView = (props) => {
     props.onMissingKey ||
     actionsObj.onMissingKey ||
     (() => settersObj.setShowApiKeyModal && settersObj.setShowApiKeyModal(true));
-  const isLoading = props.isLoading ?? stateObj.isAiLoading ?? false;
   const cards = props.cards || stateObj.cards || [];
   const lang = props.lang || stateObj.lang || 'en';
   const onPlay = props.onPlay || props.speak || actionsObj.speak;
-  const stopSpeakingAction = props.stopSpeaking || actionsObj.stopSpeaking;
+  const stopSpeakingAction = props.stopSpeaking || props.onPause || actionsObj.stopSpeaking;
   const notebook = props.notebook || stateObj.notebook || [];
   const showToast = props.showToast || actionsObj.showToast;
   const onLogWrong = props.onLogWrong || actionsObj.handleLogWrong;
@@ -210,6 +209,9 @@ export const GameView = (props) => {
       if (typeof props.onBookmark === 'function') {
         return props.onBookmark(payload);
       }
+      if (typeof props.onSaveToNotebook === 'function') {
+        return props.onSaveToNotebook(payload);
+      }
       if (typeof actionsObj.handleSmartBookmark === 'function') {
         return actionsObj.handleSmartBookmark(payload);
       }
@@ -225,7 +227,7 @@ export const GameView = (props) => {
       console.warn('[GameView] Thiếu handler onBookmark / handleSmartBookmark.');
       return undefined;
     },
-    [props.onBookmark, actionsObj.handleSmartBookmark, actionsObj.handleSaveWords]
+    [props.onBookmark, props.onSaveToNotebook, actionsObj.handleSmartBookmark, actionsObj.handleSaveWords]
   );
 
   // [VÁ BUG 02 + Ver 1.1] Ánh xạ chuẩn onUpdateCards -> handleUpdateCards
@@ -289,17 +291,19 @@ export const GameView = (props) => {
     }
     return 'menu';
   });
-  const [gameType, setGameType] = useState(null);
-  const [gameConfig, setGameConfig] = useState({});
-  const [restoredSession, setRestoredSession] = useState(null);
+  const [gameType, setGameType] = useState(/** @type {string | null} */ (null));
+  const [gameConfig, setGameConfig] = useState(/** @type {Record<string, any>} */ ({}));
+  const [restoredSession, setRestoredSession] = useState(
+    /** @type {Record<string, any> | null} */ (null)
+  );
   const [gameSessionId, setGameSessionId] = useState(() => `${Date.now()}_0`);
   const [finalStats, setFinalStats] = useState({ score: 0, wrong: 0, total: 0 });
   const [matchAiPreset, setMatchAiPreset] = useState(false);
 
   const sessionSeqRef = useRef(0);
-  const activeSessionIdRef = useRef(null);
-  const gameTypeRef = useRef(null);
-  const gameConfigRef = useRef({});
+  const activeSessionIdRef = useRef(/** @type {string | null} */ (null));
+  const gameTypeRef = useRef(/** @type {string | null} */ (null));
+  const gameConfigRef = useRef(/** @type {Record<string, any>} */ ({}));
 
   const nextSessionKey = useCallback(() => {
     sessionSeqRef.current += 1;
@@ -310,14 +314,51 @@ export const GameView = (props) => {
   const preferredApiKey = props.apiKey || stateObj.apiKey || '';
   const activeApiKey = resolveActiveApiKey(preferredApiKey);
 
-  const activeExamLogic = examLogic || {
-    examState: { status: 'idle' },
-    startExam: () => {},
-    resumeExam: () => {},
-    submitAnswer: () => {},
-    quitExam: () => {},
-    exportExamToExcel: () => {}
-  };
+  // [Ver 1.2] Fallback đầy đủ hợp đồng useExamLogic (Ver 1.1)
+  const activeExamLogic = useMemo(
+    () =>
+      examLogic || {
+        examState: { status: 'idle' },
+        currentQuestion: null,
+        isHydrating: false,
+        cachedCount: 0,
+        examCooldown: 0,
+        startExam: () => {},
+        resumeExam: () => {},
+        submitAnswer: () => {},
+        forceSubmitExam: () => {},
+        quitExam: () => {},
+        setTransitionState: () => {},
+        exportExamToExcel: () => {}
+      },
+    [examLogic]
+  );
+
+  // Helper phát Toast tương thích kép cả (msg, type) lẫn ({ text, type })
+  const notifyToast = useCallback(
+    (msg, type = 'info') => {
+      if (typeof showToast === 'function') {
+        if (typeof msg === 'object' && msg !== null) {
+          showToast({
+            text: msg.text || msg.message || '',
+            type: msg.type || type,
+            id: msg.id || Date.now()
+          });
+        } else {
+          showToast({ text: String(msg), type, id: Date.now() });
+        }
+        return;
+      }
+      if (typeof window !== 'undefined' && typeof window.globalShowToast === 'function') {
+        if (typeof msg === 'object' && msg !== null) {
+          window.globalShowToast(msg.text || msg.message || '', msg.type || type);
+        } else {
+          window.globalShowToast(String(msg), type);
+        }
+      }
+    },
+    [showToast]
+  );
 
   // Đồng bộ window.globalShowToast (an toàn khi unmount)
   useEffect(() => {
@@ -414,16 +455,6 @@ export const GameView = (props) => {
   // ==========================================================================
   // 3. CÁC HÀM ĐIỀU PHỐI MENU, SETUP, AUTO-SAVE, RESUME & MOCK TEST
   // ==========================================================================
-  const notifyToast = useCallback(
-    (msg, type = 'info') => {
-      if (showToast) {
-        showToast({ text: String(msg), type, id: Date.now() });
-      } else if (typeof window !== 'undefined' && window.globalShowToast) {
-        window.globalShowToast(String(msg), type);
-      }
-    },
-    [showToast]
-  );
 
   // Xóa phiên lưu cũ của 1 game
   const handleClearSession = useCallback(
@@ -678,6 +709,16 @@ export const GameView = (props) => {
     handleBack(null);
   }, [handleBack]);
 
+  // Thoát phòng thi Khảo thí (gọi quitExam duy nhất 1 lần tập trung tại GameView)
+  const handleExitExam = useCallback(() => {
+    stopAllSpeech();
+    if (typeof activeExamLogic.quitExam === 'function') {
+      activeExamLogic.quitExam();
+    }
+    setRestoredSession(null);
+    setGameState('menu');
+  }, [stopAllSpeech, activeExamLogic]);
+
   // Kiểm tra nếu bài thi Khảo thí được kích hoạt trực tiếp từ state bên ngoài
   const isExternalExamActive =
     activeExamLogic?.examState?.status &&
@@ -686,22 +727,32 @@ export const GameView = (props) => {
 
   // Tính cờ AI thống nhất cho phiên đang chạy
   const activeGameAiMode = resolveConfigAiMode(gameConfig, isAiMode);
+  const resolvedLevel = gameConfig.level !== undefined ? gameConfig.level : currentLevel;
+  const resolvedTopic = gameConfig.topic !== undefined ? gameConfig.topic : currentTopic;
+  const resolvedDataMode = gameConfig.dataMode || dataMode;
 
-  // Gói props dùng chung đồng bộ cho toàn bộ 10 Mini-Games (dùng restoredSession chống re-render mỗi 5s)
+  // [Ver 1.2] Gói props dùng chung đầy đủ cho 10/10 Mini-Games (dùng restoredSession chống re-render mỗi 5s)
   const sharedGameProps = useMemo(
     () => ({
       cards,
       t,
       mainColor,
       lang,
-      level: gameConfig.level,
+      level: resolvedLevel,
+      currentLevel: resolvedLevel,
+      currentTopic: resolvedTopic,
+      dataMode: resolvedDataMode,
       isAiMode: activeGameAiMode,
       apiKey: activeApiKey,
       config: gameConfig,
       onPlay,
+      speak: onPlay,
+      stopSpeaking: stopAllSpeech,
+      onPause: stopAllSpeech,
       onBookmark,
+      onSaveToNotebook: onBookmark,
       notebook,
-      showToast,
+      showToast: notifyToast,
       onLogWrong,
       onMissingKey,
       onBack: handleBack,
@@ -722,13 +773,17 @@ export const GameView = (props) => {
       t,
       mainColor,
       lang,
-      gameConfig,
+      resolvedLevel,
+      resolvedTopic,
+      resolvedDataMode,
       activeGameAiMode,
       activeApiKey,
+      gameConfig,
       onPlay,
+      stopAllSpeech,
       onBookmark,
       notebook,
-      showToast,
+      notifyToast,
       onLogWrong,
       onMissingKey,
       handleBack,
@@ -766,6 +821,8 @@ export const GameView = (props) => {
             lang={lang}
             dataMode={dataMode}
             gameSessions={gameSessions}
+            showToast={notifyToast}
+            onSelectGame={undefined}
             onSelectQuiz={handleSelectQuiz}
             onStartMatch={handleStartMatch}
             onStartScramble={handleStartScramble}
@@ -778,6 +835,8 @@ export const GameView = (props) => {
             onStartReading={handleStartReading}
             onResume={handleResumeSession}
             onClearSession={handleClearSession}
+            onStartExam={handleStartMockTest}
+            onResumeExam={handleResumeMockTest}
             onStartMockTest={handleStartMockTest}
             onResumeMockTest={handleResumeMockTest}
             onOpenExamPoolManager={onOpenExamPoolManager}
@@ -791,18 +850,23 @@ export const GameView = (props) => {
         <div className="absolute inset-0 z-[100] bg-white">
           <ExamUIShell
             examLogic={activeExamLogic}
+            question={undefined}
+            currentIndex={undefined}
+            totalQuestions={undefined}
+            timeLeft={undefined}
+            onAnswerSubmit={undefined}
+            onSpeak={undefined}
             mainColor={mainColor}
-            onExit={() => {
-              stopAllSpeech();
-              if (activeExamLogic.quitExam) activeExamLogic.quitExam();
-              setRestoredSession(null);
-              setGameState('menu');
-            }}
+            onExit={handleExitExam}
             onLogWrong={onLogWrong}
             onOpenIncorrect={onOpenIncorrect}
             onBookmark={onBookmark}
             notebook={notebook}
             onPlay={onPlay}
+            speak={onPlay}
+            stopSpeaking={stopAllSpeech}
+            onPause={stopAllSpeech}
+            showToast={notifyToast}
             lang={lang}
           />
         </div>
@@ -812,10 +876,8 @@ export const GameView = (props) => {
       {gameState === 'quiz_setup' && QuizSetup && (
         <div className="w-full h-full bg-white flex flex-col items-center justify-center p-6 overflow-hidden z-50">
           <QuizSetup
-            t={t}
             mainColor={mainColor}
             lang={lang}
-            dataMode={dataMode}
             currentLevel={currentLevel}
             onOpenAiConfig={onOpenAiConfig}
             onStart={(arg1, arg2) => {
@@ -845,7 +907,6 @@ export const GameView = (props) => {
       {gameState === 'match_setup' && MatchSetup && (
         <div className="w-full h-full bg-white flex flex-col items-center justify-center p-6 overflow-hidden z-50">
           <MatchSetup
-            t={t}
             mainColor={mainColor}
             initialAiMode={matchAiPreset}
             onStart={(arg1, arg2) => {
@@ -860,7 +921,6 @@ export const GameView = (props) => {
       {gameState === 'fillblank_setup' && FillBlankSetup && (
         <div className="w-full h-full bg-white flex flex-col items-center justify-center p-6 overflow-hidden z-50">
           <FillBlankSetup
-            t={t}
             mainColor={mainColor}
             onStart={(arg1, arg2) => {
               const { config } = resolveSetupStartArgs('fillblank', arg1, arg2);
@@ -874,7 +934,6 @@ export const GameView = (props) => {
       {gameState === 'spotmistake_setup' && SpotMistakeSetup && (
         <div className="w-full h-full bg-white flex flex-col items-center justify-center p-6 overflow-hidden z-50">
           <SpotMistakeSetup
-            t={t}
             mainColor={mainColor}
             onStart={(arg1, arg2) => {
               const { config } = resolveSetupStartArgs('spotmistake', arg1, arg2);
@@ -888,7 +947,6 @@ export const GameView = (props) => {
       {gameState === 'oddoneout_setup' && OddOneOutSetup && (
         <div className="w-full h-full bg-white flex flex-col items-center justify-center p-6 overflow-hidden z-50">
           <OddOneOutSetup
-            t={t}
             mainColor={mainColor}
             onStart={(arg1, arg2) => {
               const { config } = resolveSetupStartArgs('oddoneout', arg1, arg2);
@@ -902,7 +960,6 @@ export const GameView = (props) => {
       {gameState === 'imagequiz_setup' && ImageQuizSetup && (
         <div className="w-full h-full bg-white flex flex-col items-center justify-center p-6 overflow-hidden z-50">
           <ImageQuizSetup
-            t={t}
             mainColor="emerald"
             onStart={(arg1, arg2) => {
               const { config } = resolveSetupStartArgs('imagequiz', arg1, arg2);
@@ -916,7 +973,6 @@ export const GameView = (props) => {
       {gameState === 'pronunciation_setup' && PronunciationSetup && (
         <div className="w-full h-full bg-white flex flex-col items-center justify-center p-6 overflow-hidden z-50">
           <PronunciationSetup
-            t={t}
             mainColor="indigo"
             onStart={(arg1, arg2) => {
               const { config } = resolveSetupStartArgs('pronunciation', arg1, arg2);
@@ -930,7 +986,6 @@ export const GameView = (props) => {
       {gameState === 'listening_setup' && ListeningSetup && (
         <div className="w-full h-full bg-white flex flex-col items-center justify-center p-6 overflow-hidden z-50">
           <ListeningSetup
-            t={t}
             mainColor="cyan"
             onStart={(arg1, arg2) => {
               const { config } = resolveSetupStartArgs('listening', arg1, arg2);
@@ -944,7 +999,6 @@ export const GameView = (props) => {
       {gameState === 'reading_setup' && ReadingSetup && (
         <div className="w-full h-full bg-white flex flex-col items-center justify-center p-6 overflow-hidden z-50">
           <ReadingSetup
-            t={t}
             mainColor="slate"
             onStart={(arg1, arg2) => {
               const { config } = resolveSetupStartArgs('reading', arg1, arg2);
@@ -962,10 +1016,7 @@ export const GameView = (props) => {
             <div className="absolute top-[-50px] right-[-50px] w-32 h-32 bg-indigo-100 rounded-full opacity-50"></div>
             <div className="absolute bottom-[-20px] left-[-20px] w-24 h-24 bg-indigo-100 rounded-full opacity-50"></div>
             <GameResult
-              t={t}
               mainColor={mainColor}
-              score={finalStats.score}
-              sessionTotal={finalStats.total}
               correctCount={finalStats.score}
               wrongCount={finalStats.wrong}
               onBack={handleReturnToMenu}
@@ -1005,8 +1056,6 @@ export const GameView = (props) => {
               listenMode={gameConfig.listenMode}
               timeLimit={gameConfig.timeLimit}
               hardMode={gameConfig.hardMode}
-              isLoading={isLoading}
-              AiModeSwitch={AiModeSwitch}
             />
           )}
 

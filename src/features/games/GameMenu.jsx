@@ -1,20 +1,114 @@
 // ============================================================================
 // FILE 50/85: src/features/games/GameMenu.jsx
-// NGUỒN GỐC: tang_5.js (Block 5.7 - GameMenu V1.09) + transshipment-04.js
+// NGUỒN GỐC: tang_5.js (Block 5.7 - GameMenu V1.09)
+// PHIÊN BẢN: Ver 1.0
+// NGÀY GIỜ NÂNG CẤP: 25/11/2026 - 15:04 (GMT+7)
 // NHIỆM VỤ: Giao diện Menu chính (TRAINING MODE) điều hướng 10 Mini-games
 //           và hệ thống Đánh giá năng lực (Mock Test IOE / HSK / IELTS).
-//           Bảo toàn 100% giao diện 2 cột, Strict Routing theo dataMode,
-//           công tắc A/B Testing, Resume Badge & Modal xác nhận.
+//           Nâng cấp Ver 1.0:
+//           1. Diệt 2/2 MEDIUM Radar (R05_UNSAFE_LOCALSTORAGE_SET) bằng
+//              Utils.safeLocalStorageSet cho fc_mock_delay & fc_debug_legacy_ai.
+//           2. Vá bẫy NaN & đọc đa định dạng an toàn cho fc_mock_delay.
+//           3. Đọc activeExamSession tương thích kép (STORAGE_KEYS.ACTIVE_EXAM
+//              & fc_active_exam_session).
+//           4. Thanh trừng 3 nhánh di sản 'vi', chuẩn hóa 2 ngôn ngữ en/zh.
+//           5. Nhận prop showToast trực tiếp (fallback window.globalShowToast)
+//              và chuẩn hóa A11y (button aria-pressed, dialog + phím Escape).
 // ============================================================================
 
-import React, { useState, useEffect } from 'react';
+
+import React, { useState, useEffect, useCallback } from 'react';
 import { Icons } from '../../components/common/Icons';
 import { STORAGE_KEYS } from '../../config/constants';
+import { Utils } from '../../utils/helpers';
+
+
+const MOCK_DELAY_OPTIONS = [0, 3, 5, 8, 15];
+
+
+/**
+ * Đọc khóa phiên thi Khảo thí đang dang dở (tương thích kép giữa các phiên bản khóa)
+ */
+const readActiveExamSession = () => {
+  if (typeof localStorage === 'undefined') return null;
+  const candidateKeys = [
+    STORAGE_KEYS?.ACTIVE_EXAM || 'fc_active_exam',
+    'fc_active_exam_session',
+    'fc_active_exam'
+  ];
+  const seen = new Set();
+
+
+  for (const key of candidateKeys) {
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const cleaned = raw.trim().replace(/^"+|"+$/g, '').trim();
+      if (cleaned && cleaned !== 'null' && cleaned !== 'undefined') {
+        return cleaned;
+      }
+    } catch {
+      // Bỏ qua lỗi đọc localStorage trong chế độ hạn chế quyền lưu trữ
+    }
+  }
+  return null;
+};
+
+
+/**
+ * Đọc cờ A/B Testing luồng AI Legacy an toàn
+ */
+const readLegacyAiFlag = () => {
+  if (typeof localStorage === 'undefined') return false;
+  try {
+    const raw = localStorage.getItem('fc_debug_legacy_ai');
+    if (!raw) return false;
+    const cleaned = raw.trim().replace(/^"+|"+$/g, '').toLowerCase();
+    return cleaned === 'true';
+  } catch {
+    return false;
+  }
+};
+
+
+/**
+ * Đọc thời gian chờ chuyển câu đa định dạng, chống tuyệt đối giá trị NaN
+ */
+const readConfiguredMockDelay = () => {
+  if (typeof localStorage === 'undefined') return 3;
+  try {
+    if (Utils && typeof Utils.safeJsonParse === 'function') {
+      const parsedVal = Utils.safeJsonParse('fc_mock_delay', null);
+      if (parsedVal !== null && parsedVal !== undefined && parsedVal !== '') {
+        const num = Number(parsedVal);
+        if (Number.isFinite(num) && num >= 0) {
+          return Math.floor(num);
+        }
+      }
+    }
+    const raw = localStorage.getItem('fc_mock_delay');
+    if (raw === null || raw === '') return 3;
+    const cleaned = raw.trim().replace(/^"+|"+$/g, '');
+    const parsed = parseInt(cleaned, 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 3;
+  } catch {
+    return 3;
+  }
+};
+
 
 /**
  * Helper hiển thị Icon an toàn kèm Fallback Emoji nếu thiếu SVG
  */
-const MenuIcon = ({ icon: IconComp, fallback = '🎮', size = 20, className = '', fill = 'none' }) => {
+const MenuIcon = ({
+  icon: IconComp,
+  fallback = '🎮',
+  size = 20,
+  className = '',
+  fill = 'none'
+}) => {
   if (IconComp) {
     return <IconComp size={size} className={className} fill={fill} />;
   }
@@ -34,6 +128,7 @@ const MenuIcon = ({ icon: IconComp, fallback = '🎮', size = 20, className = ''
   );
 };
 
+
 /**
  * Helper dịch chuỗi an toàn (Tránh hiển thị key thô nếu từ điển thiếu)
  */
@@ -44,12 +139,14 @@ const safeTranslate = (t, key, fallbackText) => {
   return res;
 };
 
+
 export const GameMenu = ({
   t,
   mainColor = 'indigo',
   lang = 'en',
   dataMode = 'vocab',
   gameSessions = {},
+  showToast,
   // Bộ callback chuẩn từ Block 5.7 (tang_5.js)
   onSelectQuiz,
   onStartMatch,
@@ -75,75 +172,81 @@ export const GameMenu = ({
   const [matchAiMode, setMatchAiMode] = useState(false);
   const [pendingResumeGame, setPendingResumeGame] = useState(null);
 
+
   // [CHIẾN DỊCH SKELETON SAVE] Khởi tạo trực tiếp bài thi Khảo thí đang dang dở
-  const [activeExamSession, setActiveExamSession] = useState(() => {
-    try {
-      const examKey = STORAGE_KEYS?.ACTIVE_EXAM || 'fc_active_exam';
-      return localStorage.getItem(examKey) || null;
-    } catch {
-      return null;
-    }
-  });
+  const [activeExamSession, setActiveExamSession] = useState(readActiveExamSession);
+
 
   // [A/B TESTING] Cờ tính năng cho QA (Chuyển đổi luồng AI 2-Shot cũ và 1-Shot mới)
-  const [useLegacyAi, setUseLegacyAi] = useState(() => {
-    try {
-      return localStorage.getItem('fc_debug_legacy_ai') === 'true';
-    } catch {
-      return false;
-    }
-  });
+  const [useLegacyAi, setUseLegacyAi] = useState(readLegacyAiFlag);
 
-  // Bộ chọn thời gian chờ chuyển câu (0s, 3s, 5s, 8s, 15s)
-  const [mockDelay, setMockDelay] = useState(() => {
-    try {
-      const saved = localStorage.getItem('fc_mock_delay');
-      return saved !== null ? parseInt(saved, 10) : 3;
-    } catch {
-      return 3;
-    }
-  });
+
+  // Bộ chọn thời gian chờ chuyển câu (0s, 3s, 5s, 8s, 15s) - Chống NaN tuyệt đối
+  const [mockDelay, setMockDelay] = useState(readConfiguredMockDelay);
+
+
+  // Helper phát thông báo ưu tiên prop showToast, fallback window.globalShowToast
+  const notifyToast = useCallback(
+    (msg, type = 'info') => {
+      if (typeof showToast === 'function') {
+        showToast(msg, type);
+        return;
+      }
+      if (typeof window !== 'undefined' && typeof window.globalShowToast === 'function') {
+        window.globalShowToast(msg, type);
+      }
+    },
+    [showToast]
+  );
+
 
   // Đồng bộ lại activeExamSession nếu localStorage thay đổi từ tab/luồng khác
   useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
     const syncExamSession = () => {
-      try {
-        const examKey = STORAGE_KEYS?.ACTIVE_EXAM || 'fc_active_exam';
-        setActiveExamSession(localStorage.getItem(examKey) || null);
-      } catch {
-        setActiveExamSession(null);
-      }
+      setActiveExamSession(readActiveExamSession());
     };
     window.addEventListener('storage', syncExamSession);
     return () => window.removeEventListener('storage', syncExamSession);
   }, []);
 
+
+  // Đóng Modal "Tiếp tục trò chơi?" khi nhấn phím Escape
+  useEffect(() => {
+    if (!pendingResumeGame || typeof window === 'undefined') return undefined;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setPendingResumeGame(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [pendingResumeGame]);
+
+
   const handleMockDelayChange = (val) => {
-    setMockDelay(val);
-    try {
-      localStorage.setItem('fc_mock_delay', val.toString());
-    } catch (e) {
-      console.warn('Save mock delay error:', e);
+    const safeVal = Number.isFinite(Number(val)) && Number(val) >= 0 ? Math.floor(Number(val)) : 3;
+    setMockDelay(safeVal);
+    if (Utils && typeof Utils.safeLocalStorageSet === 'function') {
+      Utils.safeLocalStorageSet('fc_mock_delay', String(safeVal));
     }
   };
+
 
   const handleToggleLegacyAi = () => {
     const nextState = !useLegacyAi;
     setUseLegacyAi(nextState);
-    try {
-      localStorage.setItem('fc_debug_legacy_ai', String(nextState));
-    } catch (e) {
-      console.warn('Save legacy AI flag error:', e);
+    if (Utils && typeof Utils.safeLocalStorageSet === 'function') {
+      Utils.safeLocalStorageSet('fc_debug_legacy_ai', String(nextState));
     }
-    if (typeof window !== 'undefined' && window.globalShowToast) {
-      window.globalShowToast(
-        nextState
-          ? 'Đã BẬT luồng AI 2-Shot cũ (Chậm hơn)'
-          : 'Đã TẮT (Dùng luồng 1-Shot siêu tốc mới)',
-        nextState ? 'warning' : 'success'
-      );
-    }
+    notifyToast(
+      nextState
+        ? 'Đã BẬT luồng AI 2-Shot cũ (Chậm hơn)'
+        : 'Đã TẮT (Dùng luồng 1-Shot siêu tốc mới)',
+      nextState ? 'warning' : 'success'
+    );
   };
+
 
   // Điều phối mở Game mới (Hỗ trợ cả prop riêng lẻ lẫn onSelectGame)
   const triggerNewGame = (type, options = {}) => {
@@ -161,10 +264,13 @@ export const GameMenu = ({
     if (type === 'listening' && onStartListening) return onStartListening(options);
     if (type === 'reading' && onStartReading) return onStartReading(options);
 
+
     if (onSelectGame) {
       onSelectGame(type, { matchAiMode, ...options });
     }
+    return undefined;
   };
+
 
   // Điều phối khôi phục ván đang dở
   const triggerResumeGame = (type) => {
@@ -175,6 +281,7 @@ export const GameMenu = ({
     }
   };
 
+
   // Điều phối bắt đầu bài thi Khảo thí
   const triggerStartMockTest = (profileId) => {
     if (onStartMockTest) {
@@ -184,6 +291,7 @@ export const GameMenu = ({
     }
   };
 
+
   // Điều phối tiếp tục bài thi Khảo thí
   const triggerResumeMockTest = (sessionId) => {
     if (onResumeMockTest) {
@@ -192,6 +300,7 @@ export const GameMenu = ({
       onResumeExam(sessionId);
     }
   };
+
 
   // Huy hiệu "Tiếp tục" màu vàng nảy ở góc thẻ game
   const ResumeBadge = ({ type }) => {
@@ -211,8 +320,11 @@ export const GameMenu = ({
     );
   };
 
+
   // [BẢN VÁ V1.09] Sử dụng trực tiếp dataMode từ Tầng 6 (Strict Routing)
   const activeDataMode = dataMode || 'vocab';
+  const safeLang = lang === 'zh' ? 'zh' : 'en';
+
 
   // Các hàm xử lý khi click vào từng thẻ Game
   const handleQuizClick = () => {
@@ -256,7 +368,8 @@ export const GameMenu = ({
     else triggerNewGame('reading');
   };
 
-  // Bảng màu chủ đạo an toàn với Tailwind JIT Compiler
+
+  // Bảng màu chủ đạo tĩnh an toàn với Tailwind JIT Compiler
   const isRedTheme = mainColor === 'red';
   const themeCircleBg = isRedTheme ? 'bg-red-50' : 'bg-indigo-50';
   const themeIconText = isRedTheme ? 'text-red-600' : 'text-indigo-600';
@@ -275,6 +388,7 @@ export const GameMenu = ({
     ? 'bg-red-600 hover:bg-red-700'
     : 'bg-indigo-600 hover:bg-indigo-700';
 
+
   return (
     <div className="flex flex-col items-center w-full max-w-5xl mx-auto text-center animate-in fade-in z-10 relative px-2 sm:px-6 pt-2">
       {/* 1. THANH CÔNG CỤ GÓC TRÊN PHẢI: AI CONFIG & A/B TESTING TOGGLE */}
@@ -292,6 +406,7 @@ export const GameMenu = ({
         )}
         <button
           type="button"
+          aria-pressed={useLegacyAi}
           onClick={handleToggleLegacyAi}
           className={`text-[9px] sm:text-[10px] font-bold px-2.5 py-1 rounded border flex items-center gap-1.5 transition-all shadow-sm ${
             useLegacyAi
@@ -305,6 +420,7 @@ export const GameMenu = ({
         </button>
       </div>
 
+
       {/* 2. HEADER BIỂU TƯỢNG & TIÊU ĐỀ TRAINING MODE */}
       <div
         className={`w-14 h-14 sm:w-16 sm:h-16 ${themeCircleBg} rounded-full flex items-center justify-center mb-3 sm:mb-4 shadow-inner`}
@@ -317,6 +433,7 @@ export const GameMenu = ({
       <p className="text-gray-500 text-[11px] sm:text-xs mb-6 sm:mb-8">
         Chọn chế độ luyện tập để bắt đầu
       </p>
+
 
       {/* 3. BANNER KHÔI PHỤC BÀI THI KHẢO THÍ ĐANG DANG DỞ */}
       {activeExamSession && (
@@ -344,6 +461,7 @@ export const GameMenu = ({
         </div>
       )}
 
+
       {/* 4. BỐ CỤC 2 CỘT CHÍNH: LUYỆN TẬP HÀNG NGÀY (TRÁI) & ĐÁNH GIÁ NĂNG LỰC (PHẢI) */}
       <div className="flex flex-col md:flex-row w-full gap-5 lg:gap-8 pb-10 text-left items-start">
         {/* ====================================================================
@@ -356,6 +474,7 @@ export const GameMenu = ({
               Luyện tập hàng ngày
             </h3>
           </div>
+
 
           {/* Nút lớn: Trắc Nghiệm */}
           <div className="relative group w-full">
@@ -385,9 +504,10 @@ export const GameMenu = ({
             <ResumeBadge type="quiz" />
           </div>
 
+
           {/* Lưới 2 cột các Mini-games */}
           <div className="grid grid-cols-2 gap-2.5 sm:gap-3 w-full">
-            {/* Match Game (Có nút ngôi sao bật/tắt AI tạo nhiễu khó) */}
+            {/* Match Game (Có nút ngôi sao bật/tắt AI tạo nhiễu khó chuẩn button A11y) */}
             <div className="relative group h-full">
               <button
                 type="button"
@@ -406,7 +526,10 @@ export const GameMenu = ({
                   </div>
                 </div>
               </button>
-              <div
+              <button
+                type="button"
+                aria-pressed={matchAiMode}
+                aria-label="Bật/Tắt AI tạo nhiễu khó"
                 className={`absolute top-2 right-2 p-1 rounded-full cursor-pointer transition-all z-20 ${
                   matchAiMode
                     ? 'bg-purple-100 text-purple-600 ring-1 ring-purple-200'
@@ -414,7 +537,7 @@ export const GameMenu = ({
                 }`}
                 onClick={(e) => {
                   e.stopPropagation();
-                  setMatchAiMode(!matchAiMode);
+                  setMatchAiMode((prev) => !prev);
                 }}
                 title="Bật/Tắt AI tạo nhiễu khó"
               >
@@ -424,9 +547,10 @@ export const GameMenu = ({
                   size={12}
                   fill={matchAiMode ? 'currentColor' : 'none'}
                 />
-              </div>
+              </button>
               <ResumeBadge type="match" />
             </div>
+
 
             {/* Scramble Game */}
             <div className="relative group h-full">
@@ -450,8 +574,9 @@ export const GameMenu = ({
               <ResumeBadge type="scramble" />
             </div>
 
+
             {/* NHÓM GAME TỪ VỰNG (HIỂN THỊ KHI DATAMODE === 'vocab') */}
-            {lang !== 'vi' && activeDataMode === 'vocab' && (
+            {activeDataMode === 'vocab' && (
               <>
                 {/* Từ Khác Loại */}
                 <div className="relative group h-full animate-in zoom-in">
@@ -473,6 +598,7 @@ export const GameMenu = ({
                   <ResumeBadge type="oddoneout" />
                 </div>
 
+
                 {/* Đoán Hình */}
                 <div className="relative group h-full animate-in zoom-in">
                   <button
@@ -493,8 +619,9 @@ export const GameMenu = ({
                   <ResumeBadge type="imagequiz" />
                 </div>
 
-                {/* Vua Ngữ Âm (Ẩn khi học Tiếng Trung zh) */}
-                {lang !== 'zh' && (
+
+                {/* Vua Ngữ Âm (Chỉ hiển thị cho Tiếng Anh) */}
+                {safeLang === 'en' && (
                   <div className="relative group h-full animate-in zoom-in col-span-2">
                     <button
                       type="button"
@@ -517,8 +644,9 @@ export const GameMenu = ({
               </>
             )}
 
+
             {/* NHÓM GAME CÂU VĂN (HIỂN THỊ KHI DATAMODE === 'sentence') */}
-            {lang !== 'vi' && activeDataMode === 'sentence' && (
+            {activeDataMode === 'sentence' && (
               <>
                 {/* Điền Từ */}
                 <div className="relative group h-full animate-in zoom-in">
@@ -540,6 +668,7 @@ export const GameMenu = ({
                   <ResumeBadge type="fillblank" />
                 </div>
 
+
                 {/* Tìm Lỗi Sai */}
                 <div className="relative group h-full animate-in zoom-in">
                   <button
@@ -560,6 +689,7 @@ export const GameMenu = ({
                   <ResumeBadge type="spotmistake" />
                 </div>
 
+
                 {/* Đôi Tai Vàng */}
                 <div className="relative group h-full animate-in zoom-in">
                   <button
@@ -579,6 +709,7 @@ export const GameMenu = ({
                   </button>
                   <ResumeBadge type="listening" />
                 </div>
+
 
                 {/* Đọc Hiểu */}
                 <div className="relative group h-full animate-in zoom-in">
@@ -604,170 +735,180 @@ export const GameMenu = ({
           </div>
         </div>
 
+
         {/* ====================================================================
             CỘT PHẢI: ĐÁNH GIÁ NĂNG LỰC (MOCK TEST PRO & CHỜ CHUYỂN CÂU)
             ==================================================================== */}
-        {lang !== 'vi' && (
-          <div className="w-full md:w-[280px] lg:w-[320px] shrink-0 flex flex-col gap-3 mt-4 md:mt-0 animate-in slide-in-from-right-8">
-            <div className="flex items-center justify-between w-full mb-1 px-2">
-              <div className="flex items-center gap-2">
-                <MenuIcon icon={Icons.Award} fallback="🏆" size={16} className="text-red-500" />
-                <h3 className="text-sm sm:text-base font-bold text-gray-700 uppercase tracking-wider">
-                  Đánh giá năng lực
-                </h3>
+        <div className="w-full md:w-[280px] lg:w-[320px] shrink-0 flex flex-col gap-3 mt-4 md:mt-0 animate-in slide-in-from-right-8">
+          <div className="flex items-center justify-between w-full mb-1 px-2">
+            <div className="flex items-center gap-2">
+              <MenuIcon icon={Icons.Award} fallback="🏆" size={16} className="text-red-500" />
+              <h3 className="text-sm sm:text-base font-bold text-gray-700 uppercase tracking-wider">
+                Đánh giá năng lực
+              </h3>
+            </div>
+            {onOpenExamPoolManager && (
+              <button
+                type="button"
+                onClick={onOpenExamPoolManager}
+                className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg border border-indigo-200 hover:bg-indigo-100 transition-colors shadow-sm flex items-center gap-1 active:scale-95"
+                title="Quản lý Ngân hàng đề thi"
+              >
+                <MenuIcon icon={Icons.Database} fallback="🗄️" size={14} />
+                <span className="text-[10px] font-bold hidden sm:inline">Ngân hàng đề</span>
+              </button>
+            )}
+          </div>
+
+
+          <div className="bg-gradient-to-b from-blue-50 to-indigo-50/50 p-3 sm:p-4 rounded-2xl border border-blue-100 shadow-sm flex flex-col gap-3 w-full">
+            {/* Thẻ PRO 1: Khảo thí IOE (Tiếng Anh) / Thi Thử HSK (Tiếng Trung) */}
+            <div className="p-4 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-xl shadow-md flex flex-col items-start gap-2.5 text-left border border-white/20 relative overflow-hidden group">
+              <div className="absolute -right-4 -top-4 opacity-10 group-hover:scale-150 transition-transform duration-500">
+                <MenuIcon icon={Icons.Award} fallback="🏆" size={60} />
               </div>
-              {onOpenExamPoolManager && (
-                <button
-                  type="button"
-                  onClick={onOpenExamPoolManager}
-                  className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg border border-indigo-200 hover:bg-indigo-100 transition-colors shadow-sm flex items-center gap-1 active:scale-95"
-                  title="Quản lý Ngân hàng đề thi"
-                >
-                  <MenuIcon icon={Icons.Database} fallback="🗄️" size={14} />
-                  <span className="text-[10px] font-bold hidden sm:inline">Ngân hàng đề</span>
-                </button>
-              )}
+              <div className="flex justify-between w-full items-center relative z-10">
+                <div className="p-1.5 bg-white/20 backdrop-blur-sm rounded-lg">
+                  <MenuIcon icon={Icons.Award} fallback="🏆" size={16} />
+                </div>
+                <div className="bg-white/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold backdrop-blur-sm tracking-widest border border-white/30">
+                  PRO
+                </div>
+              </div>
+              <div className="relative z-10 mt-1 w-full">
+                <div className="font-black text-lg leading-tight mb-1">
+                  {safeLang === 'zh' ? 'Thi Thử HSK' : 'Khảo thí IOE'}
+                </div>
+                <div className="flex gap-2 w-full mt-2">
+                  <button
+                    type="button"
+                    onClick={() => triggerStartMockTest(safeLang === 'zh' ? 'hsk_std' : 'ioe_std')}
+                    className="flex-1 py-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-lg text-xs font-bold transition-colors border border-white/30 active:scale-95 flex flex-col items-center"
+                  >
+                    <span>Tiêu chuẩn</span>
+                    <span className="text-[9px] font-normal opacity-90">
+                      {safeLang === 'zh' ? '(45 câu)' : '(200 câu)'}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      triggerStartMockTest(safeLang === 'zh' ? 'hsk_mini' : 'ioe_mini')
+                    }
+                    className="flex-1 py-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-lg text-xs font-bold transition-colors border border-white/30 active:scale-95 flex flex-col items-center"
+                  >
+                    <span>Mini Test</span>
+                    <span className="text-[9px] font-normal opacity-90">
+                      {safeLang === 'zh' ? '(15 câu)' : '(50 câu)'}
+                    </span>
+                  </button>
+                </div>
+              </div>
             </div>
 
-            <div className="bg-gradient-to-b from-blue-50 to-indigo-50/50 p-3 sm:p-4 rounded-2xl border border-blue-100 shadow-sm flex flex-col gap-3 w-full">
-              {/* Thẻ PRO 1: Khảo thí IOE (Tiếng Anh) / Thi Thử HSK (Tiếng Trung) */}
-              <div className="p-4 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-xl shadow-md flex flex-col items-start gap-2.5 text-left border border-white/20 relative overflow-hidden group">
+
+            {/* Thẻ PRO 2: IELTS Reading (Chỉ hiện khi học Tiếng Anh) */}
+            {safeLang === 'en' && (
+              <div className="p-4 bg-gradient-to-br from-rose-500 to-red-600 text-white rounded-xl shadow-md flex flex-col items-start gap-2.5 text-left border border-white/20 relative overflow-hidden group">
                 <div className="absolute -right-4 -top-4 opacity-10 group-hover:scale-150 transition-transform duration-500">
-                  <MenuIcon icon={Icons.Award} fallback="🏆" size={60} />
+                  <MenuIcon icon={Icons.BookOpen} fallback="📖" size={60} />
                 </div>
                 <div className="flex justify-between w-full items-center relative z-10">
                   <div className="p-1.5 bg-white/20 backdrop-blur-sm rounded-lg">
-                    <MenuIcon icon={Icons.Award} fallback="🏆" size={16} />
+                    <MenuIcon icon={Icons.BookOpen} fallback="📖" size={16} />
                   </div>
                   <div className="bg-white/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold backdrop-blur-sm tracking-widest border border-white/30">
                     PRO
                   </div>
                 </div>
                 <div className="relative z-10 mt-1 w-full">
-                  <div className="font-black text-lg leading-tight mb-1">
-                    {lang === 'zh' ? 'Thi Thử HSK' : 'Khảo thí IOE'}
-                  </div>
+                  <div className="font-black text-lg leading-tight mb-1">IELTS Reading</div>
                   <div className="flex gap-2 w-full mt-2">
                     <button
                       type="button"
-                      onClick={() => triggerStartMockTest(lang === 'zh' ? 'hsk_std' : 'ioe_std')}
+                      onClick={() => triggerStartMockTest('ielts_std')}
                       className="flex-1 py-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-lg text-xs font-bold transition-colors border border-white/30 active:scale-95 flex flex-col items-center"
                     >
-                      <span>Tiêu chuẩn</span>
-                      <span className="text-[9px] font-normal opacity-90">
-                        {lang === 'zh' ? '(45 câu)' : '(200 câu)'}
-                      </span>
+                      <span>Full Test</span>
+                      <span className="text-[9px] font-normal opacity-90">(60 phút)</span>
                     </button>
                     <button
                       type="button"
-                      onClick={() => triggerStartMockTest(lang === 'zh' ? 'hsk_mini' : 'ioe_mini')}
+                      onClick={() => triggerStartMockTest('ielts_mini')}
                       className="flex-1 py-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-lg text-xs font-bold transition-colors border border-white/30 active:scale-95 flex flex-col items-center"
                     >
                       <span>Mini Test</span>
-                      <span className="text-[9px] font-normal opacity-90">
-                        {lang === 'zh' ? '(15 câu)' : '(50 câu)'}
-                      </span>
+                      <span className="text-[9px] font-normal opacity-90">(15 phút)</span>
                     </button>
                   </div>
                 </div>
               </div>
+            )}
 
-              {/* Thẻ PRO 2: IELTS Reading (Chỉ hiện khi học Tiếng Anh) */}
-              {lang === 'en' && (
-                <div className="p-4 bg-gradient-to-br from-rose-500 to-red-600 text-white rounded-xl shadow-md flex flex-col items-start gap-2.5 text-left border border-white/20 relative overflow-hidden group">
-                  <div className="absolute -right-4 -top-4 opacity-10 group-hover:scale-150 transition-transform duration-500">
-                    <MenuIcon icon={Icons.BookOpen} fallback="📖" size={60} />
-                  </div>
-                  <div className="flex justify-between w-full items-center relative z-10">
-                    <div className="p-1.5 bg-white/20 backdrop-blur-sm rounded-lg">
-                      <MenuIcon icon={Icons.BookOpen} fallback="📖" size={16} />
-                    </div>
-                    <div className="bg-white/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold backdrop-blur-sm tracking-widest border border-white/30">
-                      PRO
-                    </div>
-                  </div>
-                  <div className="relative z-10 mt-1 w-full">
-                    <div className="font-black text-lg leading-tight mb-1">IELTS Reading</div>
-                    <div className="flex gap-2 w-full mt-2">
-                      <button
-                        type="button"
-                        onClick={() => triggerStartMockTest('ielts_std')}
-                        className="flex-1 py-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-lg text-xs font-bold transition-colors border border-white/30 active:scale-95 flex flex-col items-center"
-                      >
-                        <span>Full Test</span>
-                        <span className="text-[9px] font-normal opacity-90">(60 phút)</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => triggerStartMockTest('ielts_mini')}
-                        className="flex-1 py-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-lg text-xs font-bold transition-colors border border-white/30 active:scale-95 flex flex-col items-center"
-                      >
-                        <span>Mini Test</span>
-                        <span className="text-[9px] font-normal opacity-90">(15 phút)</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
 
-              {/* Lưu ý kết nối mạng & API Key */}
-              <div className="mt-1 p-2.5 bg-white/60 backdrop-blur-md rounded-lg border border-white text-center text-[9px] sm:text-[10px] text-gray-500 font-medium leading-relaxed">
-                <p className="flex items-center justify-center gap-1 mb-0.5">
+            {/* Lưu ý kết nối mạng & API Key */}
+            <div className="mt-1 p-2.5 bg-white/60 backdrop-blur-md rounded-lg border border-white text-center text-[9px] sm:text-[10px] text-gray-500 font-medium leading-relaxed">
+              <p className="flex items-center justify-center gap-1 mb-0.5">
+                <MenuIcon
+                  icon={Icons.AlertCircle}
+                  fallback="⚠️"
+                  size={12}
+                  className="text-orange-400"
+                />
+                Bài thi bám sát cấu trúc chuẩn.
+              </p>
+              <p>Yêu cầu kết nối mạng ổn định & API Key.</p>
+            </div>
+
+
+            {/* Bộ chọn thời gian chờ chuyển câu (0s, 3s, 5s, 8s, 15s) */}
+            <div className="mt-2 bg-white rounded-xl border border-gray-200 shadow-sm p-3 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
                   <MenuIcon
-                    icon={Icons.AlertCircle}
-                    fallback="⚠️"
-                    size={12}
-                    className="text-orange-400"
+                    icon={Icons.Clock}
+                    fallback="⏱️"
+                    size={16}
+                    className="text-orange-500"
                   />
-                  Bài thi bám sát cấu trúc chuẩn.
-                </p>
-                <p>Yêu cầu kết nối mạng ổn định & API Key.</p>
-              </div>
-
-              {/* Bộ chọn thời gian chờ chuyển câu (0s, 3s, 5s, 8s, 15s) */}
-              <div className="mt-2 bg-white rounded-xl border border-gray-200 shadow-sm p-3 flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <MenuIcon
-                      icon={Icons.Clock}
-                      fallback="⏱️"
-                      size={16}
-                      className="text-orange-500"
-                    />
-                    <span className="text-xs font-bold text-gray-700">Chờ chuyển câu:</span>
-                  </div>
-                  <span className="text-[10px] font-mono bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-bold shadow-inner">
-                    {mockDelay}s
-                  </span>
+                  <span className="text-xs font-bold text-gray-700">Chờ chuyển câu:</span>
                 </div>
-                <div className="flex justify-between gap-1 w-full">
-                  {[0, 3, 5, 8, 15].map((sec) => (
-                    <button
-                      key={sec}
-                      type="button"
-                      onClick={() => handleMockDelayChange(sec)}
-                      className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all border ${
-                        mockDelay === sec
-                          ? 'bg-orange-500 text-white border-orange-500 shadow-md scale-105 z-10'
-                          : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-orange-50'
-                      }`}
-                    >
-                      {sec}s
-                    </button>
-                  ))}
-                </div>
-                <p className="text-[9px] text-gray-400 italic text-center mt-1">
-                  Tạo thời gian chết giúp AI nạp đạn, tránh sập mạng.
-                </p>
+                <span className="text-[10px] font-mono bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-bold shadow-inner">
+                  {mockDelay}s
+                </span>
               </div>
+              <div className="flex justify-between gap-1 w-full">
+                {MOCK_DELAY_OPTIONS.map((sec) => (
+                  <button
+                    key={sec}
+                    type="button"
+                    aria-pressed={mockDelay === sec}
+                    onClick={() => handleMockDelayChange(sec)}
+                    className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all border ${
+                      mockDelay === sec
+                        ? 'bg-orange-500 text-white border-orange-500 shadow-md scale-105 z-10'
+                        : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-orange-50'
+                    }`}
+                  >
+                    {sec}s
+                  </button>
+                ))}
+              </div>
+              <p className="text-[9px] text-gray-400 italic text-center mt-1">
+                Tạo thời gian chết giúp AI nạp đạn, tránh sập mạng.
+              </p>
             </div>
           </div>
-        )}
+        </div>
       </div>
+
 
       {/* 5. POPUP MODAL XÁC NHẬN "TIẾP TỤC TRÒ CHƠI?" */}
       {pendingResumeGame && (
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="resume-game-modal-title"
           className="fixed inset-0 z-[200] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in"
           onClick={() => setPendingResumeGame(null)}
         >
@@ -780,7 +921,10 @@ export const GameMenu = ({
             >
               <MenuIcon icon={Icons.Play} fallback="▶️" size={24} fill="currentColor" />
             </div>
-            <h3 className="text-lg sm:text-xl font-black text-gray-800 mb-2">
+            <h3
+              id="resume-game-modal-title"
+              className="text-lg sm:text-xl font-black text-gray-800 mb-2"
+            >
               Tiếp tục trò chơi?
             </h3>
             <p className="text-gray-600 text-xs sm:text-sm mb-6">
@@ -795,7 +939,8 @@ export const GameMenu = ({
                 }}
                 className={`w-full py-2.5 sm:py-3 ${themeModalPrimaryBtn} text-white font-bold rounded-xl transition-colors shadow-md flex items-center justify-center gap-2 text-sm sm:text-base`}
               >
-                <MenuIcon icon={Icons.Play} fallback="▶️" size={18} fill="currentColor" /> Tiếp tục chơi
+                <MenuIcon icon={Icons.Play} fallback="▶️" size={18} fill="currentColor" /> Tiếp tục
+                chơi
               </button>
               <button
                 type="button"
@@ -805,12 +950,7 @@ export const GameMenu = ({
                 }}
                 className="w-full py-2.5 sm:py-3 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition-colors flex items-center justify-center gap-2 text-sm sm:text-base"
               >
-                <MenuIcon
-                  icon={Icons.RefreshCw || Icons.RefreshCcw}
-                  fallback="🔄"
-                  size={16}
-                />{' '}
-                Bắt đầu ván mới
+                <MenuIcon icon={Icons.RefreshCw} fallback="🔄" size={16} /> Bắt đầu ván mới
               </button>
               <button
                 type="button"
@@ -827,9 +967,12 @@ export const GameMenu = ({
   );
 };
 
+
 if (typeof window !== 'undefined') {
   window.GameMenu = GameMenu;
   window.Block5_7_GameMenu = GameMenu;
 }
 
+
 export default GameMenu;
+
