@@ -1,15 +1,19 @@
 // ============================================================================
 // FILE 56/85: src/features/games/QuizUI.jsx
 // NGUỒN GỐC: tang_5.js (Block 5.5 - Quiz UI V1.35)
-// PHIÊN BẢN: Ver 1.1
-// NGÀY GIỜ NÂNG CẤP: 20/11/2026 - 22:47 (GMT+7)
+// PHIÊN BẢN: Ver 1.2
+// NGÀY GIỜ NÂNG CẤP: 26/11/2026 - 05:53 (GMT+7)
 // NHIỆM VỤ: Giao diện Cài đặt (QuizSetup), Màn hình chơi (GamePlayScreen) và
 //           Màn hình kết quả (GameResult) cho trò chơi Trắc Nghiệm (Multiple Choice).
-//           Nâng cấp Ver 1.1: Chặn nổi bọt bàn phím (onKeyDown) 2 lớp từ nút Loa/
-//           Bookmark con, phân luồng thoát về Menu khi 0/0 ở Loading/Lỗi, đồng bộ
-//           Bookmark câu hỏi chính qua notebookKeySet NFC, thống nhất
-//           effectiveSourceMode, bảo lưu grammarFocus trong localStorage, khóa chặt
-//           100% tương tác khi isLocked và kiểm duyệt timeLimit/formatLevelBadge.
+//           Nâng cấp Ver 1.2:
+//           1. Diệt sạch 4/4 MEDIUM Radar: chuyển fc_quiz_config sang
+//              Utils.safeLocalStorageSet + Utils.safeJsonParse; gỡ bỏ 3 nhánh
+//              window.IoeDataEngine legacy (dùng ES Module getGrammarTopics).
+//           2. Dập sạch 9/9 lỗi tsc/checkJs trên VS Code: truyền đủ props cho
+//              8 thẻ MenuToggle & GlobalLoadingScreen, gán mặc định an toàn +
+//              JSDoc cho các prop/object tùy chọn và bảo vệ match.index.
+//           3. Nâng cấp A11y cho Modal xác nhận thoát (role="dialog",
+//              aria-modal="true", đóng bằng Backdrop/Escape) & bọc an toàn TTS.
 // ============================================================================
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -116,20 +120,32 @@ const MAIN_COLOR_STYLES = {
   }
 };
 
+/**
+ * @param {string} color
+ */
 const getThemeStyle = (color) => MAIN_COLOR_STYLES[color] || MAIN_COLOR_STYLES.blue;
 
-// Chuẩn hóa khóa so khớp Unicode NFC (không phân biệt hoa/thường và khoảng trắng thừa)
+/**
+ * Chuẩn hóa khóa so khớp Unicode NFC (không phân biệt hoa/thường và khoảng trắng thừa)
+ * @param {any} val
+ * @returns {string}
+ */
 const normalizeNotebookKey = (val) => {
   if (val === undefined || val === null) return '';
   const str = String(val).trim().toLowerCase();
   return typeof str.normalize === 'function' ? str.normalize('NFC') : str;
 };
 
-// Kiểm tra an toàn chỉ số sai (hỗ trợ cả Set lẫn Array khi khôi phục phiên)
+/**
+ * Kiểm tra an toàn chỉ số sai (hỗ trợ cả Set lẫn Array khi khôi phục phiên)
+ * @param {Set<number> | number[] | null | undefined} wrongCollection
+ * @param {number} idx
+ * @returns {boolean}
+ */
 const hasWrongIndex = (wrongCollection, idx) => {
   if (!wrongCollection) return false;
-  if (wrongCollection instanceof Set || typeof wrongCollection.has === 'function') {
-    return wrongCollection.has(idx);
+  if (wrongCollection instanceof Set || typeof (/** @type {any} */ (wrongCollection).has) === 'function') {
+    return /** @type {Set<number>} */ (wrongCollection).has(idx);
   }
   if (Array.isArray(wrongCollection)) {
     return wrongCollection.includes(idx);
@@ -137,36 +153,47 @@ const hasWrongIndex = (wrongCollection, idx) => {
   return false;
 };
 
-// Chuẩn hóa giá trị thời gian giới hạn từ LocalStorage
+/**
+ * Chuẩn hóa giá trị thời gian giới hạn từ LocalStorage
+ * @param {any} val
+ * @returns {number}
+ */
 const sanitizeTimeLimit = (val) => {
   const num = Number(val);
   return VALID_TIME_LIMITS.includes(num) ? num : 30;
 };
 
-// Đọc cấu hình đã lưu từ LocalStorage một cách an toàn
+/**
+ * Đọc cấu hình đã lưu từ LocalStorage qua Utils.safeJsonParse
+ * @returns {Record<string, any>}
+ */
 const getSavedQuizConfig = () => {
   try {
-    if (typeof localStorage === 'undefined') return {};
-    const saved = localStorage.getItem('fc_quiz_config');
-    return saved ? JSON.parse(saved) : {};
+    const parsed = Utils.safeJsonParse('fc_quiz_config', {});
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
   } catch (e) {
     console.warn('[QuizUI] Load quiz config failed:', e);
     return {};
   }
 };
 
-// Lưu cấu hình vào LocalStorage một cách an toàn
+/**
+ * Lưu cấu hình an toàn qua Utils.safeLocalStorageSet (0 lỗi Radar R05)
+ * @param {Record<string, any>} config
+ */
 const saveQuizConfig = (config) => {
   try {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('fc_quiz_config', JSON.stringify(config));
-    }
+    Utils.safeLocalStorageSet('fc_quiz_config', config);
   } catch (e) {
     console.warn('[QuizUI] Save quiz config failed:', e);
   }
 };
 
-// Định dạng nhãn Level thân thiện cho GlobalLoadingScreen (hỗ trợ cả mảng nhiều cấp độ)
+/**
+ * Định dạng nhãn Level thân thiện cho GlobalLoadingScreen (hỗ trợ cả mảng nhiều cấp độ)
+ * @param {any} rawLevel
+ * @returns {string}
+ */
 const formatLevelBadge = (rawLevel) => {
   const safeLevelStr = getSafeLevelString(rawLevel, '');
   if (!safeLevelStr) return '';
@@ -188,41 +215,37 @@ const formatLevelBadge = (rawLevel) => {
 export const QuizSetup = ({
   mainColor = 'blue',
   lang = 'en',
-  currentLevel,
-  onStart,
-  onBack,
-  onOpenAiConfig
+  currentLevel = undefined,
+  onStart = undefined,
+  onBack = undefined,
+  onOpenAiConfig = undefined
 }) => {
   const theme = getThemeStyle(mainColor);
   const initialCfg = useMemo(() => getSavedQuizConfig(), []);
 
   const [sourceMode, setSourceMode] = useState(() => initialCfg.sourceMode ?? 'card');
-  const [timerMode, setTimerMode] = useState(() => initialCfg.timerMode ?? false);
-  const [listenMode, setListenMode] = useState(() => initialCfg.listenMode ?? false);
-  const [hardMode, setHardMode] = useState(() => initialCfg.hardMode ?? false);
-  const [aiMode, setAiMode] = useState(() => initialCfg.aiMode ?? false);
+  const [timerMode, setTimerMode] = useState(() => Boolean(initialCfg.timerMode ?? false));
+  const [listenMode, setListenMode] = useState(() => Boolean(initialCfg.listenMode ?? false));
+  const [hardMode, setHardMode] = useState(() => Boolean(initialCfg.hardMode ?? false));
+  const [aiMode, setAiMode] = useState(() => Boolean(initialCfg.aiMode ?? false));
   const [timeLimit, setTimeLimit] = useState(() => sanitizeTimeLimit(initialCfg.timeLimit));
   const [askMode, setAskMode] = useState(() => initialCfg.askMode ?? 'term');
-  const [showPronun, setShowPronun] = useState(() => initialCfg.showPronun ?? false);
-  const [autoReadAnswer, setAutoReadAnswer] = useState(() => initialCfg.autoReadAnswer ?? false);
-  const [suddenDeath, setSuddenDeath] = useState(() => initialCfg.suddenDeath ?? false);
+  const [showPronun, setShowPronun] = useState(() => Boolean(initialCfg.showPronun ?? false));
+  const [autoReadAnswer, setAutoReadAnswer] = useState(() =>
+    Boolean(initialCfg.autoReadAnswer ?? false)
+  );
+  const [suddenDeath, setSuddenDeath] = useState(() => Boolean(initialCfg.suddenDeath ?? false));
   const [grammarFocus, setGrammarFocus] = useState(() => initialCfg.grammarFocus ?? 'random');
 
-  // Lấy danh sách chuyên đề ngữ pháp theo ngôn ngữ & trình độ hiện tại
+  // Lấy danh sách chuyên đề ngữ pháp theo ngôn ngữ & trình độ hiện tại (ES Module chuẩn)
   const grammarTopics = useMemo(() => {
     const repLevel = getSafeLevelString(
       currentLevel,
       lang === 'zh' ? 'zh_level_1' : 'en_level_4'
     );
     if (typeof getGrammarTopics === 'function') {
-      return getGrammarTopics('quiz', lang, repLevel) || [];
-    }
-    if (
-      typeof window !== 'undefined' &&
-      window.IoeDataEngine &&
-      typeof window.IoeDataEngine.getGrammarTopics === 'function'
-    ) {
-      return window.IoeDataEngine.getGrammarTopics('quiz', lang, repLevel) || [];
+      const list = getGrammarTopics('quiz', lang, repLevel);
+      return Array.isArray(list) ? list : [];
     }
     return [];
   }, [lang, currentLevel]);
@@ -241,12 +264,16 @@ export const QuizSetup = ({
   }, [grammarFocus, effectiveGrammarFocus]);
 
   const groupedTopics = useMemo(() => {
-    return grammarTopics.reduce((acc, topic) => {
-      const grp = topic.group || 'Chuyên đề Khác';
-      if (!acc[grp]) acc[grp] = [];
-      acc[grp].push(topic);
-      return acc;
-    }, {});
+    return grammarTopics.reduce(
+      /** @param {Record<string, Array<any>>} acc */
+      (acc, topic) => {
+        const grp = topic?.group || 'Chuyên đề Khác';
+        if (!acc[grp]) acc[grp] = [];
+        acc[grp].push(topic);
+        return acc;
+      },
+      /** @type {Record<string, Array<any>>} */ ({})
+    );
   }, [grammarTopics]);
 
   // Ép bật AI khi dùng nguồn AI Tự Sinh hoặc chọn Khó + Hỏi Từ ở chế độ Thẻ cá nhân
@@ -268,7 +295,7 @@ export const QuizSetup = ({
       suddenDeath
     };
 
-    // Bảo lưu effectiveGrammarFocus trong localStorage để không mất lựa chọn khi tạm tắt Đảo ngược
+    // Bảo lưu effectiveGrammarFocus qua Utils.safeLocalStorageSet
     saveQuizConfig({
       ...baseConfig,
       grammarFocus: effectiveGrammarFocus
@@ -438,6 +465,8 @@ export const QuizSetup = ({
               color="teal"
               title="Chế độ Đảo ngược"
               subtitle={askMode === 'def' ? 'Hỏi Nghĩa ➔ Chọn Từ' : 'Hỏi Từ ➔ Chọn Nghĩa'}
+              disabled={false}
+              extra={null}
             />
             <MenuToggle
               active={hardMode}
@@ -446,6 +475,8 @@ export const QuizSetup = ({
               color="red"
               title="Chế độ Khó (Hard Mode)"
               subtitle={hardMode ? 'Bẫy thông minh, bóp méo từ' : 'Bẫy cơ bản'}
+              disabled={false}
+              extra={null}
             />
             <MenuToggle
               active={effectiveAiMode}
@@ -455,6 +486,7 @@ export const QuizSetup = ({
               title="Thử thách AI"
               subtitle={aiSubtitle}
               disabled={!hardMode || sourceMode === 'ai_pure' || isAiForced}
+              extra={null}
             />
             <MenuToggle
               active={suddenDeath}
@@ -463,6 +495,8 @@ export const QuizSetup = ({
               color="slate"
               title="Chế độ Địa ngục"
               subtitle="Sai 1 lần là mất điểm ngay lập tức"
+              disabled={false}
+              extra={null}
             />
           </div>
 
@@ -474,6 +508,8 @@ export const QuizSetup = ({
               color="blue"
               title="Luyện Nghe"
               subtitle="Nghe âm thanh chọn đáp án"
+              disabled={false}
+              extra={null}
             />
             <MenuToggle
               active={showPronun}
@@ -483,6 +519,7 @@ export const QuizSetup = ({
               title="Hiển thị phiên âm"
               subtitle="Gợi ý cách đọc (Tắt khi Luyện nghe)"
               disabled={askMode === 'def' || listenMode}
+              extra={null}
             />
             <MenuToggle
               active={autoReadAnswer}
@@ -491,6 +528,8 @@ export const QuizSetup = ({
               color="pink"
               title="Đọc lại đáp án"
               subtitle="Chờ đọc xong đáp án mới chuyển câu"
+              disabled={false}
+              extra={null}
             />
             <MenuToggle
               active={timerMode}
@@ -499,6 +538,7 @@ export const QuizSetup = ({
               color="orange"
               title="Giới hạn thời gian"
               subtitle={timerMode ? `${timeLimit} giây / câu` : 'Thoải mái thời gian'}
+              disabled={false}
               extra={
                 <div className="mt-3 pt-2 border-t border-orange-100 flex justify-between items-center animate-in fade-in">
                   <span className="text-[10px] font-bold text-orange-400 uppercase">
@@ -548,15 +588,19 @@ export const QuizSetup = ({
 // ============================================================================
 export const GameResult = ({
   mainColor = 'blue',
-  onBack,
+  onBack = undefined,
   correctCount = 0,
   wrongCount = 0
 }) => {
   const theme = getThemeStyle(mainColor);
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
-      window.speechSynthesis.cancel();
+    try {
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    } catch {
+      // Bỏ qua an toàn
     }
   }, []);
 
@@ -604,57 +648,69 @@ export const GameResult = ({
 // 3. MÀN HÌNH CHƠI (GAME PLAY SCREEN)
 // ============================================================================
 export const GamePlayScreen = ({
-  t,
+  t = undefined,
   mainColor = 'blue',
-  currentQuestionData,
+  currentQuestionData = null,
   streak = 0,
-  gameMode,
+  gameMode = 'read',
   // Giữ prop setGameMode để tương thích ngược chữ ký (không gọi tắt vĩnh viễn chế độ Luyện nghe)
-  setGameMode: _setGameMode,
-  isAudioPlaying,
-  playSequence,
-  onBookmark,
-  isInNotebook,
-  onPlay,
-  onPlayOption,
-  selectedOptionIndex,
-  isChecking,
+  setGameMode: _setGameMode = undefined,
+  isAudioPlaying = false,
+  playSequence = undefined,
+  onBookmark = undefined,
+  isInNotebook = false,
+  onPlay = undefined,
+  onPlayOption = undefined,
+  selectedOptionIndex = null,
+  isChecking = false,
   clickedWrongIndices = new Set(),
-  hasStartedListening,
-  handleAnswer,
-  isAiMode,
-  showChanceToast,
-  isGenerating,
-  timerMode,
-  timeLeft,
-  totalTime,
-  isRoundStarted,
-  onStartRound,
-  onEndGame,
-  onPause,
-  onBack,
-  feedbackType,
-  isPaused,
+  hasStartedListening = true,
+  handleAnswer = undefined,
+  isAiMode = false,
+  showChanceToast = false,
+  isGenerating = false,
+  timerMode = false,
+  timeLeft = 30,
+  totalTime = 30,
+  isRoundStarted = true,
+  onStartRound = undefined,
+  onEndGame = undefined,
+  onPause = undefined,
+  onBack = undefined,
+  feedbackType = null,
+  isPaused = false,
   correctCount = 0,
   wrongCount = 0,
-  onSkip,
-  settings,
-  askMode,
-  showPronun,
-  hardMode,
+  onSkip = undefined,
+  settings = /** @type {Record<string, any>} */ ({}),
+  askMode = 'term',
+  showPronun = false,
+  hardMode = false,
   listenPlayCount = 0,
-  sourceMode,
-  config,
+  sourceMode = undefined,
+  config = /** @type {Record<string, any>} */ ({}),
   aiWaitTime = 0,
   resultTimer = 0,
   isResultPaused = false,
-  toggleResultPause,
-  onNext,
+  toggleResultPause = undefined,
+  onNext = undefined,
   aiAmmoCount = 0,
   notebook = []
 }) => {
   const theme = getThemeStyle(mainColor);
   const [showConfirmEnd, setShowConfirmEnd] = useState(false);
+
+  // Đóng Modal xác nhận thoát bằng phím Escape (A11y chuẩn)
+  useEffect(() => {
+    if (!showConfirmEnd) return undefined;
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') {
+        setShowConfirmEnd(false);
+      }
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [showConfirmEnd]);
 
   // Thống nhất nguồn sourceMode dùng xuyên suốt màn hình chơi
   const effectiveSourceMode = sourceMode || config?.sourceMode || 'card';
@@ -712,12 +768,19 @@ export const GamePlayScreen = ({
 
     return (
       <GlobalLoadingScreen
+        duration={22}
+        onComplete={undefined}
         onCancel={handleExitOrAbort}
         queueLength={aiAmmoCount}
         text={
           effectiveSourceMode === 'ai_pure'
             ? 'AI đang sáng tác câu đố...'
             : 'Đang thiết lập trò chơi...'
+        }
+        subText={
+          effectiveSourceMode === 'ai_pure'
+            ? 'Đang nạp câu hỏi từ động cơ AI...'
+            : 'Vui lòng chờ trong giây lát...'
         }
         mainColor={mainColor}
         levelStr={effectiveSourceMode === 'ai_pure' ? formatLevelBadge(config?.level) : ''}
@@ -841,14 +904,25 @@ export const GamePlayScreen = ({
 
   return (
     <div className="w-full h-full bg-gray-50 rounded-2xl shadow-xl flex flex-col border-2 border-gray-200 animate-in overflow-hidden relative">
-      {/* POPUP XÁC NHẬN THOÁT GAME */}
+      {/* POPUP XÁC NHẬN THOÁT GAME (A11y Dialog + Backdrop + Escape) */}
       {showConfirmEnd && (
-        <div className="absolute inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center animate-in fade-in p-4">
-          <div className="bg-white p-6 rounded-2xl shadow-2xl max-w-sm w-full text-center border-2 border-red-100 flex flex-col items-center">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="quiz-confirm-end-title"
+          onClick={() => setShowConfirmEnd(false)}
+          className="absolute inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center animate-in fade-in p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white p-6 rounded-2xl shadow-2xl max-w-sm w-full text-center border-2 border-red-100 flex flex-col items-center"
+          >
             <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mb-4">
               <Icons.AlertCircle size={32} />
             </div>
-            <h3 className="text-xl font-black text-gray-800 mb-2">Kết thúc sớm?</h3>
+            <h3 id="quiz-confirm-end-title" className="text-xl font-black text-gray-800 mb-2">
+              Kết thúc sớm?
+            </h3>
             <p className="text-gray-600 text-sm mb-6">
               Tiến trình của câu hỏi hiện tại sẽ không được lưu lại. Bạn có chắc chắn muốn thoát?
             </p>
@@ -1212,7 +1286,7 @@ export const GamePlayScreen = ({
               let subText = '';
               if (isImbalanced && !isReverse && !isReverseListen && optionDisplayText) {
                 const match = optionDisplayText.match(/([,/;])/);
-                if (match && match.index > 0) {
+                if (match && typeof match.index === 'number' && match.index > 0) {
                   mainText = optionDisplayText.substring(0, match.index).trim();
                   subText = optionDisplayText.substring(match.index).trim();
                 }
