@@ -1,26 +1,18 @@
 // ============================================================================
 // FILE 57/85: src/features/games/QuizGame.jsx
 // NGUỒN GỐC: tang_5.js (Block 5.6 - Quiz Game Logic V1.45)
-// PHIÊN BẢN: Ver 1.2
-// NGÀY GIỜ NÂNG CẤP: 26/11/2026 - 06:49 (GMT+7)
+// PHIÊN BẢN: Ver 1.3
+// NGÀY GIỜ NÂNG CẤP: 26/11/2026 - 07:02 (GMT+7)
 // NHIỆM VỤ: Động cơ Logic trung tâm cho trò chơi Trắc Nghiệm (Multiple Choice).
-//           Nâng cấp Ver 1.2 theo Báo cáo Chẩn đoán V2.0 (report1.md) &
-//           Đối chiếu Hợp đồng useAiCurator (report2.md):
-//           1. Diệt C1 (CRASH): Gỡ import hỏng `detectSentence`, thay bằng
-//              `isSentenceText()` chuẩn song ngữ EN/CJK.
-//           2. Diệt C4 (MẤT DỮ LIỆU): Vá `onUpdateCards` clone bất biến toàn bộ
-//              `cardsRef.current` thay vì truyền mảng 1 phần tử `[card]`.
-//           3. Diệt C7 (StrictMode ZombieKiller): Trì hoãn khởi tạo 50ms qua
-//              `bootTimer` để lần mount thăm dò StrictMode không gọi `destroy()`.
-//           4. Diệt 1/1 MEDIUM Radar: Thay `localStorage.setItem('fc_ai_memory')`
-//              bằng `Utils.safeLocalStorageSet`.
-//           5. Khóa 100% hợp đồng `onSaveToHarvest(harvestLevelKey, harvestData)`
-//              đúng 2 tham số theo `useAiCurator.js` (diệt lỗi mất 100% dữ liệu
-//              Harvest Quiz do đảo ngược tham số), chặn thu hoạch thẻ `_isRescued`.
-//           6. Diệt F4, F5, F6: Nhận đủ `stopSpeaking`, `speak`, `currentLevel`,
-//              `currentTopic`, `dataMode`, `onSaveToNotebook` từ `GameView Ver 1.4`;
-//              bù đáp án nhiễu khi bộ thẻ < 4 thẻ; nâng cấp `getEmergencyQuizFallback`
-//              4 tầng bất tử (0% trả null) & sạch 0 Problems `tsc / checkJs`.
+//           Nâng cấp Ver 1.3 (dập sạch 3/3 lỗi tsc/checkJs từ Ver 1.2):
+//           1. Sửa ts(2352): Đổi JSDoc `clickedWrongIndices` sang kiểu hàm
+//              `() => Set<number>` & làm gọn kiểu `currentQuestionData`.
+//           2. Sửa ts(2345): Truyền `pickedLevel ? [pickedLevel] : []` (Array)
+//              vào tham số `levelContext` của `fillCardWithAi`.
+//           3. Sửa ts(2339): Khai báo tường minh `_isRescued` và `_rawExamId`
+//              trong object trả về của `repairAndNormalizeExamQuizPayload`.
+//           Giữ nguyên toàn bộ nâng cấp Ver 1.2 (diệt C1, C4, C7, F4-F6,
+//           0/0/0 Radar & khóa 100% hợp đồng 2 tham số `onSaveToHarvest`).
 // ============================================================================
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
@@ -524,7 +516,7 @@ export const QuizGame = ({
   // 2. STATE & REFS QUẢN LÝ VÒNG ĐỜI VÁN CHƠI (TƯƠNG THÍCH NGƯỢC savedState.stats)
   // ==========================================================================
   const [currentQuestionData, setCurrentQuestionData] = useState(
-    /** @type {Record<string, any> | null} */ (() => savedState?.currentQuestionData || null)
+    /** @type {Record<string, any> | null} */ (savedState?.currentQuestionData || null)
   );
   const [streak, setStreak] = useState(
     () => Number(savedState?.streak ?? savedState?.stats?.streak) || 0
@@ -548,10 +540,14 @@ export const QuizGame = ({
   );
   const [isChecking, setIsChecking] = useState(false);
   const [clickedWrongIndices, setClickedWrongIndices] = useState(
-    /** @type {Set<number>} */ (() => {
+    /** @type {() => Set<number>} */ (() => {
       const savedWrong = savedState?.clickedWrongIndices;
-      if (savedWrong instanceof Set) return new Set(savedWrong);
-      if (Array.isArray(savedWrong)) return new Set(savedWrong);
+      if (savedWrong instanceof Set) {
+        return new Set(Array.from(savedWrong, (v) => Number(v)));
+      }
+      if (Array.isArray(savedWrong)) {
+        return new Set(savedWrong.map((v) => Number(v)));
+      }
       return new Set();
     })
   );
@@ -963,7 +959,7 @@ export const QuizGame = ({
               currentApiKey,
               ['definition'],
               cfg.dataMode,
-              pickedLevel,
+              pickedLevel ? [pickedLevel] : [],
               card
             );
             if (enriched && enriched.definition) {
@@ -1262,7 +1258,9 @@ export const QuizGame = ({
         ...normalized,
         question,
         options: enrichedOptions,
-        isAiGenerated
+        isAiGenerated: Boolean(isAiGenerated),
+        _isRescued: Boolean(isRescued || normalized._isRescued || question._isRescued),
+        _rawExamId: normalized._rawExamId ?? null
       };
     },
     [buildQuestionFromCard, lookupCardMetadata, safeLang]
@@ -1538,7 +1536,7 @@ export const QuizGame = ({
     isCheckingRef.current = false;
     setIsChecking(false);
     setSelectedOptionIndex(null);
-    const emptyWrong = new Set();
+    const emptyWrong = /** @type {Set<number>} */ (new Set());
     clickedWrongIndicesRef.current = emptyWrong;
     setClickedWrongIndices(emptyWrong);
     setFeedbackType(null);
