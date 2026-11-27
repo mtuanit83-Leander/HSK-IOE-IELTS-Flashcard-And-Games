@@ -1,8 +1,8 @@
 # BÁO CÁO RADAR RÀ SOÁT TOÀN ỨNG DỤNG FLASHCARD-3D
 
-* **Thời điểm quét:** 26/11/2026 - 21:55:03
+* **Thời điểm quét:** 27/11/2026 - 21:58:23
 * **Phạm vi quét:** `80` tệp mã nguồn trong `src/`
-* **Thời gian thực thi:** `1007 ms`
+* **Thời gian thực thi:** `298 ms`
 
 ---
 
@@ -11,77 +11,32 @@
 | Mức độ | Số lượng phát hiện | Ý nghĩa |
 | :--- | :---: | :--- |
 | 🔴 **CRITICAL** | **0** | Lỗi gãy build, crash Runtime, vi phạm Kho Master Lai hoặc StrictMode |
-| 🟠 **HIGH** | **11** | Rủi ro tràn Quota, nhánh `vi` cũ sót, hộp thoại `alert/confirm` chặn UI |
-| 🟡 **MEDIUM** | **33** | Rò rỉ Timer/Listener, phụ thuộc `window.*` legacy |
+| 🟠 **HIGH** | **0** | Rủi ro tràn Quota, nhánh `vi` cũ sót, hộp thoại `alert/confirm` chặn UI |
+| 🟡 **MEDIUM** | **24** | Rò rỉ Timer/Listener, phụ thuộc `window.*` legacy |
 | ⚪ **INFO** | **0** | Thông tin đối chiếu kiểm kê |
 
 ### Thống kê theo Mã Luật Radar
 
 | Mã luật | Số lượng |
 | :--- | :---: |
-| `R05_UNSAFE_LOCALSTORAGE_SET` | 25 |
-| `R06A_DEPRECATED_VI_BRANCH` | 1 |
+| `R05_UNSAFE_LOCALSTORAGE_SET` | 6 |
 | `R06B_LEGACY_WINDOW_GLOBAL` | 18 |
 
 ## 2. TOP ĐIỂM NÓNG (TỆP CẦN ƯU TIÊN XỬ LÝ TRƯỚC)
 
 | Tệp mã nguồn | 🔴 Critical | 🟠 High | 🟡 Medium | Tổng |
 | :--- | :---: | :---: | :---: | :---: |
-| `src/features/games/OddOneOutGame.jsx` | 0 | 2 | 2 | **4** |
-| `src/features/games/ImageQuizGame.jsx` | 0 | 2 | 1 | **3** |
-| `src/features/games/FillBlankGame.jsx` | 0 | 1 | 1 | **2** |
-| `src/features/games/PronunciationGame.jsx` | 0 | 1 | 1 | **2** |
-| `src/features/games/FillBlankUI.jsx` | 0 | 1 | 0 | **1** |
-| `src/features/games/ImageQuizUI.jsx` | 0 | 1 | 0 | **1** |
-| `src/features/games/ListeningUI.jsx` | 0 | 1 | 0 | **1** |
-| `src/features/games/OddOneOutUI.jsx` | 0 | 1 | 0 | **1** |
-| `src/features/games/ScrambleUI.jsx` | 0 | 1 | 0 | **1** |
 | `src/engines/queueEngine.js` | 0 | 0 | 11 | **11** |
 | `src/engines/aiFactory.js` | 0 | 0 | 4 | **4** |
 | `src/components/modals/AiChatModal.jsx` | 0 | 0 | 3 | **3** |
 | `src/engines/exam/examMemory.js` | 0 | 0 | 3 | **3** |
-| `src/features/games/ScrambleGame.jsx` | 0 | 0 | 2 | **2** |
 | `src/engines/exam/index.js` | 0 | 0 | 1 | **1** |
+| `src/hooks/useDataIO.js` | 0 | 0 | 1 | **1** |
+| `src/main.jsx` | 0 | 0 | 1 | **1** |
 
 ## 3. CHI TIẾT PHÁT HIỆN THEO MỨC ĐỘ
 
-### 🟠 HIGH (11 mục)
-
-- **`src/features/games/FillBlankGame.jsx:909`** [`R06A_DEPRECATED_VI_BRANCH`] — Còn sót vết tích ngôn ngữ học Tiếng Việt ('vi') đã khai tử: "lang === 'vi'".
-  - Code: `(lang === 'zh' || lang === 'vi') &&`
-  - Gợi ý vá: Gỡ bỏ nhánh định tuyến ngôn ngữ học "vi" (chỉ giữ "en" và "zh"; lưu ý uiLang vẫn hỗ trợ "vi").
-- **`src/features/games/FillBlankUI.jsx:48`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem('fc_fillblank_config', JSON.stringify(config));`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/features/games/ImageQuizGame.jsx:456`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem(`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/features/games/ImageQuizGame.jsx:547`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem('fc_total_tokens', currentTotal + 150);`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/features/games/ImageQuizUI.jsx:46`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem('fc_imagequiz_config', JSON.stringify(config));`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/features/games/ListeningUI.jsx:51`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem('fc_listening_config', JSON.stringify(config));`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/features/games/OddOneOutGame.jsx:422`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem(`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/features/games/OddOneOutGame.jsx:485`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem(`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/features/games/OddOneOutUI.jsx:47`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem('fc_oddoneout_config', JSON.stringify(config));`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/features/games/PronunciationGame.jsx:475`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem(`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/features/games/ScrambleUI.jsx:52`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trần localStorage.setItem() không qua Utils.safeLocalStorageSet — sẽ crash toàn App nếu tràn Quota hoặc trình duyệt chặn Storage.
-  - Code: `localStorage.setItem('fc_scramble_config', JSON.stringify(config));`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-
-### 🟡 MEDIUM (33 mục)
+### 🟡 MEDIUM (24 mục)
 
 - **`src/components/modals/AiChatModal.jsx:106`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
   - Code: `localStorage.setItem('fc_ai_chat_history', JSON.stringify(messages));`
@@ -149,33 +104,6 @@
 - **`src/engines/queueEngine.js:24`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.AiFactoryEngine" từ thời HTML 1 file thay vì import ES Module chuẩn.
   - Code: `window.AiFactoryEngine.forgeBaseCard = origBase;`
   - Gợi ý vá: Chuyển sang import { AiFactoryEngine } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/features/games/FillBlankGame.jsx:455`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
-  - Code: `localStorage.setItem(`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/features/games/ImageQuizGame.jsx:474`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
-  - Code: `localStorage.setItem(`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/features/games/ListeningGame.jsx:502`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
-  - Code: `localStorage.setItem(`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/features/games/OddOneOutGame.jsx:470`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
-  - Code: `localStorage.setItem(`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/features/games/OddOneOutGame.jsx:549`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
-  - Code: `localStorage.setItem(`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/features/games/PronunciationGame.jsx:455`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
-  - Code: `localStorage.setItem(`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/features/games/PronunciationUI.jsx:49`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
-  - Code: `localStorage.setItem('fc_pronunciation_config', JSON.stringify(config));`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/features/games/ScrambleGame.jsx:356`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
-  - Code: `localStorage.setItem('fc_ai_memory', JSON.stringify(historyQueueRef.current));`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/features/games/ScrambleGame.jsx:1199`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
-  - Code: `localStorage.setItem('fc_total_tokens', String(currentTotal + used));`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
 - **`src/hooks/useDataIO.js:92`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.Utils" từ thời HTML 1 file thay vì import ES Module chuẩn.
   - Code: `(typeof window !== 'undefined' && window.Utils?.fetchWithFallback);`
   - Gợi ý vá: Chuyển sang import { Utils } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
@@ -200,17 +128,17 @@ Các khóa dưới đây chưa có trong danh mục chuẩn `CANONICAL_FC_KEYS` 
 | `fc_current_topic_vi` | 1 | `src/hooks/useCoreState.js:519` |
 | `fc_data_vi` | 1 | `src/hooks/useCoreState.js:517` |
 | `fc_debug_legacy_ai` | 3 | `src/engines/exam/index.js:1312`, `src/features/games/GameMenu.jsx:66`, `src/features/games/GameMenu.jsx:240` |
-| `fc_fillblank_config` | 2 | `src/features/games/FillBlankUI.jsx:18`, `src/features/games/FillBlankUI.jsx:48` |
+| `fc_fillblank_config` | 1 | `src/features/games/FillBlankUI.jsx:23` |
 | `fc_game_auto_next_delay` | 1 | `src/features/games/QuizGame.jsx:151` |
-| `fc_gemini_api_key` | 13 | `src/components/modals/AiChatModal.jsx:135`, `src/components/modals/ApiKeyModal.jsx:102`, `src/components/modals/NotebookModal.jsx:222` |
+| `fc_gemini_api_key` | 10 | `src/components/modals/AiChatModal.jsx:135`, `src/components/modals/ApiKeyModal.jsx:102`, `src/components/modals/NotebookModal.jsx:222` |
 | `fc_global_api_pause` | 2 | `src/services/geminiApi.js:260`, `src/services/geminiApi.js:270` |
 | `fc_global_retry_bag_vi` | 1 | `src/hooks/useCoreState.js:540` |
-| `fc_imagequiz_config` | 2 | `src/features/games/ImageQuizUI.jsx:21`, `src/features/games/ImageQuizUI.jsx:46` |
+| `fc_imagequiz_config` | 2 | `src/features/games/ImageQuizUI.jsx:247`, `src/features/games/ImageQuizUI.jsx:285` |
 | `fc_incorrect_list_vi` | 1 | `src/hooks/useCoreState.js:538` |
 | `fc_is_auto_cascade` | 3 | `src/components/modals/ApiKeyModal.jsx:270`, `src/components/modals/ApiKeyModal.jsx:428`, `src/services/geminiApi.js:583` |
 | `fc_is_premium_key` | 3 | `src/components/modals/ApiKeyModal.jsx:269`, `src/components/modals/ApiKeyModal.jsx:416`, `src/services/geminiApi.js:584` |
 | `fc_key_pointer` | 2 | `src/services/geminiApi.js:576`, `src/services/geminiApi.js:796` |
-| `fc_listening_config` | 2 | `src/features/games/ListeningUI.jsx:22`, `src/features/games/ListeningUI.jsx:51` |
+| `fc_listening_config` | 2 | `src/features/games/ListeningUI.jsx:267`, `src/features/games/ListeningUI.jsx:326` |
 | `fc_master_data_vi_sentence` | 1 | `src/hooks/useCoreState.js:521` |
 | `fc_master_data_vi_vocab` | 1 | `src/hooks/useCoreState.js:520` |
 | `fc_mastered` | 1 | `src/config/constants.js:12` |
@@ -219,11 +147,11 @@ Các khóa dưới đây chưa có trong danh mục chuẩn `CANONICAL_FC_KEYS` 
 | `fc_match_history` | 1 | `src/components/modals/SettingsModal.jsx:843` |
 | `fc_notebook` | 1 | `src/config/constants.js:11` |
 | `fc_notebook_vi` | 1 | `src/hooks/useCoreState.js:533` |
-| `fc_oddoneout_config` | 2 | `src/features/games/OddOneOutUI.jsx:21`, `src/features/games/OddOneOutUI.jsx:47` |
-| `fc_pronunciation_config` | 2 | `src/features/games/PronunciationUI.jsx:25`, `src/features/games/PronunciationUI.jsx:49` |
+| `fc_oddoneout_config` | 2 | `src/features/games/OddOneOutUI.jsx:220`, `src/features/games/OddOneOutUI.jsx:257` |
+| `fc_pronunciation_config` | 2 | `src/features/games/PronunciationUI.jsx:270`, `src/features/games/PronunciationUI.jsx:320` |
 | `fc_quota_tracker` | 3 | `src/config/constants.js:22`, `src/services/geminiApi.js:416`, `src/services/geminiApi.js:429` |
 | `fc_reading_config` | 2 | `src/features/games/ReadingUI.jsx:152`, `src/features/games/ReadingUI.jsx:178` |
-| `fc_scramble_config` | 3 | `src/features/games/ScrambleGame.jsx:27`, `src/features/games/ScrambleUI.jsx:18`, `src/features/games/ScrambleUI.jsx:52` |
+| `fc_scramble_config` | 3 | `src/features/games/ScrambleGame.jsx:130`, `src/features/games/ScrambleUI.jsx:194`, `src/features/games/ScrambleUI.jsx:290` |
 | `fc_spotmistake_config` | 3 | `src/features/games/SpotMistakeGame.jsx:223`, `src/features/games/SpotMistakeUI.jsx:227`, `src/features/games/SpotMistakeUI.jsx:253` |
 
 ## 5. KẾT QUẢ QUÉT TĨNH OXLINT (TẦNG 1)
