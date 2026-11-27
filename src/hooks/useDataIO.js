@@ -1,13 +1,24 @@
 // ============================================================================
 // FILE 77/85: src/hooks/useDataIO.js
 // NGUỒN GỐC: Tầng 6 - Block 6.3 (Data I/O & Persistence - Version 1.03)
-// PHIÊN BẢN: Ver 1.1
-// NGÀY GIỜ NÂNG CẤP: 23/11/2026 - 07:10 (GMT+7)
+// PHIÊN BẢN: Ver 1.2
+// NGÀY GIỜ NÂNG CẤP: 28/11/2026 - 05:36 (GMT+7)
 // NHIỆM VỤ: "Người vận chuyển" (The Porter) thế hệ mới cho Kiến trúc Kho Master Lai
 //           (IndexedDB + RAM Mirror 0ms): tách sạch side-effect khỏi React updater
 //           (StrictMode-safe), tối ưu GViz ngắt sớm 0 request khi Sheet Private &
 //           quét batch 3 request song song, bộ đếm Loading chống chồng chéo, tối ưu
 //           thứ tự đồng bộ handleAddCard không hồi quy và sao lưu/phục hồi Full FcDB.
+//           Nâng cấp Ver 1.2 (Giai đoạn 5 - Lượt 5.1 - Diệt 1M Radar & 0 tsc):
+//           1. Diệt 1/1 MEDIUM Radar (R06B): Gỡ sạch window.Utils?.fetchWithFallback,
+//              window.FcDB, window.DEFAULT_SHEETS, window.DEFAULT_API_KEY_SHEET — dùng
+//              100% ES Module imports chuẩn.
+//           2. Diệt S16: Bọc JSDoc chuẩn TS 5.x (XLSXNamespace, JSON.parse(String),
+//              getErrorMessage, tham số tùy chọn) để xanh sạch 0 Problems tsc --noEmit;
+//              trì hoãn URL.revokeObjectURL 1000ms chống hủy tải file sao lưu trên Safari/iOS.
+//           3. Diệt S17: Chặn triệt để tái sinh ngôn ngữ cũ fc_lang = 'vi' khi phục hồi
+//              (và khi xuất) tệp sao lưu .json đời cũ.
+//           4. Diệt S18: Chuẩn hóa Unicode NFC trong mergeUnique của handleImportToNotebook
+//              và bổ sung 'noopener,noreferrer' cho window.open ở handleDownloadTemplate.
 // ============================================================================
 
 import { useEffect, useCallback, useRef } from 'react';
@@ -59,48 +70,112 @@ const INDEXED_DB_KEY_SET = new Set(INDEXED_DB_KEYS);
 const DEPRECATED_VI_KEY_REGEX =
   /^fc_(?:data|current_level|current_topic|master_data|notebook|mastered|incorrect_list|global_retry_bag|ai_memory)_vi(?:$|_)/;
 
+/**
+ * Trích xuất thông điệp lỗi an toàn từ unknown (tránh ts(18046)).
+ * @param {unknown} err
+ * @returns {string}
+ */
+const getErrorMessage = (err) => {
+  if (!err) return 'Unknown error';
+  if (typeof err === 'string') return err;
+  if (err instanceof Error) return err.message || String(err);
+  if (
+    typeof err === 'object' &&
+    'message' in err &&
+    typeof /** @type {any} */ (err).message === 'string'
+  ) {
+    return /** @type {any} */ (err).message;
+  }
+  return String(err);
+};
+
 // Chuẩn hóa ngôn ngữ học (chỉ hỗ trợ en | zh)
-const normalizeLang = (val) => (val === 'zh' ? 'zh' : 'en');
+/**
+ * @param {any} val
+ * @returns {'en' | 'zh'}
+ */
+const normalizeLang = (val) => {
+  const clean =
+    typeof val === 'string'
+      ? val.replace(/^["'\s]+|["'\s]+$/g, '').toLowerCase()
+      : '';
+  return clean === 'zh' ? 'zh' : 'en';
+};
 
 // Chuẩn hóa chế độ dữ liệu (chỉ hỗ trợ vocab | sentence)
+/**
+ * @param {any} val
+ * @returns {'vocab' | 'sentence'}
+ */
 const normalizeDataMode = (val) => {
-  const clean = typeof val === 'string' ? val.replace(/"/g, '').trim() : '';
+  const clean =
+    typeof val === 'string' ? val.replace(/"/g, '').trim().toLowerCase() : '';
   return clean === 'sentence' ? 'sentence' : 'vocab';
 };
 
+// Chuẩn hóa chuỗi so khớp từ vựng (Unicode NFC, bỏ khoảng trắng thừa, không phân biệt hoa thường)
+/**
+ * @param {any} val
+ * @returns {string}
+ */
+const normalizeTermKey = (val) =>
+  String(val || '')
+    .normalize('NFC')
+    .trim()
+    .toLowerCase();
+
 // Kiểm tra đối tượng Master Data hợp lệ
+/**
+ * @param {any} obj
+ * @returns {boolean}
+ */
 const isValidMasterDataObject = (obj) => {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
   return Object.values(obj).some((arr) => Array.isArray(arr) && arr.length > 0);
 };
 
-// Trình lấy thư viện XLSX an toàn (Hỗ trợ cả ES Module lẫn Global Window)
+// Trình lấy thư viện XLSX an toàn (Hỗ trợ cả ES Module lẫn Global Window, 0 lỗi tsc)
+/**
+ * @returns {any}
+ */
 const getXLSX = () => {
-  if (XLSXNamespace && XLSXNamespace.read) return XLSXNamespace;
-  if (XLSXNamespace?.default && XLSXNamespace.default.read) {
-    return XLSXNamespace.default;
+  const ns = /** @type {any} */ (XLSXNamespace);
+  if (ns && typeof ns.read === 'function') return ns;
+  if (ns?.default && typeof ns.default.read === 'function') {
+    return ns.default;
   }
-  if (typeof window !== 'undefined' && window.XLSX) return window.XLSX;
+  if (typeof window !== 'undefined' && /** @type {any} */ (window).XLSX) {
+    return /** @type {any} */ (window).XLSX;
+  }
   return null;
 };
 
-// Trình gọi fetchWithFallback an toàn
-const callFetchWithFallback = async (url, options) => {
-  const fn =
-    serviceFetchWithFallback ||
-    Utils?.fetchWithFallback ||
-    (typeof window !== 'undefined' && window.Utils?.fetchWithFallback);
-  if (typeof fn === 'function') {
-    return await fn(url, options);
+// Trình gọi fetchWithFallback an toàn (dùng ES Module trực tiếp, không đọc window.Utils)
+/**
+ * @param {string} url
+ * @param {RequestInit} [options]
+ * @returns {Promise<Response>}
+ */
+const callFetchWithFallback = async (url, options = undefined) => {
+  if (typeof serviceFetchWithFallback === 'function') {
+    return options !== undefined
+      ? await /** @type {any} */ (serviceFetchWithFallback)(url, options)
+      : await /** @type {any} */ (serviceFetchWithFallback)(url);
   }
-  return await fetch(url, options);
+  return options !== undefined ? await fetch(url, options) : await fetch(url);
 };
 
-// Trình lấy FcDB an toàn
-const getDb = () =>
-  FcDB || (typeof window !== 'undefined' ? window.FcDB : null);
+// Trình lấy FcDB trực tiếp từ ES Module (không phụ thuộc biến toàn cục window.FcDB)
+/**
+ * @returns {any}
+ */
+const getDb = () => FcDB || null;
 
 // Kiểm tra URL Google Sheets dạng xuất bản Web (/d/e/2PACX-.../pub?output=csv)
+/**
+ * @param {any} rawUrl
+ * @returns {boolean}
+ */
 const isPublishedSheetCsvUrl = (rawUrl) => {
   const trimmed = String(rawUrl || '').trim();
   return (
@@ -111,6 +186,10 @@ const isPublishedSheetCsvUrl = (rawUrl) => {
 };
 
 // Trích xuất Spreadsheet ID an toàn (chặn bắt nhầm chữ "e" từ link /d/e/2PACX-...)
+/**
+ * @param {any} rawUrl
+ * @returns {string | null}
+ */
 const extractGoogleSheetId = (rawUrl) => {
   const trimmed = String(rawUrl || '').trim();
   if (!trimmed || !trimmed.includes('docs.google.com')) return null;
@@ -123,6 +202,10 @@ const extractGoogleSheetId = (rawUrl) => {
 };
 
 // Chuẩn hóa URL lấy API Key (hỗ trợ cả link Sheet chuẩn lẫn link Publish CSV)
+/**
+ * @param {any} rawUrl
+ * @returns {string}
+ */
 const resolveApiKeySheetFetchUrl = (rawUrl) => {
   const trimmed = String(rawUrl || '').trim();
   if (!trimmed) return '';
@@ -137,10 +220,18 @@ const resolveApiKeySheetFetchUrl = (rawUrl) => {
 };
 
 // Kiểm tra đường dẫn trỏ tới tệp Excel (.xlsx / .xls) kể cả khi có query string
+/**
+ * @param {any} rawUrl
+ * @returns {boolean}
+ */
 const isExcelUrl = (rawUrl) =>
   /\.xlsx?(?:$|[?#])/i.test(String(rawUrl || '').trim());
 
 // Tạo chữ ký nội dung đặc trưng cho danh sách thẻ để phát hiện GViz trả trùng Tab 1
+/**
+ * @param {any} cards
+ * @returns {string}
+ */
 const buildCardsSignature = (cards) => {
   if (!Array.isArray(cards) || cards.length === 0) return '';
   const sampleIndices = [
@@ -150,6 +241,7 @@ const buildCardsSignature = (cards) => {
     Math.floor(cards.length / 2),
     cards.length - 1
   ];
+  /** @type {string[]} */
   const parts = [];
   const seenIdx = new Set();
   sampleIndices.forEach((idx) => {
@@ -165,6 +257,13 @@ const buildCardsSignature = (cards) => {
 };
 
 // Xác định chỉ số cấp độ chuẩn (1..9) cho 1 tab trong Workbook Excel, tránh đè khóa
+/**
+ * @param {string} sheetName
+ * @param {number} tabIndex
+ * @param {string} levelPrefix
+ * @param {Record<string, any>} masterData
+ * @returns {string}
+ */
 const resolveWorkbookLevelKey = (
   sheetName,
   tabIndex,
@@ -189,7 +288,14 @@ const resolveWorkbookLevelKey = (
 };
 
 // Trích xuất tối đa 9 Tabs từ Workbook Excel thành Master Data phân theo Level
+/**
+ * @param {any} workbook
+ * @param {any} XLSXLib
+ * @param {'en' | 'zh'} targetLang
+ * @returns {{ masterData: Record<string, any>, totalCards: number, numTabs: number }}
+ */
 const extractMasterDataFromWorkbook = (workbook, XLSXLib, targetLang) => {
+  /** @type {Record<string, any>} */
   const masterData = {};
   let totalCards = 0;
   const levelPrefix = targetLang === 'zh' ? 'zh_level_' : 'en_level_';
@@ -220,6 +326,11 @@ const extractMasterDataFromWorkbook = (workbook, XLSXLib, targetLang) => {
 };
 
 // Fetch kèm timeout an toàn giúp các Proxy Node chết không treo tiến trình
+/**
+ * @param {string} url
+ * @param {number} [timeoutMs=15000]
+ * @returns {Promise<Response>}
+ */
 const fetchWithTimeout = async (url, timeoutMs = 15000) => {
   if (typeof AbortController === 'undefined') {
     return await fetch(url);
@@ -233,6 +344,12 @@ const fetchWithTimeout = async (url, timeoutMs = 15000) => {
   }
 };
 
+/**
+ * Hook quản lý Nhập/Xuất dữ liệu, Đồng bộ Kho Master Lai & Sao lưu/Phục hồi Full FcDB.
+ * @param {Record<string, any>} core
+ * @param {any} latestStateRef
+ * @param {{ t?: (key: string) => string, showToast?: (msg: string, type?: string) => void }} [callbacks={}]
+ */
 export const useDataIO = (core, latestStateRef, callbacks = {}) => {
   const { t, showToast } = callbacks;
 
@@ -364,7 +481,7 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
           }
         }
       } catch (e) {
-        console.error('Garbage Collector Failed:', e);
+        console.error('Garbage Collector Failed:', getErrorMessage(e));
       }
     };
 
@@ -379,6 +496,7 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
   // 2. CÁC HÀM TIỆN ÍCH FILE SYSTEM
   // ==================================================================================
   const fallbackCopy = useCallback(
+    /** @param {string} text */
     (text) => {
       try {
         const textArea = document.createElement('textarea');
@@ -402,7 +520,7 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
         }
       } catch (err) {
         if (typeof showToast === 'function') {
-          showToast('Lỗi copy: ' + err, 'error');
+          showToast('Lỗi copy: ' + getErrorMessage(err), 'error');
         }
       }
     },
@@ -410,6 +528,7 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
   );
 
   const secureCopy = useCallback(
+    /** @param {string} text */
     (text) => {
       if (navigator.clipboard && window.isSecureContext) {
         navigator.clipboard
@@ -433,6 +552,10 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
   // 3. ĐỘNG CƠ TẢI DỮ LIỆU GOOGLE SHEETS (7-PROXY XLSX & GVIZ CHỐNG NHÂN BẢN TAB 1)
   // ==================================================================================
   // Cách 1: Tải qua Proxy (Lấy toàn bộ file Excel nguyên khối giữ nguyên tên & số lượng Tab)
+  /**
+   * @param {string} url
+   * @returns {Promise<ArrayBuffer>}
+   */
   const safeFetchExcel = async (url) => {
     const cleanUrl = String(url || '').trim();
     const sheetId = extractGoogleSheetId(cleanUrl);
@@ -491,24 +614,36 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
         }
         return buffer;
       } catch (e) {
+        const errMsg = getErrorMessage(e);
         console.warn(
           `[Excel Proxy Fallback] ${proxy.name} thất bại, thử node tiếp theo...`
         );
-        if (e?.message && e.message.includes('LỖI QUYỀN TRUY CẬP')) throw e;
+        if (errMsg.includes('LỖI QUYỀN TRUY CẬP')) throw e;
       }
     }
     throw new Error('Mạng bị chặn Proxy. Sẽ tự động chuyển sang GViz...');
   };
 
   // Cách 2: Quét từng Tab trực tiếp bằng Google GViz có Bộ lọc Chữ ký, Batch 3x & Ngắt sớm
+  /**
+   * @param {string} sheetId
+   * @param {any} targetLang
+   * @returns {Promise<{ masterData: Record<string, any>, totalCards: number, flatItems: any[] }>}
+   */
   const fetchDirectGvizTabs = async (sheetId, targetLang) => {
+    /** @type {any[]} */
     let allNewItems = [];
+    /** @type {Record<string, any>} */
     const masterDataObj = {};
     let total = 0;
     const safeLang = normalizeLang(targetLang);
     const levelPrefix = safeLang === 'zh' ? 'zh_level_' : 'en_level_';
 
     // Trả về 3 trạng thái rõ ràng để phân biệt Tab trống vs Sheet bị khóa Private (HTML/HTTP error)
+    /**
+     * @param {string} gvizUrl
+     * @returns {Promise<{ status: 'ok' | 'empty_csv' | 'blocked', cards: any[] | null }>}
+     */
     const fetchTabDetailedByUrl = async (gvizUrl) => {
       try {
         const res = await callFetchWithFallback(gvizUrl);
@@ -530,6 +665,9 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
       }
     };
 
+    /**
+     * @param {string} sheetName
+     */
     const fetchTabDetailed = async (sheetName) => {
       const encodedName = encodeURIComponent(sheetName);
       const gvizUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodedName}`;
@@ -542,10 +680,15 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
     if (defaultRes.status === 'blocked') {
       return { masterData: masterDataObj, totalCards: 0, flatItems: [] };
     }
+    /** @type {any[] | null} */
     const defaultCards = defaultRes.status === 'ok' ? defaultRes.cards : null;
     const defaultSig = buildCardsSignature(defaultCards);
 
     // Mẫu đặt tên Tab phổ biến theo ngôn ngữ
+    /**
+     * @param {number} idx
+     * @returns {Array<{ id: string, name: string }>}
+     */
     const getCandidatePatterns = (idx) => {
       const pad = idx < 10 ? `0${idx}` : `${idx}`;
       if (safeLang === 'zh') {
@@ -572,10 +715,16 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
     };
 
     const seenSignatures = new Set();
+    /** @type {string | null} */
     let matchedPatternId = null;
     let consecutiveMisses = 0;
     const BATCH_SIZE = 3;
 
+    /**
+     * @param {number} levelIdx
+     * @param {any[] | null} cards
+     * @returns {string | null}
+     */
     const isAcceptedForLevel = (levelIdx, cards) => {
       if (!Array.isArray(cards) || cards.length === 0) return null;
       const sig = buildCardsSignature(cards);
@@ -590,6 +739,7 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
 
     for (let i = 1; i <= 9; i++) {
       const candidates = getCandidatePatterns(i);
+      /** @type {{ candidate: { id: string, name: string }, cards: any[], sig: string } | null} */
       let foundEntry = null;
 
       // Ưu tiên bắn 1 request duy nhất cho mẫu tên tab vừa khớp ở vòng trước
@@ -598,7 +748,7 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
         const preferred = candidates.find((c) => c.id === matchedPatternId);
         if (preferred) {
           const prefRes = await fetchTabDetailed(preferred.name);
-          if (prefRes.status === 'ok') {
+          if (prefRes.status === 'ok' && prefRes.cards) {
             const acceptedSig = isAcceptedForLevel(i, prefRes.cards);
             if (acceptedSig) {
               foundEntry = {
@@ -626,7 +776,7 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
           );
 
           for (const item of batchResults) {
-            if (item.res.status !== 'ok') continue;
+            if (item.res.status !== 'ok' || !item.res.cards) continue;
             const acceptedSig = isAcceptedForLevel(i, item.res.cards);
             if (acceptedSig) {
               foundEntry = {
@@ -677,6 +827,12 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
   // ==================================================================================
   // 3.5. BỘ ĐỒNG BỘ DỮ LIỆU VỚI KHO MASTER LAI (INDEXEDDB + RAM MIRROR 0MS + VÒI NƯỚC)
   // ==================================================================================
+  /**
+   * @param {Record<string, any>} masterData
+   * @param {any} [sourceType='vocab']
+   * @param {any} [targetLangOverride=null]
+   * @returns {Promise<boolean>}
+   */
   const syncMasterDataToActiveView = async (
     masterData,
     sourceType = 'vocab',
@@ -715,7 +871,10 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
           }
         }
       } catch (dbErr) {
-        console.warn(`[DataIO] IndexedDB persist failed (${storageKey}):`, dbErr);
+        console.warn(
+          `[DataIO] IndexedDB persist failed (${storageKey}):`,
+          getErrorMessage(dbErr)
+        );
       }
     }
 
@@ -746,14 +905,15 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
       const levelsArr = Array.isArray(rawLevels)
         ? rawLevels
         : rawLevels
-        ? [rawLevels]
-        : [];
+          ? [rawLevels]
+          : [];
       const topicsArr = Array.isArray(rawTopics)
         ? rawTopics
         : rawTopics
-        ? [rawTopics]
-        : [];
+          ? [rawTopics]
+          : [];
 
+      /** @type {any[]} */
       let targetCards = [];
       if (levelsArr.length === 0) {
         Object.values(masterData).forEach((arr) => {
@@ -817,6 +977,10 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
   // ==================================================================================
   // 4. IMPORT / EXPORT ĐA TẦNG (MULTI-DIMENSIONAL DATA SYNC)
   // ==================================================================================
+  /**
+   * @param {string} url
+   * @param {any} [sourceType='vocab']
+   */
   const handleImport = async (url, sourceType = 'vocab') => {
     const cleanUrl = String(url || '').trim();
     if (!cleanUrl) {
@@ -833,6 +997,7 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
 
     beginLoading();
     try {
+      /** @type {Record<string, any>} */
       let masterData = {};
       let totalCards = 0;
       const XLSXLib = getXLSX();
@@ -853,10 +1018,11 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
           masterData = extracted.masterData;
           totalCards = extracted.totalCards;
         } catch (err) {
-          if (err?.message && err.message.includes('LỖI QUYỀN TRUY CẬP')) {
+          const errMsg = getErrorMessage(err);
+          if (errMsg.includes('LỖI QUYỀN TRUY CẬP')) {
             throw err;
           }
-          console.warn('Proxy XLSX Failed, fallback to GViz:', err?.message);
+          console.warn('Proxy XLSX Failed, fallback to GViz:', errMsg);
           useGvizFallback = true;
         }
 
@@ -943,13 +1109,16 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
       }
     } catch (e) {
       if (typeof showToast === 'function') {
-        showToast('Lỗi nạp Dữ liệu: ' + (e?.message || e), 'error');
+        showToast('Lỗi nạp Dữ liệu: ' + getErrorMessage(e), 'error');
       }
     } finally {
       endLoading();
     }
   };
 
+  /**
+   * @param {string} url
+   */
   const handleImportToNotebook = async (url) => {
     const cleanUrl = String(url || '').trim();
     if (!cleanUrl) {
@@ -963,6 +1132,7 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
     const targetLang = normalizeLang(liveCore.lang);
     beginLoading();
     try {
+      /** @type {any[]} */
       let allNewItems = [];
       const XLSXLib = getXLSX();
       const sheetId = extractGoogleSheetId(cleanUrl);
@@ -984,7 +1154,8 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
             allNewItems = allNewItems.concat(parsedCards);
           }
         } catch (err) {
-          if (err?.message && err.message.includes('LỖI QUYỀN TRUY CẬP')) {
+          const errMsg = getErrorMessage(err);
+          if (errMsg.includes('LỖI QUYỀN TRUY CẬP')) {
             throw err;
           }
           useGvizFallback = true;
@@ -1036,19 +1207,26 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
           try {
             await dbInstance.init();
           } catch (initErr) {
-            console.warn('[DataIO] FcDB init before notebook merge failed:', initErr);
+            console.warn(
+              '[DataIO] FcDB init before notebook merge failed:',
+              getErrorMessage(initErr)
+            );
           }
         }
 
-        // Chống trùng lặp case-insensitive trong chính nguồn vừa tải & với sổ tay hiện tại
+        // [S18] Chống trùng lặp chuẩn Unicode NFC + case-insensitive trong chính nguồn vừa tải & sổ tay hiện tại
+        /**
+         * @param {any[]} existingList
+         */
         const mergeUnique = (existingList) => {
           const safeExisting = Array.isArray(existingList) ? existingList : [];
           const existingTerms = new Set(
-            safeExisting.map((i) => String(i?.term || '').trim().toLowerCase())
+            safeExisting.map((i) => normalizeTermKey(i?.term))
           );
+          /** @type {any[]} */
           const uniqueItems = [];
           allNewItems.forEach((item) => {
-            const key = String(item?.term || '').trim().toLowerCase();
+            const key = normalizeTermKey(item?.term);
             if (key && !existingTerms.has(key)) {
               existingTerms.add(key);
               uniqueItems.push(item);
@@ -1061,6 +1239,7 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
         };
 
         const isSameLang = normalizeLang(currentCore.lang) === targetLang;
+        /** @type {any[]} */
         let baseNotebook = [];
 
         if (isSameLang) {
@@ -1068,8 +1247,8 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
           baseNotebook = Array.isArray(latestNote)
             ? latestNote
             : Array.isArray(currentCore.notebook)
-            ? currentCore.notebook
-            : [];
+              ? currentCore.notebook
+              : [];
         } else if (dbInstance) {
           const existingDbNote = await dbInstance.get(
             'fc_notebook_' + targetLang
@@ -1092,7 +1271,10 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
             try {
               await dbInstance.set('fc_notebook_' + targetLang, updated);
             } catch (saveErr) {
-              console.warn('[DataIO] Save notebook failed:', saveErr);
+              console.warn(
+                '[DataIO] Save notebook failed:',
+                getErrorMessage(saveErr)
+              );
             }
           }
           if (typeof showToast === 'function') {
@@ -1111,13 +1293,17 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
       }
     } catch (e) {
       if (typeof showToast === 'function') {
-        showToast('Lỗi nhập vào sổ tay: ' + (e?.message || e), 'error');
+        showToast('Lỗi nhập vào sổ tay: ' + getErrorMessage(e), 'error');
       }
     } finally {
       endLoading();
     }
   };
 
+  /**
+   * @param {any} e
+   * @param {any} [sourceType='vocab']
+   */
   const handleFileImport = (e, sourceType = 'vocab') => {
     const inputEl = e?.target;
     const file = inputEl?.files?.[0];
@@ -1133,12 +1319,14 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
 
     reader.onload = async (evt) => {
       try {
+        /** @type {Record<string, any>} */
         let masterData = {};
         let totalCards = 0;
         let numTabs = 1;
+        const resultData = evt?.target?.result;
 
         if (isCsvFile) {
-          const text = String(evt?.target?.result || '');
+          const text = typeof resultData === 'string' ? resultData : '';
           const parsedCards = Utils.parseAndMapCSV(text);
           if (parsedCards.length > 0) {
             const levelPrefix = importLang === 'zh' ? 'zh_level_' : 'en_level_';
@@ -1148,7 +1336,8 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
         } else {
           const XLSXLib = getXLSX();
           if (!XLSXLib) throw new Error('Thư viện XLSX chưa được tải');
-          const wb = XLSXLib.read(evt.target.result, { type: 'array' });
+          if (!resultData) throw new Error('Nội dung tệp Excel bị trống');
+          const wb = XLSXLib.read(resultData, { type: 'array' });
           const extracted = extractMasterDataFromWorkbook(
             wb,
             XLSXLib,
@@ -1185,7 +1374,7 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
         }
       } catch (err) {
         if (typeof showToast === 'function') {
-          showToast('Lỗi đọc file: ' + (err?.message || err), 'error');
+          showToast('Lỗi đọc file: ' + getErrorMessage(err), 'error');
         }
       } finally {
         if (inputEl) inputEl.value = '';
@@ -1209,13 +1398,19 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
       }
     } catch (syncErr) {
       if (typeof showToast === 'function') {
-        showToast('Không thể khởi tạo trình đọc tệp: ' + (syncErr?.message || syncErr), 'error');
+        showToast(
+          'Không thể khởi tạo trình đọc tệp: ' + getErrorMessage(syncErr),
+          'error'
+        );
       }
       if (inputEl) inputEl.value = '';
       endLoading();
     }
   };
 
+  /**
+   * @param {any} newInput
+   */
   const handleAddCard = (newInput) => {
     const rawItems = Array.isArray(newInput) ? newInput : [newInput];
     const items = Utils.sanitizeCards(rawItems);
@@ -1235,8 +1430,8 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
     const currentCards = Array.isArray(liveState.cards)
       ? liveState.cards
       : Array.isArray(liveCore.cards)
-      ? liveCore.cards
-      : [];
+        ? liveCore.cards
+        : [];
 
     // 1. Cập nhật RAM Mirror & IndexedDB TRƯỚC setCards để Dropdown Topic/Level tự nhận diện
     //    Topic mới ngay trong cùng nhịp render mà KHÔNG kích hoạt Động cơ Vòi nước (tránh reset index/re-shuffle)
@@ -1255,9 +1450,10 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
         Array.isArray(rawLevels) && rawLevels.length > 0
           ? rawLevels[0]
           : typeof rawLevels === 'string' && rawLevels.trim()
-          ? rawLevels.trim()
-          : `${levelPrefix}1`;
+            ? rawLevels.trim()
+            : `${levelPrefix}1`;
 
+      /** @type {Record<string, any>} */
       const nextMaster =
         existingMaster &&
         typeof existingMaster === 'object' &&
@@ -1273,7 +1469,10 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
       const dbInstance = getDb();
       if (dbInstance) {
         Promise.resolve(dbInstance.set(storageKey, nextMaster)).catch((err) =>
-          console.warn('[DataIO] Sync manual card to IndexedDB failed:', err)
+          console.warn(
+            '[DataIO] Sync manual card to IndexedDB failed:',
+            getErrorMessage(err)
+          )
         );
       }
     }
@@ -1288,13 +1487,16 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
     }
   };
 
+  /**
+   * @param {string} textJson
+   */
   const handleManualImport = (textJson) => {
     try {
       const parsed = JSON.parse(textJson);
       handleAddCard(parsed);
     } catch (e) {
       if (typeof showToast === 'function') {
-        showToast('Lỗi định dạng JSON: ' + (e?.message || e), 'error');
+        showToast('Lỗi định dạng JSON: ' + getErrorMessage(e), 'error');
       }
     }
   };
@@ -1343,6 +1545,9 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
     secureCopy(tsv);
   };
 
+  /**
+   * @param {any[]} dataToCopy
+   */
   const handleCopyForSheet = (dataToCopy) => {
     const tsv = Utils.jsonToTsv(dataToCopy);
     if (!tsv) {
@@ -1357,6 +1562,9 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
   // ==================================================================================
   // 5. CÁC HÀM TIỆN ÍCH HỆ THỐNG
   // ==================================================================================
+  /**
+   * @param {string} url
+   */
   const handleFetchApiKey = async (url) => {
     const cleanUrl = String(url || '').trim();
     if (!cleanUrl) return;
@@ -1375,7 +1583,7 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
             }
           }
         } catch (e) {
-          console.warn('API Key Sheet Fetch failed:', e);
+          console.warn('API Key Sheet Fetch failed:', getErrorMessage(e));
         }
       }
       if (!text && resolvedUrl !== cleanUrl) {
@@ -1408,18 +1616,19 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
       }
     } catch (e) {
       if (typeof showToast === 'function') {
-        showToast('Lỗi tải Key: ' + (e?.message || e), 'error');
+        showToast('Lỗi tải Key: ' + getErrorMessage(e), 'error');
       }
     } finally {
       endLoading();
     }
   };
 
+  // [S18] Cô lập tab ngoài bằng 'noopener,noreferrer' và dùng trực tiếp hằng số ES Module
   const handleDownloadTemplate = () => {
-    const templateUrl =
-      DEFAULT_API_KEY_SHEET ||
-      (typeof window !== 'undefined' ? window.DEFAULT_API_KEY_SHEET : '');
-    if (templateUrl) window.open(templateUrl, '_blank');
+    const templateUrl = String(DEFAULT_API_KEY_SHEET || '').trim();
+    if (templateUrl && typeof window !== 'undefined') {
+      window.open(templateUrl, '_blank', 'noopener,noreferrer');
+    }
   };
 
   const handleResetSettings = () => {
@@ -1480,18 +1689,19 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
           savedDefaultUrl = '';
         }
       }
-      const fallbackSheet =
-        DEFAULT_SHEETS?.[activeLang]?.[activeMode] ||
-        (typeof window !== 'undefined'
-          ? window.DEFAULT_SHEETS?.[activeLang]?.[activeMode]
-          : '');
+      const safeDefaultSheets = /** @type {Record<string, any>} */ (
+        DEFAULT_SHEETS || {}
+      );
+      const fallbackSheet = String(
+        safeDefaultSheets?.[activeLang]?.[activeMode] || ''
+      ).trim();
       const linkToLoad = savedDefaultUrl || fallbackSheet;
 
       if (linkToLoad) {
         handleImport(linkToLoad, activeMode);
       } else {
         const storageKey = `fc_master_data_${activeLang}_${activeMode}`;
-        setMasterDataCache(storageKey, null);
+        setMasterDataCache(storageKey, /** @type {any} */ (null));
         const dbInstance = getDb();
         if (dbInstance) {
           Promise.resolve(
@@ -1499,7 +1709,10 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
               ? dbInstance.del(storageKey)
               : dbInstance.set(storageKey, null)
           ).catch((err) =>
-            console.warn('[DataIO] Clear master store failed:', err)
+            console.warn(
+              '[DataIO] Clear master store failed:',
+              getErrorMessage(err)
+            )
           );
         }
         if (typeof localStorage !== 'undefined') {
@@ -1546,6 +1759,7 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
   const handleExportSaveFile = async () => {
     beginLoading();
     try {
+      /** @type {Record<string, any>} */
       const saveData = {};
 
       if (typeof localStorage !== 'undefined') {
@@ -1556,7 +1770,16 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
             key.startsWith('fc_') &&
             !DEPRECATED_VI_KEY_REGEX.test(key)
           ) {
-            saveData[key] = localStorage.getItem(key);
+            let val = localStorage.getItem(key);
+            if (key === 'fc_lang') {
+              const cleanLang = String(val || '')
+                .replace(/^["'\s]+|["'\s]+$/g, '')
+                .toLowerCase();
+              if (cleanLang === 'vi') {
+                val = JSON.stringify('en');
+              }
+            }
+            saveData[key] = val;
           }
         }
       }
@@ -1574,7 +1797,10 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
               saveData[key] = JSON.stringify(data);
             }
           } catch (readErr) {
-            console.warn(`[DataIO] Backup read failed (${key}):`, readErr);
+            console.warn(
+              `[DataIO] Backup read failed (${key}):`,
+              getErrorMessage(readErr)
+            );
           }
         }
       }
@@ -1605,12 +1831,19 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      // [S16] Trì hoãn giải phóng Blob URL 1000ms để Safari/iOS hoàn tất khởi tạo lượt tải xuống
+      setTimeout(() => {
+        try {
+          URL.revokeObjectURL(url);
+        } catch {
+          // Bỏ qua lỗi giải phóng URL
+        }
+      }, 1000);
       if (typeof showToast === 'function') {
         showToast('Đã tạo file sao lưu đầy đủ thành công!', 'success');
       }
     } catch (e) {
-      console.error('Export save error:', e);
+      console.error('Export save error:', getErrorMessage(e));
       if (typeof showToast === 'function') {
         showToast('Lỗi khi tạo file sao lưu!', 'error');
       }
@@ -1619,6 +1852,10 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
     }
   };
 
+  /**
+   * @param {File} file
+   * @returns {Promise<boolean>}
+   */
   const handleImportSaveFile = (file) => {
     return new Promise((resolve, reject) => {
       if (!file) {
@@ -1631,7 +1868,9 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
 
       reader.onload = async (e) => {
         try {
-          const importedData = JSON.parse(e.target.result);
+          const rawText =
+            typeof e?.target?.result === 'string' ? e.target.result : '';
+          const importedData = JSON.parse(rawText);
           if (
             !importedData ||
             typeof importedData !== 'object' ||
@@ -1656,12 +1895,23 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
               continue;
             }
 
+            // [S17] Chặn triệt để lỗ hổng phục hồi tệp sao lưu cũ tái sinh fc_lang = 'vi'
+            let safeVal = rawVal;
+            if (key === 'fc_lang') {
+              const cleanLang = String(rawVal)
+                .replace(/^["'\s]+|["'\s]+$/g, '')
+                .toLowerCase();
+              if (cleanLang === 'vi') {
+                safeVal = JSON.stringify('en');
+              }
+            }
+
             // Các khóa dữ liệu lớn (4 Kho Master Data + Sổ tay + Kho AI + Kho Đề thi) ghi thẳng vào IndexedDB
             if (INDEXED_DB_KEY_SET.has(key) && dbInstance) {
-              let parsedVal = rawVal;
-              if (typeof rawVal === 'string') {
+              let parsedVal = safeVal;
+              if (typeof safeVal === 'string') {
                 try {
-                  parsedVal = JSON.parse(rawVal);
+                  parsedVal = JSON.parse(safeVal);
                 } catch {
                   // Giữ nguyên nếu chuỗi thô hợp lệ
                 }
@@ -1685,10 +1935,10 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
               count++;
             } else if (MASTER_DATA_KEY_SET.has(key)) {
               // Nhánh dự phòng khi không có FcDB: chủ động parse JSON sang Plain Object cho RAM Mirror
-              let parsedMaster = rawVal;
-              if (typeof rawVal === 'string') {
+              let parsedMaster = safeVal;
+              if (typeof safeVal === 'string') {
                 try {
-                  parsedMaster = JSON.parse(rawVal);
+                  parsedMaster = JSON.parse(safeVal);
                 } catch {
                   parsedMaster = null;
                 }
@@ -1698,7 +1948,7 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
                 if (saved) count++;
               }
             } else {
-              const saved = Utils.safeLocalStorageSet(key, rawVal);
+              const saved = Utils.safeLocalStorageSet(key, safeVal);
               if (saved) count++;
             }
           }
@@ -1721,7 +1971,7 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
             reject(new Error('Invalid save file'));
           }
         } catch (err) {
-          console.error('Import save error:', err);
+          console.error('Import save error:', getErrorMessage(err));
           if (typeof showToast === 'function') {
             showToast('File bị lỗi hoặc không đúng định dạng!', 'error');
           }
@@ -1774,10 +2024,11 @@ export const useDataLogic = useDataIO;
 export const Block6_3_useDataIO = useDataIO;
 
 if (typeof window !== 'undefined') {
-  window.Block6_3_useDataIO = useDataIO;
-  window.Block15_useDataLogic = useDataIO;
-  window.useDataLogic = useDataIO;
-  window.useDataIO = useDataIO;
+  const win = /** @type {any} */ (window);
+  win.Block6_3_useDataIO = useDataIO;
+  win.Block15_useDataLogic = useDataIO;
+  win.useDataLogic = useDataIO;
+  win.useDataIO = useDataIO;
 }
 
 export default useDataIO;

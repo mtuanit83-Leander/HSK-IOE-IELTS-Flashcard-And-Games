@@ -1,25 +1,43 @@
 // ============================================================================
 // FILE 21/85: src/engines/aiFactory.js
 // NGUỒN GỐC: Tầng 2 - Block 2.6 (AI Factory Engine V1.55)
-// PHIÊN BẢN: Ver 1.2
-// NGÀY GIỜ NÂNG CẤP: 21/11/2026 - 17:49 (GMT+7)
+// PHIÊN BẢN: Ver 1.3
+// NGÀY GIỜ NÂNG CẤP: 27/11/2026 - 22:55 (GMT+7)
 // NHIỆM VỤ: Nhà máy 3 Lò đúc AI 1-Shot (Đúc thẻ cơ sở, Đúc ma trận 4 lựa chọn,
 //           Đúc ngữ cảnh Nghe/Đọc) và Làm giàu hàng loạt (Batch Enrich);
 //           vá dứt điểm lỗi ghi đè isReverse bởi fc_quiz_config/fc_settings,
 //           chuẩn hóa Array Armor cho topic, đồng nhất definition câu văn
 //           và bảo vệ an toàn ghi nhận fc_total_tokens.
+//           Nâng cấp Ver 1.3 (Giai đoạn 5 - Lượt 5.1 - Diệt 4M Radar & 0 tsc):
+//           1. Diệt 3x R06B window.ExamProfiles & 1x R05 fc_total_tokens:
+//              Import ES Module chuẩn ExamProfiles từ ./examProfiles.js và
+//              ghi fc_total_tokens qua safeLocalStorageSet.
+//           2. Diệt S4, S5 & S6: Chặn ghi đè nghĩa rỗng ở batchEnrich, chuẩn
+//              hóa safeLang ('en' | 'zh') thống nhất & fallback cấp độ theo
+//              ngôn ngữ (HSK cho 'zh', CEFR cho 'en').
+//           3. Diệt S7 & 0 tsc: Bọc JSDoc an toàn cho ExamProfiles/IoeDataEngine
+//              và chuẩn hóa parseInt / getErrMsg.
 // ============================================================================
 
 import { IoeEnumRegistry } from '../config/constants.js';
 import {
   safeJsonParse,
+  safeLocalStorageSet,
   parseAiJson,
   shuffleArray,
   buildSmartImageUrl
 } from '../utils/helpers.js';
 import { callGeminiApi } from '../services/geminiApi.js';
 import { IoeDataEngine } from './pedagogyEngine.js';
+import { ExamProfiles } from './examProfiles.js';
 
+/** @type {any} */
+const SafeExamProfiles = ExamProfiles;
+
+/** @type {any} */
+const SafePedagogyEngine = IoeDataEngine;
+
+/** @type {Record<string, string>} */
 const DEFAULT_CEFR_MAP = {
   en_level_1: 'Pre-A1 (Starters/Beginner)',
   en_level_2: 'A1 (Movers/Elementary)',
@@ -84,32 +102,89 @@ const ADVANCED_LEVEL_KEYWORDS = [
   'c2'
 ];
 
-const resolveCefrLevel = (level) => {
+/**
+ * Chuẩn hóa ngôn ngữ học chỉ về 'en' hoặc 'zh'.
+ * @param {any} lang
+ * @returns {'en' | 'zh'}
+ */
+const normalizeForgeLang = (lang) => {
+  const clean = String(lang || '')
+    .replace(/"/g, '')
+    .trim()
+    .toLowerCase();
+  return clean === 'zh' || clean === 'cn' ? 'zh' : 'en';
+};
+
+/**
+ * Trích xuất thông điệp lỗi an toàn từ giá trị unknown.
+ * @param {any} err
+ * @returns {string}
+ */
+const getErrorMessage = (err) => {
+  if (!err) return 'Unknown error';
+  if (typeof err === 'string') return err;
+  if (err instanceof Error) return err.message || String(err);
+  if (typeof err === 'object' && typeof err.message === 'string') return err.message;
+  return String(err);
+};
+
+/**
+ * Quy đổi mã cấp độ sang nhãn CEFR / HSK tương đương.
+ * @param {any} level
+ * @param {'en' | 'zh'} [lang='en']
+ * @returns {string}
+ */
+const resolveCefrLevel = (level, lang = 'en') => {
+  const fallbackLabel =
+    lang === 'zh' ? 'HSK 3 (B1 - Intermediate)' : 'B1 (Intermediate)';
+
+  /** @param {any} lvlKey */
   const resolveSingle = (lvlKey) => {
+    const keyStr = String(lvlKey || '').trim();
+    if (
+      SafeExamProfiles &&
+      typeof SafeExamProfiles.getCefrLevel === 'function'
+    ) {
+      const fromProfile = SafeExamProfiles.getCefrLevel(keyStr);
+      if (fromProfile) return String(fromProfile);
+    }
     if (
       typeof window !== 'undefined' &&
-      window.ExamProfiles &&
-      typeof window.ExamProfiles.getCefrLevel === 'function'
+      /** @type {any} */ (window).ExamProfiles &&
+      typeof (/** @type {any} */ (window).ExamProfiles.getCefrLevel) === 'function'
     ) {
-      return window.ExamProfiles.getCefrLevel(lvlKey);
+      const fromGlobal = /** @type {any} */ (window).ExamProfiles.getCefrLevel(keyStr);
+      if (fromGlobal) return String(fromGlobal);
     }
-    return DEFAULT_CEFR_MAP[lvlKey] || 'B1 (Intermediate)';
+    if (DEFAULT_CEFR_MAP[keyStr]) return DEFAULT_CEFR_MAP[keyStr];
+    return keyStr.toLowerCase().includes('zh') || keyStr.toLowerCase().includes('hsk')
+      ? 'HSK 3 (B1 - Intermediate)'
+      : fallbackLabel;
   };
 
   if (Array.isArray(level) && level.length > 0) {
-    const mapped = [...new Set(level.map((lvl) => resolveSingle(lvl)).filter(Boolean))];
-    return mapped.length > 0 ? mapped.join(' / ') : 'B1 (Intermediate)';
+    const mapped = [
+      ...new Set(
+        level
+          .map((lvl) => resolveSingle(lvl))
+          .filter((val) => typeof val === 'string' && val.trim().length > 0)
+      )
+    ];
+    return mapped.length > 0 ? mapped.join(' / ') : fallbackLabel;
   }
   return resolveSingle(level);
 };
 
 // [VER 1.1] Helper duy nhất tính Ngưỡng Từ loại Động cho đủ 9 cấp độ (en_level_1..9 & zh_level_1..9)
+/** @param {any} level */
 const resolvePosThreshold = (level) => {
   const levelCheckStr = Array.isArray(level)
     ? level.join(',').toLowerCase()
     : String(level || '').toLowerCase();
   if (!levelCheckStr) return '20%';
-  const isAdvancedLevel = ADVANCED_LEVEL_KEYWORDS.some((kw) => levelCheckStr.includes(kw));
+  const isAdvancedLevel = ADVANCED_LEVEL_KEYWORDS.some((kw) =>
+    levelCheckStr.includes(kw)
+  );
   return isAdvancedLevel ? '10%' : '20%';
 };
 
@@ -117,17 +192,18 @@ const resolvePosThreshold = (level) => {
 const resolveDynamicTimeout = (defaultMs = 32000, extraMs = 0) => {
   try {
     const aiCfg = safeJsonParse('fc_ai_config', null);
-    const loadingSec = parseInt(aiCfg?.loadingTime, 10);
-    if (!isNaN(loadingSec) && loadingSec > 0) {
+    const loadingSec = parseInt(String(aiCfg?.loadingTime ?? ''), 10);
+    if (!Number.isNaN(loadingSec) && loadingSec > 0) {
       return loadingSec * 1000 + 12000 + extraMs;
     }
-  } catch (e) {
+  } catch {
     // Bỏ qua lỗi đọc cấu hình
   }
   return defaultMs + extraMs;
 };
 
-// [VER 1.2] Ghi nhận Token an toàn tuyệt đối (chống QuotaExceededError & NaN)
+// [VER 1.2] Ghi nhận Token an toàn tuyệt đối (chống QuotaExceededError & NaN) qua safeLocalStorageSet
+/** @param {any} tokenMetadata */
 const safeAddTotalTokens = (tokenMetadata) => {
   if (!tokenMetadata || typeof localStorage === 'undefined') return;
   const used = Number(tokenMetadata.totalTokenCount || 0);
@@ -135,20 +211,31 @@ const safeAddTotalTokens = (tokenMetadata) => {
   try {
     const prevRaw = parseInt(localStorage.getItem('fc_total_tokens') || '0', 10);
     const prevSafe = Number.isFinite(prevRaw) && prevRaw >= 0 ? prevRaw : 0;
-    localStorage.setItem('fc_total_tokens', String(prevSafe + used));
+    safeLocalStorageSet('fc_total_tokens', String(prevSafe + used));
   } catch (e) {
-    console.warn('[AiFactoryEngine] Không thể cập nhật fc_total_tokens:', e?.message || e);
+    console.warn(
+      '[AiFactoryEngine] Không thể cập nhật fc_total_tokens:',
+      getErrorMessage(e)
+    );
   }
 };
 
 // [VER 1.2] Chuẩn hóa chủ đề hỗ trợ Multi-select Array Armor
+/** @param {any} topic */
 const normalizeTopicInput = (topic) => {
+  /** @param {any} val */
   const isWildcard = (val) => {
     const low = String(val || '').trim().toLowerCase();
     return !low || low === 'any' || low === 'all' || low === 'tất cả';
   };
   if (Array.isArray(topic)) {
-    const cleaned = [...new Set(topic.map((t) => String(t || '').trim()).filter((t) => !isWildcard(t)))];
+    const cleaned = [
+      ...new Set(
+        topic
+          .map((t) => String(t || '').trim())
+          .filter((t) => !isWildcard(t))
+      )
+    ];
     return cleaned.join(', ');
   }
   const single = String(topic || '').trim();
@@ -156,6 +243,10 @@ const normalizeTopicInput = (topic) => {
 };
 
 // Helper nội bộ: Ma trận Chuyển hóa Thị giác tách nhánh theo ngôn ngữ (en vs zh)
+/**
+ * @param {'en' | 'zh'} lang
+ * @param {string} [dataMode='vocab']
+ */
 const buildVisualImageRule = (lang, dataMode = 'vocab') => {
   if (dataMode === 'sentence') {
     return (
@@ -192,6 +283,7 @@ const buildVisualImageRule = (lang, dataMode = 'vocab') => {
 };
 
 // [VER 1.1] Lọc từ khóa ảnh rác ("none", "null", "n/a") và chặn chữ Hán
+/** @param {any} raw */
 const sanitizeImageKeyword = (raw) => {
   if (typeof raw !== 'string') return '';
   const trimmed = raw.trim();
@@ -201,12 +293,22 @@ const sanitizeImageKeyword = (raw) => {
 };
 
 // [VER 1.1] Dựng URL ảnh sạch qua buildSmartImageUrl, không lưu từ khóa rác và không fallback chữ Hán
+/**
+ * @param {any} rawKeyword
+ * @param {any} fallbackTerm
+ * @param {'en' | 'zh'} lang
+ * @param {string} [dataMode='vocab']
+ */
 const buildSafeFactoryImage = (rawKeyword, fallbackTerm, lang, dataMode = 'vocab') => {
   const cleanKeyword = sanitizeImageKeyword(rawKeyword);
   const safeFallback =
-    lang === 'zh' || dataMode === 'sentence' ? '' : sanitizeImageKeyword(fallbackTerm);
+    lang === 'zh' || dataMode === 'sentence'
+      ? ''
+      : sanitizeImageKeyword(fallbackTerm);
   const effectiveKeyword = cleanKeyword || safeFallback;
-  const imageUrl = effectiveKeyword ? buildSmartImageUrl(effectiveKeyword, '', dataMode) : '';
+  const imageUrl = effectiveKeyword
+    ? buildSmartImageUrl(effectiveKeyword, '', dataMode)
+    : '';
   return {
     image_keyword: imageUrl ? effectiveKeyword : '',
     image: imageUrl || ''
@@ -217,28 +319,41 @@ export const AiFactoryEngine = {
   // ============================================================================
   // 1. CÁC HÀM TIỆN ÍCH DÙNG CHUNG (BATCH ENRICH & HISTORY)
   // ============================================================================
+  /**
+   * Làm giàu hàng loạt định nghĩa Tiếng Việt cho các thẻ đang thiếu nghĩa.
+   * @param {any[]} cards
+   * @param {number[]} queueIndices
+   * @param {number} maxCount
+   * @param {any} lang
+   * @param {string} apiKey
+   */
   batchEnrich: async function (cards, queueIndices, maxCount, lang, apiKey) {
-    if (!apiKey || typeof callGeminiApi !== 'function') {
-      return { updatedCards: cards, hasUpdates: false };
+    if (!Array.isArray(cards) || !apiKey || typeof callGeminiApi !== 'function') {
+      return { updatedCards: Array.isArray(cards) ? cards : [], hasUpdates: false };
     }
 
+    const safeLang = normalizeForgeLang(lang);
     const updatedCards = [...cards];
     let hasUpdates = false;
+    /** @type {{ idx: number, term: string }[]} */
     const batchTargets = [];
+    const safeIndices = Array.isArray(queueIndices) ? queueIndices : [];
+    const safeMax = Math.max(0, Number(maxCount) || 0);
 
-    for (let i = 0; i < queueIndices.length; i++) {
-      if (batchTargets.length >= maxCount) break;
-      const cardIdx = queueIndices[i];
+    for (let i = 0; i < safeIndices.length; i++) {
+      if (batchTargets.length >= safeMax) break;
+      const cardIdx = safeIndices[i];
       const c = updatedCards[cardIdx];
-      if (c && (!c.definition || c.definition.trim() === '')) {
-        batchTargets.push({ idx: cardIdx, term: c.term });
+      if (c && typeof c.term === 'string' && c.term.trim() && (!c.definition || String(c.definition).trim() === '')) {
+        batchTargets.push({ idx: cardIdx, term: String(c.term).trim() });
       }
     }
 
     if (batchTargets.length > 0) {
+      /** @type {any} */
       let timeoutId = null;
       try {
-        const targetLangName = lang === 'zh' ? 'Tiếng Trung' : 'Tiếng Anh';
+        const targetLangName = safeLang === 'zh' ? 'Tiếng Trung' : 'Tiếng Anh';
         // [V1.50] Anti-Encyclopedic Prompt for Batch Enrich
         let prompt =
           'Cung cấp bản dịch Tiếng Việt trực tiếp và chuẩn xác nhất cho ' +
@@ -266,21 +381,29 @@ export const AiFactoryEngine = {
         });
 
         const res = await Promise.race([aiPromise, timeoutPromise]);
-        const parsed = parseAiJson(res?.text);
+        const parsed = /** @type {any} */ (parseAiJson(res?.text));
 
         if (parsed && Array.isArray(parsed.translations)) {
           const limit = Math.min(parsed.translations.length, batchTargets.length);
+          let appliedCount = 0;
           for (let i = 0; i < limit; i++) {
+            const rawTrans = parsed.translations[i];
+            if (typeof rawTrans !== 'string') continue;
+            const cleanTrans = rawTrans.trim();
+            if (!cleanTrans) continue;
             const b = batchTargets[i];
-            updatedCards[b.idx] = { ...updatedCards[b.idx], definition: parsed.translations[i] };
+            updatedCards[b.idx] = { ...updatedCards[b.idx], definition: cleanTrans };
+            appliedCount += 1;
           }
-          hasUpdates = true;
+          if (appliedCount > 0) {
+            hasUpdates = true;
+          }
           safeAddTotalTokens(res?.tokenMetadata);
         }
       } catch (e) {
         console.warn('Pre-flight Batch enrich error:', e);
-        if (typeof window !== 'undefined' && window.logSystemEvent) {
-          window.logSystemEvent('Lỗi tự động điền từ (Batch Enrich) sập', e);
+        if (typeof window !== 'undefined' && typeof (/** @type {any} */ (window).logSystemEvent) === 'function') {
+          /** @type {any} */ (window).logSystemEvent('Lỗi tự động điền từ (Batch Enrich) sập', e);
         }
       } finally {
         if (timeoutId) clearTimeout(timeoutId);
@@ -290,13 +413,19 @@ export const AiFactoryEngine = {
     return { updatedCards, hasUpdates };
   },
 
+  /**
+   * Tạo khối chỉ dẫn lịch sử chống lặp từ mảng từ/câu đã học gần đây.
+   * @param {any[]} historyArray
+   * @returns {string}
+   */
   getHistoryPrompt: function (historyArray) {
-    if (!historyArray || historyArray.length === 0) return '';
+    if (!Array.isArray(historyArray) || historyArray.length === 0) return '';
     const stopWords = [
       'the', 'and', 'are', 'was', 'were', 'that', 'this', 'have', 'has', 'had',
       'what', 'when', 'where', 'who', 'how', 'why', 'then', 'there', 'their',
       'they', 'them', 'with', 'from', 'about'
     ];
+    /** @type {string[]} */
     const processedHistory = [];
 
     historyArray.slice(-80).forEach((item) => {
@@ -306,13 +435,17 @@ export const AiFactoryEngine = {
           .toLowerCase()
           .replace(/[^\p{L}\p{N}]/gu, ' ')
           .split(/\s+/);
-        const validWords = words.filter((w) => w.length > 1 && !stopWords.includes(w));
+        const validWords = words.filter(
+          (w) => w.length > 1 && !stopWords.includes(w)
+        );
         const keywords = [...new Set(validWords)].slice(0, 5).join(' ');
         if (keywords) processedHistory.push(keywords);
-      } else {
-        processedHistory.push(item);
+      } else if (item.trim()) {
+        processedHistory.push(item.trim());
       }
     });
+
+    if (processedHistory.length === 0) return '';
 
     return (
       '\n\nHISTORY (LỊCH SỬ): Vui lòng cố gắng tránh lặp lại các khái niệm gần đây sau đây để nội dung luôn mới mẻ: [' +
@@ -336,22 +469,26 @@ export const AiFactoryEngine = {
     // [VER 1.2] Tôn trọng tuyệt đối tham số isReverse truyền tường minh từ ExamEngine / QuizGame / Mock Test.
     // Đã gỡ bỏ hoàn toàn việc đọc lén localStorage (fc_settings.startSide & fc_quiz_config.askMode) gây nhiễm chéo chiều đáp án.
     const actualIsReverse = Boolean(isReverse);
+    const safeLang = normalizeForgeLang(lang);
 
     const activePedagogyEngine =
-      IoeDataEngine || (typeof window !== 'undefined' ? window.IoeDataEngine : null);
-    const targetLangName = lang === 'zh' ? 'Tiếng Trung' : 'Tiếng Anh';
-    const cefrLevel = resolveCefrLevel(level);
-    const levelDisplay = Array.isArray(level) ? level.join(', ') : level;
+      SafePedagogyEngine ||
+      (typeof window !== 'undefined' ? /** @type {any} */ (window).IoeDataEngine : null);
+    const targetLangName = safeLang === 'zh' ? 'Tiếng Trung' : 'Tiếng Anh';
+    const cefrLevel = resolveCefrLevel(level, safeLang);
+    const levelDisplay = Array.isArray(level) ? level.join(', ') : String(level || '');
     const posThresholdStr = resolvePosThreshold(level);
 
     // Lấy luật Sư phạm động từ Ma trận (Pedagogy Routing Matrix)
-    const pedagogyRules = activePedagogyEngine?.getPedagogyMatrixRule
-      ? activePedagogyEngine.getPedagogyMatrixRule(level, lang)
-      : {
-          example: 'Tự nhiên, chuẩn ngữ pháp, có ngữ cảnh thực tế rõ ràng.',
-          definition:
-            'Bản dịch Tiếng Việt trực tiếp, chuẩn xác. TUYỆT ĐỐI KHÔNG giải nghĩa kiểu từ điển bách khoa.'
-        };
+    const pedagogyRules =
+      activePedagogyEngine &&
+      typeof activePedagogyEngine.getPedagogyMatrixRule === 'function'
+        ? activePedagogyEngine.getPedagogyMatrixRule(level, safeLang)
+        : {
+            example: 'Tự nhiên, chuẩn ngữ pháp, có ngữ cảnh thực tế rõ ràng.',
+            definition:
+              'Bản dịch Tiếng Việt trực tiếp, chuẩn xác. TUYỆT ĐỐI KHÔNG giải nghĩa kiểu từ điển bách khoa.'
+          };
 
     let prompt = `Bạn là một gia sư ${targetLangName} chuyên nghiệp và tận tâm, đang tạo nội dung cho một ứng dụng giáo dục.\n`;
     prompt += `CẤP ĐỘ MỤC TIÊU: ${levelDisplay} (Tiêu chuẩn tương đương: ${cefrLevel}).\n`;
@@ -360,14 +497,18 @@ export const AiFactoryEngine = {
     if (level) {
       const levelArr = Array.isArray(level) ? level : [level];
       const contexts = levelArr
-        .map((lvl) => activePedagogyEngine?.GRADE_CONTEXTS?.[lvl])
+        .map((lvl) =>
+          typeof lvl === 'string' && activePedagogyEngine?.GRADE_CONTEXTS
+            ? activePedagogyEngine.GRADE_CONTEXTS[lvl]
+            : ''
+        )
         .filter(Boolean);
       if (contexts.length > 0) {
         prompt += `NGỮ CẢNH (CONTEXT): ${contexts.join(' | ')}\n`;
       }
     }
 
-    if (lang === 'zh') {
+    if (safeLang === 'zh') {
       prompt += `QUY TẮC TỪ VỰNG: Vui lòng sử dụng từ vựng phù hợp với tiêu chuẩn ${levelDisplay}. Đối với cấp độ cơ bản (HSK 1-2), chỉ dùng các từ giao tiếp hàng ngày cơ bản. Với cấp độ cao hơn, dùng từ vựng nâng cao phù hợp nhưng không quá hiếm gặp hoặc tối nghĩa.\n`;
     } else {
       prompt += `QUY TẮC TỪ VỰNG: Vui lòng sử dụng từ vựng bám sát tiêu chuẩn ${cefrLevel}. Đảm bảo độ khó hoàn toàn phù hợp với học viên mục tiêu.\n`;
@@ -376,14 +517,14 @@ export const AiFactoryEngine = {
     if (dataMode === 'sentence' || subType === 'grammar_mcq') {
       prompt += `QUY TẮC ĐỊNH DẠNG: Trường 'displaySentence' và tất cả các đáp án (options) đều phải là các câu văn hoàn chỉnh, nghe tự nhiên.\n`;
     } else {
-      if (lang === 'zh') {
+      if (safeLang === 'zh') {
         prompt += `QUY TẮC ĐỊNH DẠNG: Đối với HSK 1 hoặc 2, hãy giữ cho các đáp án (options) tương đối ngắn gọn và dễ đọc.\n`;
       } else {
         prompt += `QUY TẮC ĐỊNH DẠNG: Đối với cấp độ cơ bản (Pre-A1 đến A2), hãy giữ cho các đáp án (options) tương đối đơn giản, dễ đọc.\n`;
       }
     }
 
-    if (lang === 'zh') {
+    if (safeLang === 'zh') {
       prompt += `GẮN NHÃN CẤP ĐỘ: Vui lòng khai báo đúng cấp độ HSK vào trường 'cefr_level' (ví dụ: 'HSK 3').\n`;
     } else {
       prompt += `GẮN NHÃN CẤP ĐỘ: Vui lòng khai báo đúng cấp độ CEFR vào trường 'cefr_level' (ví dụ: 'B1').\n`;
@@ -396,16 +537,18 @@ export const AiFactoryEngine = {
       subType === 'odd_one_out' ||
       subType === 'spot_mistake';
     if (isTopicFree) {
-      prompt += `TỰ DO CHỦ ĐỀ: Bạn có thể tùy ý chọn từ các chủ đề ${lang === 'zh' ? 'đời sống hàng ngày' : 'Cambridge'} phổ biến.\n`;
+      prompt += `TỰ DO CHỦ ĐỀ: Bạn có thể tùy ý chọn từ các chủ đề ${safeLang === 'zh' ? 'đời sống hàng ngày' : 'Cambridge'} phổ biến.\n`;
     } else {
       prompt += `TẬP TRUNG CHỦ ĐỀ: Vui lòng tạo nội dung liên quan chặt chẽ đến chủ đề: "${cleanTopic}".\n`;
     }
 
     if (forgeType === 'base_card') {
       prompt += `NHIỆM VỤ: Tạo một ${dataMode === 'sentence' ? 'câu văn' : 'từ vựng'} phù hợp với cấp độ và chủ đề đã giao.\n`;
-      const typeRule = activePedagogyEngine?.getMicroTierVocabTypeRule
-        ? activePedagogyEngine.getMicroTierVocabTypeRule(level)
-        : '';
+      const typeRule =
+        activePedagogyEngine &&
+        typeof activePedagogyEngine.getMicroTierVocabTypeRule === 'function'
+          ? activePedagogyEngine.getMicroTierVocabTypeRule(level)
+          : '';
       if (typeRule && dataMode === 'vocab') {
         prompt += typeRule + '\n';
         prompt += `TÍNH TRỰC QUAN: Đối với từ vựng, ưu tiên chọn các danh từ cụ thể, có hình khối rõ ràng nếu có thể.\n`;
@@ -414,13 +557,16 @@ export const AiFactoryEngine = {
       if (dataMode === 'sentence') {
         prompt += `QUY TẮC CÂU VĂN & ĐỊNH NGHĨA: Trường 'term' là câu văn hoàn chỉnh tuân thủ: ${pedagogyRules.example}\n`;
         prompt += `Trường 'definition' là bản dịch Tiếng Việt tự nhiên, chuẩn xác của toàn bộ câu 'term'.\n`;
-        prompt += buildVisualImageRule(lang, 'sentence');
+        prompt += buildVisualImageRule(safeLang, 'sentence');
 
         if (IoeEnumRegistry && IoeEnumRegistry.LEVEL_TO_TRAPS) {
+          /** @type {string[]} */
           const tagsArr = [];
-          const prefix = lang === 'zh' ? 'zh' : 'en';
+          const prefix = safeLang === 'zh' ? 'zh' : 'en';
           for (const [lvl, traps] of Object.entries(IoeEnumRegistry.LEVEL_TO_TRAPS)) {
-            if (lvl.startsWith(prefix)) tagsArr.push(...traps);
+            if (lvl.startsWith(prefix) && Array.isArray(traps)) {
+              tagsArr.push(...traps);
+            }
           }
           const uniqueTags = [...new Set(tagsArr)];
           if (uniqueTags.length > 0) {
@@ -429,13 +575,15 @@ export const AiFactoryEngine = {
         }
       } else {
         prompt += `QUY TẮC ĐỊNH NGHĨA: Trường 'definition' BẮT BUỘC tuân thủ: ${pedagogyRules.definition}\n`;
-        prompt += buildVisualImageRule(lang, 'vocab');
+        prompt += buildVisualImageRule(safeLang, 'vocab');
 
         // PRE-COMPUTATION CONSTRAINT: Dời luật Ngữ pháp lên trước luật JSON và thêm Pedagogical Prompt
         prompt += `\n[CÁC LỖI NGỮ PHÁP NGHIÊM CẤM]:\n`;
-        const grammarRule = activePedagogyEngine?.getMicroTierGrammarRule
-          ? activePedagogyEngine.getMicroTierGrammarRule(lang)
-          : `- Chỉ phân loại theo đúng ngữ pháp ngôn ngữ gốc, tuyệt đối không vay mượn ngữ pháp bản dịch Tiếng Việt.\n`;
+        const grammarRule =
+          activePedagogyEngine &&
+          typeof activePedagogyEngine.getMicroTierGrammarRule === 'function'
+            ? activePedagogyEngine.getMicroTierGrammarRule(safeLang)
+            : `- Chỉ phân loại theo đúng ngữ pháp ngôn ngữ gốc, tuyệt đối không vay mượn ngữ pháp bản dịch Tiếng Việt.\n`;
         prompt += grammarRule + '\n';
 
         // [V1.52] PROMPT RESTRUCTURING: Tái cấu trúc Prompt trường 'example'
@@ -465,12 +613,19 @@ export const AiFactoryEngine = {
         ];
         const shuffledTopics = shuffleArray
           ? shuffleArray([...allTopics])
-          : allTopics.sort(() => Math.random() - 0.5);
+          : [...allTopics].sort(() => Math.random() - 0.5);
         prompt += `NHIỆM VỤ: Tạo một câu hỏi 'Tìm Từ Khác Loại' gồm 4 từ ${targetLangName} ở cấp độ ${cefrLevel}.\n`;
         prompt += `MỒI NGỮ NGHĨA: Hãy chọn 3 từ thuộc nhóm [${shuffledTopics[0]}] và 1 từ khác loại thuộc nhóm [${shuffledTopics[1]}].\n`;
-        const oddRule = activePedagogyEngine?.getMicroTierOddRule
-          ? activePedagogyEngine.getMicroTierOddRule(lang, dataMode, level, cleanTopic || 'ANY')
-          : '';
+        const oddRule =
+          activePedagogyEngine &&
+          typeof activePedagogyEngine.getMicroTierOddRule === 'function'
+            ? activePedagogyEngine.getMicroTierOddRule(
+                safeLang,
+                dataMode,
+                level,
+                cleanTopic || 'ANY'
+              )
+            : '';
         if (oddRule) prompt += oddRule + '\n';
         prompt += `QUY TẮC BẮT BUỘC: Trường 'explanation' PHẢI BẰNG TIẾNG VIỆT.\n`;
       } else if (subType === 'pronunciation') {
@@ -481,9 +636,16 @@ export const AiFactoryEngine = {
       if (subType === 'fill_blank') {
         prompt += `NHIỆM VỤ: Tạo một câu văn ${targetLangName} ở cấp độ ${cefrLevel}. Chọn MỘT từ vựng quan trọng làm 'targetWord'.\n`;
         prompt += `TỐI QUAN TRỌNG: KHÔNG ĐƯỢC chèn '[__________]' vào trong câu. Trường 'displaySentence' BẮT BUỘC phải chứa nguyên văn toàn bộ câu không bị chỉnh sửa.\n`;
-        const clozeRule = activePedagogyEngine?.getMicroTierClozeRule
-          ? activePedagogyEngine.getMicroTierClozeRule(lang, dataMode, level, cleanTopic || 'ANY')
-          : '';
+        const clozeRule =
+          activePedagogyEngine &&
+          typeof activePedagogyEngine.getMicroTierClozeRule === 'function'
+            ? activePedagogyEngine.getMicroTierClozeRule(
+                safeLang,
+                dataMode,
+                level,
+                cleanTopic || 'ANY'
+              )
+            : '';
         if (clozeRule) prompt += clozeRule + '\n';
         prompt += `QUY TẮC: Trường 'hint' chính là bản dịch Tiếng Việt của toàn bộ câu văn đó.\n`;
       } else if (subType === 'vocab_mcq' || subType === 'grammar_mcq') {
@@ -510,7 +672,7 @@ export const AiFactoryEngine = {
           }
         }
         prompt += `ĐÁP ÁN NHIỄU (DISTRACTORS): Cung cấp 3 đáp án nhiễu sai nhưng có vẻ hợp lý và liên quan đến chủ đề.\n`;
-        prompt += buildVisualImageRule(lang, isSentenceTask ? 'sentence' : 'vocab');
+        prompt += buildVisualImageRule(safeLang, isSentenceTask ? 'sentence' : 'vocab');
         prompt += `QUY TẮC BẮT BUỘC: Trường 'explanation' PHẢI BẰNG TIẾNG VIỆT, giải thích lý do tại sao đáp án đúng lại phù hợp và tại sao các đáp án khác lại sai.\n`;
       } else if (subType === 'spot_mistake') {
         prompt += `NHIỆM VỤ: Tạo một câu ${targetLangName} ở cấp độ ${cefrLevel} chứa DUY NHẤT MỘT lỗi sai nhỏ (về ngữ pháp hoặc từ vựng).\n`;
@@ -519,15 +681,19 @@ export const AiFactoryEngine = {
         prompt += `QUY TẮC: Cung cấp câu sai, từ bị sai, từ sửa lại cho đúng, và phần giải thích bằng TIẾNG VIỆT.\n`;
       } else if (subType === 'listening') {
         prompt += `NHIỆM VỤ: Tạo một kịch bản bài nghe hiểu và 1 câu hỏi trắc nghiệm 4 đáp án ở cấp độ ${cefrLevel}. Phần giải thích PHẢI BẰNG TIẾNG VIỆT.\n`;
-        const listenRule = activePedagogyEngine?.getMicroTierListeningRule
-          ? activePedagogyEngine.getMicroTierListeningRule(level)
-          : '';
+        const listenRule =
+          activePedagogyEngine &&
+          typeof activePedagogyEngine.getMicroTierListeningRule === 'function'
+            ? activePedagogyEngine.getMicroTierListeningRule(level)
+            : '';
         if (listenRule) prompt += listenRule + '\n';
       } else if (subType === 'reading_passage') {
         prompt += `NHIỆM VỤ: Tạo một đoạn văn đọc hiểu và các câu hỏi kèm theo ở cấp độ ${cefrLevel}.\n`;
-        const readRule = activePedagogyEngine?.getMicroTierReadingRule
-          ? activePedagogyEngine.getMicroTierReadingRule(level)
-          : '';
+        const readRule =
+          activePedagogyEngine &&
+          typeof activePedagogyEngine.getMicroTierReadingRule === 'function'
+            ? activePedagogyEngine.getMicroTierReadingRule(level)
+            : '';
         if (readRule) prompt += readRule + '\n';
         prompt += `CÂU HỎI: Kết hợp giữa Trắc nghiệm, True/False/Not Given hoặc Điền Khuyết. Phần giải thích cho mỗi câu PHẢI BẰNG TIẾNG VIỆT.\n`;
       }
@@ -538,6 +704,7 @@ export const AiFactoryEngine = {
     return prompt;
   },
 
+  /** @param {any} forgeType @param {any} subType @param {string} [dataMode='vocab'] @param {any} [level=''] */
   _getMasterSchema: function (forgeType, subType, dataMode = 'vocab', level = '') {
     const commonProps = { cefr_level: { type: 'STRING' } };
     const commonRequired = ['cefr_level'];
@@ -794,6 +961,7 @@ export const AiFactoryEngine = {
   },
 
   // [VER 1.1] Lõi gọi chung cho 3 Lò đúc: Prompt + Schema + Timeout + Null-Safety + Dọn Timer
+  /** @param {any} params */
   _executeForgeCall: async function ({
     forgeType,
     subType = null,
@@ -808,6 +976,7 @@ export const AiFactoryEngine = {
     extraTimeoutMs = 0,
     timeoutLabel = 'AI Forge Timeout'
   }) {
+    /** @type {any} */
     let timeoutId = null;
     try {
       let prompt = AiFactoryEngine._buildSystemPrompt(
@@ -820,20 +989,30 @@ export const AiFactoryEngine = {
         isReverse
       );
       if (historyPrompt) prompt += historyPrompt;
-      const schema = AiFactoryEngine._getMasterSchema(forgeType, subType, dataMode, level);
+      const schema = AiFactoryEngine._getMasterSchema(
+        forgeType,
+        subType,
+        dataMode,
+        level
+      );
 
       const aiPromise = callGeminiApi(prompt, schema, apiKey);
       const dynamicTimeout = resolveDynamicTimeout(defaultTimeoutMs, extraTimeoutMs);
 
       const timeoutPromise = new Promise((_, reject) => {
-        timeoutId = setTimeout(() => reject(new Error(timeoutLabel)), dynamicTimeout);
+        timeoutId = setTimeout(
+          () => reject(new Error(timeoutLabel)),
+          dynamicTimeout
+        );
       });
 
       const res = await Promise.race([aiPromise, timeoutPromise]);
-      const parsed = parseAiJson(res?.text);
+      const parsed = /** @type {any} */ (parseAiJson(res?.text));
 
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        throw new Error(`AI trả về dữ liệu JSON rỗng hoặc sai cấu trúc (${timeoutLabel})`);
+        throw new Error(
+          `AI trả về dữ liệu JSON rỗng hoặc sai cấu trúc (${timeoutLabel})`
+        );
       }
 
       return { parsed, tokenMetadata: res?.tokenMetadata || null };
@@ -854,12 +1033,13 @@ export const AiFactoryEngine = {
     dataMode = 'vocab',
     isReverse = false
   ) {
+    const safeLang = normalizeForgeLang(lang);
     try {
       const { parsed, tokenMetadata } = await AiFactoryEngine._executeForgeCall({
         forgeType: 'base_card',
         subType: null,
         level,
-        lang,
+        lang: safeLang,
         apiKey,
         topic,
         historyPrompt,
@@ -873,7 +1053,7 @@ export const AiFactoryEngine = {
       const { image_keyword, image } = buildSafeFactoryImage(
         parsed.image_keyword,
         parsed.term,
-        lang,
+        safeLang,
         dataMode
       );
 
@@ -884,16 +1064,17 @@ export const AiFactoryEngine = {
         image_keyword: image_keyword,
         cefr_level: parsed.cefr_level || '',
         grammar_type: Array.isArray(parsed.grammar_type) ? parsed.grammar_type : [],
-        partOfSpeech: parsed.partOfSpeech || (dataMode === 'sentence' ? 'Câu văn' : ''),
+        partOfSpeech:
+          parsed.partOfSpeech || (dataMode === 'sentence' ? 'Câu văn' : ''),
         example: parsed.example || '',
-        language: lang,
+        language: safeLang,
         isAiGenerated: true,
         _tokenUsage: tokenMetadata
       };
     } catch (e) {
       console.error('forgeBaseCard Error:', e);
-      if (typeof window !== 'undefined' && window.logSystemEvent) {
-        window.logSystemEvent('Lò Đúc Cơ Sở (Base Card) sập', e);
+      if (typeof window !== 'undefined' && typeof (/** @type {any} */ (window).logSystemEvent) === 'function') {
+        /** @type {any} */ (window).logSystemEvent('Lò Đúc Cơ Sở (Base Card) sập', e);
       }
       throw e;
     }
@@ -912,12 +1093,13 @@ export const AiFactoryEngine = {
     dataMode = 'vocab',
     isReverse = false
   ) {
+    const safeLang = normalizeForgeLang(lang);
     try {
       const { parsed, tokenMetadata } = await AiFactoryEngine._executeForgeCall({
         forgeType: 'matrix',
         subType,
         level,
-        lang,
+        lang: safeLang,
         apiKey,
         topic,
         historyPrompt,
@@ -927,6 +1109,7 @@ export const AiFactoryEngine = {
         timeoutLabel: 'AI Matrix Timeout'
       });
 
+      /** @type {Record<string, any>} */
       const result = {
         ...parsed,
         isAiGenerated: true,
@@ -950,8 +1133,8 @@ export const AiFactoryEngine = {
       return result;
     } catch (e) {
       console.error(`forgeMatrix [${subType}] Error:`, e);
-      if (typeof window !== 'undefined' && window.logSystemEvent) {
-        window.logSystemEvent(`Lò Đúc Ma Trận (${subType}) sập`, e);
+      if (typeof window !== 'undefined' && typeof (/** @type {any} */ (window).logSystemEvent) === 'function') {
+        /** @type {any} */ (window).logSystemEvent(`Lò Đúc Ma Trận (${subType}) sập`, e);
       }
       throw e;
     }
@@ -970,13 +1153,14 @@ export const AiFactoryEngine = {
     dataMode = 'vocab',
     isReverse = false
   ) {
+    const safeLang = normalizeForgeLang(lang);
     try {
       const isReading = subType === 'reading_passage';
       const { parsed, tokenMetadata } = await AiFactoryEngine._executeForgeCall({
         forgeType: 'context',
         subType,
         level,
-        lang,
+        lang: safeLang,
         apiKey,
         topic,
         historyPrompt,
@@ -987,6 +1171,7 @@ export const AiFactoryEngine = {
         timeoutLabel: `AI Context Timeout (${subType})`
       });
 
+      /** @type {Record<string, any>} */
       const result = {
         ...parsed,
         isAiGenerated: true,
@@ -994,7 +1179,11 @@ export const AiFactoryEngine = {
         _tokenUsage: tokenMetadata
       };
 
-      if (subType === 'listening' || subType === 'grammar_mcq' || subType === 'vocab_mcq') {
+      if (
+        subType === 'listening' ||
+        subType === 'grammar_mcq' ||
+        subType === 'vocab_mcq'
+      ) {
         if (Array.isArray(result.options)) {
           result.options = shuffleArray(result.options);
         }
@@ -1003,11 +1192,13 @@ export const AiFactoryEngine = {
       // [VER 1.1] Đồng bộ URL ảnh sạch cho câu hỏi trắc nghiệm từ vựng / ngữ pháp
       if (subType === 'vocab_mcq' || subType === 'grammar_mcq') {
         const effectiveMode =
-          dataMode === 'sentence' || subType === 'grammar_mcq' ? 'sentence' : 'vocab';
+          dataMode === 'sentence' || subType === 'grammar_mcq'
+            ? 'sentence'
+            : 'vocab';
         const { image_keyword, image } = buildSafeFactoryImage(
           parsed.image_keyword,
           parsed.term,
-          lang,
+          safeLang,
           effectiveMode
         );
         result.image_keyword = image_keyword;
@@ -1019,8 +1210,8 @@ export const AiFactoryEngine = {
       return result;
     } catch (e) {
       console.error(`forgeContext [${subType}] Error:`, e);
-      if (typeof window !== 'undefined' && window.logSystemEvent) {
-        window.logSystemEvent(`Lò Đúc Ngữ Cảnh (${subType}) sập`, e);
+      if (typeof window !== 'undefined' && typeof (/** @type {any} */ (window).logSystemEvent) === 'function') {
+        /** @type {any} */ (window).logSystemEvent(`Lò Đúc Ngữ Cảnh (${subType}) sập`, e);
       }
       throw e;
     }
@@ -1028,14 +1219,30 @@ export const AiFactoryEngine = {
 };
 
 // Named Exports tương thích trực tiếp với NewMapping.md
-export const batchEnrich = (...args) => AiFactoryEngine.batchEnrich(...args);
-export const getHistoryPrompt = (...args) => AiFactoryEngine.getHistoryPrompt(...args);
-export const forgeBaseCard = (...args) => AiFactoryEngine.forgeBaseCard(...args);
-export const forgeMatrix = (...args) => AiFactoryEngine.forgeMatrix(...args);
-export const forgeContext = (...args) => AiFactoryEngine.forgeContext(...args);
+/** @param {any[]} args */
+export const batchEnrich = (...args) =>
+  AiFactoryEngine.batchEnrich(args[0], args[1], args[2], args[3], args[4]);
+/** @param {any[]} args */
+export const getHistoryPrompt = (...args) =>
+  AiFactoryEngine.getHistoryPrompt(args[0]);
+/** @param {any[]} args */
+export const forgeBaseCard = (...args) =>
+  AiFactoryEngine.forgeBaseCard(
+    args[0], args[1], args[2], args[3], args[4], args[5], args[6]
+  );
+/** @param {any[]} args */
+export const forgeMatrix = (...args) =>
+  AiFactoryEngine.forgeMatrix(
+    args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7]
+  );
+/** @param {any[]} args */
+export const forgeContext = (...args) =>
+  AiFactoryEngine.forgeContext(
+    args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7]
+  );
 
 if (typeof window !== 'undefined') {
-  window.AiFactoryEngine = AiFactoryEngine;
+  /** @type {any} */ (window).AiFactoryEngine = AiFactoryEngine;
 }
 
 export default AiFactoryEngine;

@@ -1,19 +1,28 @@
 // ============================================================================
 // FILE 26/85: src/engines/exam/index.js
 // NGUỒN GỐC: Tầng 2 - Block 2.7d (The Core Hydrator V3.0)
-// PHIÊN BẢN: Ver 1.1
-// NGÀY GIỜ NÂNG CẤP: 21/11/2026 - 17:29 (GMT+7)
+// PHIÊN BẢN: Ver 1.2
+// NGÀY GIỜ NÂNG CẤP: 28/11/2026 - 05:30 (GMT+7)
 // NHIỆM VỤ: Tổng công trình sư khảo thí hợp nhất ExamMemory, ExamFallback,
 //           ExamNormalizer; điều phối nạp câu hỏi nguyên tử (hydrateQuestion)
 //           và cứu hộ JIT 0ms (getEmergencyFallback) chuẩn hóa cho cả Mock Test
-//           lẫn 10 Mini-Games (Vá Cloze Grammar HSK, Slice-safe 5+ Options,
-//           Clone safeMeta 2 pha, Siết QA, Reading/match_hard & Clear Timers).
+//           lẫn 10 Mini-Games.
+//           Nâng cấp Ver 1.2 (Giai đoạn 5 - Lượt 5.1 - Diệt 1M Radar & 0 tsc):
+//           1. Diệt 1/1 MEDIUM Radar (R05): Thay localStorage.setItem trần tại
+//              safeAddTotalTokens bằng safeLocalStorageSet từ helpers.js.
+//           2. Diệt S14: Bảo vệ item.id rỗng/undefined trong fetchFromOfflinePool.
+//           3. Diệt S15: Chặn bắn từ khóa CJK/Việt ở fallbackQuery của
+//              buildOptionImageUrl; khóa chặt toàn bộ JSDoc TS 5.x (safeMeta,
+//              tempGeneratedData, fallbackBase, self, getErrorMessage, .apply
+//              cho 5 Named Exports) để xanh sạch 0 Problems tsc --noEmit.
+//           4. Đồng bộ xóa tại chỗ _volatileMemory với ExamMemory (Ver 1.0).
 // ============================================================================
 
 import { FcDB } from '../../services/db.js';
 import { AiMemoryManager } from '../../utils/memoryManager.js';
 import {
   safeJsonParse,
+  safeLocalStorageSet,
   shuffleArray,
   buildSmartImageUrl,
   detectSentence
@@ -46,6 +55,25 @@ const INVALID_IMAGE_KEYWORDS = new Set([
   '-'
 ]);
 
+/**
+ * Trích xuất thông điệp lỗi an toàn từ unknown (tránh ts(18046)).
+ * @param {unknown} err
+ * @returns {string}
+ */
+const getErrorMessage = (err) => {
+  if (!err) return 'Unknown error';
+  if (typeof err === 'string') return err;
+  if (err instanceof Error) return err.message || String(err);
+  if (typeof err === 'object' && 'message' in err && typeof err.message === 'string') {
+    return err.message;
+  }
+  return String(err);
+};
+
+/**
+ * @param {any} val
+ * @returns {string}
+ */
 const normalizeCompare = (val) =>
   String(val || '')
     .normalize('NFC')
@@ -53,11 +81,25 @@ const normalizeCompare = (val) =>
     .replace(/\s+/g, ' ')
     .trim();
 
+/**
+ * @param {any} val
+ * @returns {string}
+ */
 const stripOptionLabelPrefix = (val) =>
-  normalizeCompare(val).replace(/^(?:option\s+)?[a-d][\.\)\:\-]\s*/i, '').trim();
+  normalizeCompare(val)
+    .replace(/^(?:option\s+)?[a-d][.):\-]\s*/i, '')
+    .trim();
 
+/**
+ * @param {any} str
+ * @returns {string}
+ */
 const escapeRegExp = (str) => String(str || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/**
+ * @param {any} text
+ * @returns {boolean}
+ */
 const isVietnameseText = (text) => {
   const str = String(text || '').trim();
   if (!str) return false;
@@ -65,6 +107,10 @@ const isVietnameseText = (text) => {
 };
 
 // Nội suy ngôn ngữ chuẩn 2 nhánh hệ thống ('en' | 'zh'), thanh trừng 'vi'
+/**
+ * @param {Record<string, any>} [metadata={}]
+ * @returns {'en' | 'zh'}
+ */
 const resolveTargetLang = (metadata = {}) => {
   const rawMetaLang = String(metadata?.lang || metadata?.language || '')
     .replace(/"/g, '')
@@ -73,7 +119,9 @@ const resolveTargetLang = (metadata = {}) => {
   if (rawMetaLang === 'zh' || rawMetaLang === 'cn') return 'zh';
   if (rawMetaLang === 'en') return 'en';
 
-  const track = String(metadata?.track || '').toLowerCase().trim();
+  const track = String(metadata?.track || '')
+    .toLowerCase()
+    .trim();
   if (track === 'hsk') return 'zh';
 
   const levelStr = Array.isArray(metadata?.level)
@@ -90,13 +138,18 @@ const resolveTargetLang = (metadata = {}) => {
         .trim();
       if (stored === 'zh') return 'zh';
     }
-  } catch (e) {
+  } catch {
     // Bỏ qua lỗi đọc localStorage ở chế độ ẩn danh
   }
   return 'en';
 };
 
 // Vắc-xin Đa nhiệm (Multi-select Array Armor) cho Level
+/**
+ * @param {any} level
+ * @param {'en' | 'zh'} targetLang
+ * @returns {string[]}
+ */
 const normalizeLevelList = (level, targetLang) => {
   const defaultLvl = targetLang === 'zh' ? 'zh_level_4' : 'en_level_4';
   if (Array.isArray(level)) {
@@ -108,7 +161,12 @@ const normalizeLevelList = (level, targetLang) => {
 };
 
 // Vắc-xin Đa nhiệm (Multi-select Array Armor) cho Topic
+/**
+ * @param {any} topic
+ * @returns {string[]}
+ */
 const normalizeTopicList = (topic) => {
+  /** @param {string} t */
   const isWildcard = (t) => {
     const low = t.toLowerCase();
     return !low || low === 'any' || low === 'all' || low === 'tất cả';
@@ -124,21 +182,36 @@ const normalizeTopicList = (topic) => {
   return isWildcard(single) ? [] : [single];
 };
 
+/**
+ * @param {any} topic
+ * @returns {string}
+ */
 const resolveTopicForAi = (topic) => {
   const list = normalizeTopicList(topic);
   if (list.length === 0) {
-    return String(topic || '').trim().toUpperCase() === 'ANY' ? 'ANY' : '';
+    return String(topic || '')
+      .trim()
+      .toUpperCase() === 'ANY'
+      ? 'ANY'
+      : '';
   }
   return list.join(', ');
 };
 
 // Hợp nhất lịch sử chống lặp từ AiMemoryManager + passedHistory (từ useExamLogic / QuizGame)
+/**
+ * @param {any[]} [passedHistory=[]]
+ * @returns {string[]}
+ */
 const getMergedHistory = (passedHistory = []) => {
+  const safeMemMgr = /** @type {any} */ (AiMemoryManager);
   const fromManager =
-    AiMemoryManager && typeof AiMemoryManager.get === 'function' ? AiMemoryManager.get() : [];
+    safeMemMgr && typeof safeMemMgr.get === 'function' ? safeMemMgr.get() : [];
+  /** @type {string[]} */
   const merged = [];
   const seen = new Set();
 
+  /** @param {any} arr */
   const pushUnique = (arr) => {
     if (!Array.isArray(arr)) return;
     for (let i = 0; i < arr.length; i++) {
@@ -159,7 +232,10 @@ const getMergedHistory = (passedHistory = []) => {
   return merged.slice(-200);
 };
 
-// Ghi nhận Token an toàn tuyệt đối (chống QuotaExceededError & NaN)
+// Ghi nhận Token an toàn tuyệt đối qua safeLocalStorageSet (Diệt 1/1 MEDIUM Radar R05 & chống NaN)
+/**
+ * @param {any} tokenUsage
+ */
 const safeAddTotalTokens = (tokenUsage) => {
   if (!tokenUsage || typeof localStorage === 'undefined') return;
   const used = Number(tokenUsage.totalTokenCount || 0);
@@ -167,18 +243,25 @@ const safeAddTotalTokens = (tokenUsage) => {
   try {
     const prevRaw = parseInt(localStorage.getItem('fc_total_tokens') || '0', 10);
     const prevSafe = Number.isFinite(prevRaw) && prevRaw >= 0 ? prevRaw : 0;
-    localStorage.setItem('fc_total_tokens', String(prevSafe + used));
+    safeLocalStorageSet('fc_total_tokens', String(prevSafe + Math.floor(used)));
   } catch (e) {
-    console.warn('[ExamEngine] Không thể cập nhật fc_total_tokens:', e?.message || e);
+    console.warn('[ExamEngine] Không thể cập nhật fc_total_tokens:', getErrorMessage(e));
   }
 };
 
-// Dựng URL ảnh sạch cho từng đáp án Image Quiz (ưu tiên buildSmartImageUrl, chặn từ khóa rác)
+// Dựng URL ảnh sạch cho từng đáp án Image Quiz (ưu tiên buildSmartImageUrl, chặn từ khóa rác & CJK/Việt)
+/**
+ * @param {any} opt
+ * @param {any} data
+ * @param {'en' | 'zh'} targetLang
+ * @returns {string}
+ */
 const buildOptionImageUrl = (opt, data, targetLang) => {
   if (opt && typeof opt.image === 'string' && /^https?:\/\//i.test(opt.image.trim())) {
     return opt.image.trim();
   }
 
+  /** @param {any} raw */
   const pickCleanKeyword = (raw) => {
     if (typeof raw !== 'string') return '';
     const trimmed = raw.trim();
@@ -204,13 +287,19 @@ const buildOptionImageUrl = (opt, data, targetLang) => {
     if (smartUrl) return smartUrl;
   }
 
-  const fallbackQuery = query || String(opt?.text || data?.term || 'object').trim();
+  // [S15] Tuyệt đối không bắn chuỗi CJK / Tiếng Việt chưa lọc lên Bing ở fallbackQuery
+  const fallbackQuery = query || 'clean illustration object';
   return `https://tse4.mm.bing.net/th?q=${encodeURIComponent(
     `${fallbackQuery} isolated clipart`
   )}&w=300&h=300&c=7&rs=1&p=0`;
 };
 
 // Đục lỗ chuẩn hóa hỗ trợ cả Tiếng Anh lẫn Tiếng Trung (CJK) và không tạo đúp lỗ trống
+/**
+ * @param {any} rawSentence
+ * @param {any} rawTargetWord
+ * @returns {string}
+ */
 const applyClozeBlank = (rawSentence, rawTargetWord) => {
   let sentence = String(rawSentence || '').trim();
   const targetWord = String(rawTargetWord || '').trim();
@@ -237,7 +326,7 @@ const applyClozeBlank = (rawSentence, rawTargetWord) => {
     if (boundaryRegex.test(sentence)) {
       replaced = sentence.replace(boundaryRegex, '[__________]');
     }
-  } catch (e) {
+  } catch {
     // Rơi xuống khớp chuỗi thường
   }
 
@@ -247,7 +336,7 @@ const applyClozeBlank = (rawSentence, rawTargetWord) => {
       if (looseRegex.test(sentence)) {
         replaced = sentence.replace(looseRegex, '[__________]');
       }
-    } catch (e) {
+    } catch {
       if (sentence.includes(targetWord)) {
         replaced = sentence.replace(targetWord, '[__________]');
       }
@@ -262,11 +351,22 @@ const applyClozeBlank = (rawSentence, rawTargetWord) => {
 };
 
 // Bù & làm sạch mảng distractors cho FillBlank (khử trùng NFC, loại bỏ targetWord)
+/**
+ * @param {any} rawDistractors
+ * @param {string} targetWord
+ * @param {'en' | 'zh'} targetLang
+ * @param {any[]} [localDeck=[]]
+ * @returns {string[]}
+ */
 const ensureFillBlankDistractors = (rawDistractors, targetWord, targetLang, localDeck = []) => {
   const targetKey = normalizeCompare(targetWord);
   const seen = new Set(targetKey ? [targetKey] : []);
+  /** @type {string[]} */
   const cleanList = [];
+  const safeAlgo = /** @type {any} */ (GameAlgoEngine);
+  const safeOfflineDist = /** @type {any} */ (OfflineDistractorEngine);
 
+  /** @param {any} cand */
   const pushCandidate = (cand) => {
     const text =
       typeof cand === 'object' && cand !== null
@@ -284,10 +384,11 @@ const ensureFillBlankDistractors = (rawDistractors, targetWord, targetLang, loca
   }
 
   if (cleanList.length < 3 && targetWord) {
+    /** @type {any[]} */
     let extra = [];
-    if (GameAlgoEngine?.OptionsEngine?.offline_generateOptions) {
+    if (safeAlgo?.OptionsEngine?.offline_generateOptions) {
       try {
-        extra = GameAlgoEngine.OptionsEngine.offline_generateOptions(
+        extra = safeAlgo.OptionsEngine.offline_generateOptions(
           targetWord,
           localDeck,
           targetLang,
@@ -295,19 +396,19 @@ const ensureFillBlankDistractors = (rawDistractors, targetWord, targetLang, loca
           5,
           true
         );
-      } catch (e) {
-        /* bỏ qua lỗi sinh nhiễu offline */
+      } catch {
+        // Bỏ qua lỗi sinh nhiễu offline
       }
     }
     if (Array.isArray(extra)) extra.forEach(pushCandidate);
   }
 
-  if (cleanList.length < 3 && OfflineDistractorEngine?.generate && targetWord) {
+  if (cleanList.length < 3 && safeOfflineDist?.generate && targetWord) {
     try {
-      const extra2 = OfflineDistractorEngine.generate(targetWord, localDeck, targetLang, 'def');
+      const extra2 = safeOfflineDist.generate(targetWord, localDeck, targetLang, 'def');
       if (Array.isArray(extra2)) extra2.forEach(pushCandidate);
-    } catch (e) {
-      /* bỏ qua lỗi fallback distractor */
+    } catch {
+      // Bỏ qua lỗi fallback distractor
     }
   }
 
@@ -320,6 +421,11 @@ const ensureFillBlankDistractors = (rawDistractors, targetWord, targetLang, loca
 };
 
 // Thuật toán khớp đáp án 3 tầng cho câu hỏi con MCQ trong Tổ kén Đọc Hiểu
+/**
+ * @param {any} rawOptions
+ * @param {any} rawCorrectAnswer
+ * @returns {number}
+ */
 const resolvePassageMcqCorrectIndex = (rawOptions, rawCorrectAnswer) => {
   const options = Array.isArray(rawOptions) ? rawOptions.map((o) => String(o || '').trim()) : [];
   if (options.length === 0) return -1;
@@ -344,12 +450,12 @@ const resolvePassageMcqCorrectIndex = (rawOptions, rawCorrectAnswer) => {
   }
 
   // Tầng 2: Khớp nhãn chữ cái đơn (A / B / C / D hoặc Option A)
-  const labelMatch = ansRaw.match(/^(?:option\s+)?([A-D])(?:[\.\)\:\-\s]|$)/i);
+  const labelMatch = ansRaw.match(/^(?:option\s+)?([A-D])(?:[.):\-\s]|$)/i);
   if (labelMatch) {
     const letter = labelMatch[1].toUpperCase();
     const letterIdx = letter.charCodeAt(0) - 65;
     const explicitLabelIdx = options.findIndex((o) =>
-      new RegExp(`^${letter}[\\.\\)\\:\\-]\\s*`, 'i').test(o)
+      new RegExp(`^${letter}[.):\\-]\\s*`, 'i').test(o)
     );
     if (explicitLabelIdx !== -1) return explicitLabelIdx;
     if (letterIdx >= 0 && letterIdx < options.length) return letterIdx;
@@ -377,6 +483,11 @@ const resolvePassageMcqCorrectIndex = (rawOptions, rawCorrectAnswer) => {
 };
 
 // Chọn tối đa 4 phương án nhưng tuyệt đối không bao giờ cắt mất đáp án đúng (slice-safe)
+/**
+ * @param {any[]} normalizedOptions
+ * @param {number} correctIdx
+ * @returns {any[]}
+ */
 const selectUpToFourPreservingCorrect = (normalizedOptions, correctIdx) => {
   if (!Array.isArray(normalizedOptions) || normalizedOptions.length === 0) return [];
   if (correctIdx < 0 || correctIdx >= normalizedOptions.length) {
@@ -397,12 +508,18 @@ const selectUpToFourPreservingCorrect = (normalizedOptions, correctIdx) => {
 };
 
 // Trạm Kiểm định & Tự phục hồi Chiều Đáp án (Vá Cloze Grammar HSK + Phòng thủ bug fc_quiz_config)
+/**
+ * @param {any} data
+ * @param {{ targetLang: 'en' | 'zh', isReverse: boolean, isImageQuiz: boolean, isSentenceMode: boolean, isGrammarContext?: boolean, localDeck?: any[] }} opts
+ */
 const ensureMcqOrientation = (
   data,
   { targetLang, isReverse, isImageQuiz, isSentenceMode, isGrammarContext = false, localDeck = [] }
 ) => {
   if (!data || typeof data !== 'object') return data;
 
+  const safeAlgo = /** @type {any} */ (GameAlgoEngine);
+  const safeOfflineDist = /** @type {any} */ (OfflineDistractorEngine);
   const expectForeign = Boolean(isReverse || isImageQuiz);
   const foreignAnswer = isSentenceMode
     ? String(data.displaySentence || data.term || '').trim()
@@ -411,6 +528,7 @@ const ensureMcqOrientation = (
 
   // Chuẩn hóa & khử trùng mảng options hiện có theo NFC
   const rawOptions = Array.isArray(data.options) ? data.options : [];
+  /** @type {any[]} */
   const normalizedOptions = [];
   const seenKeys = new Set();
 
@@ -438,6 +556,7 @@ const ensureMcqOrientation = (
   }
 
   // Kiểm tra 1 phương án có đúng ngôn ngữ đích không
+  /** @param {any} optText */
   const isForeignOptionText = (optText) => {
     const text = String(optText || '').trim();
     if (!text) return false;
@@ -447,9 +566,7 @@ const ensureMcqOrientation = (
     return !VI_DIACRITIC_REGEX.test(text) && !CJK_REGEX.test(text);
   };
 
-  // [VER 1.1] Nhận diện Câu Điền Ngữ Pháp / Trắc nghiệm Ngữ pháp ngoại ngữ (Cloze Grammar MCQ)
-  // Bảo toàn chiều đáp án ngoại ngữ cho câu HSK/IOE grammar_mcq có lỗ trống hoặc 4 đáp án ngắn cùng ngôn ngữ đích
-  // mà KHÔNG làm mất lá chắn chống bug fc_quiz_config cho câu dịch nghĩa (vocab_mcq / sentence translation).
+  // Nhận diện Câu Điền Ngữ Pháp / Trắc nghiệm Ngữ pháp ngoại ngữ (Cloze Grammar MCQ)
   const hasBlankInPrompt =
     CLOZE_BLANK_REGEX.test(String(data.term || '')) ||
     CLOZE_BLANK_REGEX.test(String(data.displaySentence || ''));
@@ -490,6 +607,7 @@ const ensureMcqOrientation = (
 
   if (!expectedCorrectText) return data;
 
+  /** @param {any} optText */
   const isOptionLangCompatible = (optText) => {
     const text = String(optText || '').trim();
     if (!text) return false;
@@ -535,10 +653,11 @@ const ensureMcqOrientation = (
   }
 
   const expectedKey = normalizeCompare(expectedCorrectText);
+  /** @type {any[]} */
   let finalOptions = [];
 
   if (isWrongOrientation || normalizedOptions.length < 3) {
-    // Giữ lại các đáp án nhiễu cùng chiều hợp lệ (khác đáp án đúng)
+    /** @type {any[]} */
     const keptWrongs = [];
     const usedKeys = new Set([expectedKey]);
 
@@ -555,11 +674,12 @@ const ensureMcqOrientation = (
 
     const needed = Math.max(0, 3 - keptWrongs.length);
     if (needed > 0) {
+      /** @type {any[]} */
       let generatedDists = [];
       const dataType = isSentenceMode ? 'sentence' : 'word';
-      if (GameAlgoEngine?.OptionsEngine?.offline_generateOptions) {
+      if (safeAlgo?.OptionsEngine?.offline_generateOptions) {
         try {
-          generatedDists = GameAlgoEngine.OptionsEngine.offline_generateOptions(
+          generatedDists = safeAlgo.OptionsEngine.offline_generateOptions(
             expectedCorrectText,
             localDeck,
             targetLang,
@@ -567,22 +687,22 @@ const ensureMcqOrientation = (
             needed + 2,
             expectForeign
           );
-        } catch (e) {
-          /* bỏ qua lỗi sinh nhiễu offline */
+        } catch {
+          // Bỏ qua lỗi sinh nhiễu offline
         }
       }
 
-      if ((!generatedDists || generatedDists.length < needed) && OfflineDistractorEngine?.generate) {
+      if ((!generatedDists || generatedDists.length < needed) && safeOfflineDist?.generate) {
         try {
-          const more = OfflineDistractorEngine.generate(
+          const more = safeOfflineDist.generate(
             expectedCorrectText,
             localDeck,
             targetLang,
             expectForeign ? 'def' : 'term'
           );
           if (Array.isArray(more)) generatedDists = [...(generatedDists || []), ...more];
-        } catch (e) {
-          /* bỏ qua lỗi fallback distractor */
+        } catch {
+          // Bỏ qua lỗi fallback distractor
         }
       }
 
@@ -610,7 +730,6 @@ const ensureMcqOrientation = (
       { text: expectedCorrectText, isCorrect: true }
     ]);
   } else {
-    // Cùng chiều & đủ >= 3 phương án: Đảm bảo duy nhất 1 đáp án isCorrect: true và không cắt bay đáp án đúng
     let correctIdx = normalizedOptions.findIndex((o) => normalizeCompare(o.text) === expectedKey);
     if (correctIdx === -1) {
       correctIdx = normalizedOptions.findIndex((o) => o.isCorrect);
@@ -638,12 +757,20 @@ const ensureMcqOrientation = (
 };
 
 // Trạm Kiểm định Cấu trúc Thống nhất (Chạy TRƯỚC _syncMemory và _normalizeForMinigame cho cả Mock Test & 10 Mini-Games)
+/**
+ * @param {any} data
+ * @param {any} rawType
+ * @param {boolean} isMinigame
+ * @returns {{ valid: boolean, reason?: string }}
+ */
 const validateRawQuestionData = (data, rawType, isMinigame) => {
   if (!data || typeof data !== 'object') {
     return { valid: false, reason: 'Dữ liệu câu hỏi bị rỗng hoặc không phải Object.' };
   }
 
-  const tType = String(rawType || '').toLowerCase().trim();
+  const tType = String(rawType || '')
+    .toLowerCase()
+    .trim();
   const isImageQuiz = tType.includes('image_quiz') || tType.includes('imagequiz');
   const isListening = tType.includes('listening');
   const isPronunciation = tType.includes('pronunciation');
@@ -666,17 +793,16 @@ const validateRawQuestionData = (data, rawType, isMinigame) => {
     const pairs = Array.isArray(data.correctPairs)
       ? data.correctPairs
       : Array.isArray(data.items)
-      ? data.items
-      : Array.isArray(data.pairs)
-      ? data.pairs
-      : [];
+        ? data.items
+        : Array.isArray(data.pairs)
+          ? data.pairs
+          : [];
     const validPairs = pairs.filter(
-      (p) => p && String(p.term || '').trim() && String(p.definition || '').trim()
+      (/** @type {any} */ p) => p && String(p.term || '').trim() && String(p.definition || '').trim()
     );
     if (validPairs.length < 2) {
       return { valid: false, reason: 'Ảo giác AI: Dữ liệu Nối ô (Match) có ít hơn 2 cặp hợp lệ.' };
     }
-    // Đồng bộ dự phòng data.pairs -> data.items để examNormalizer.js đọc được
     if (
       !Array.isArray(data.correctPairs) &&
       !Array.isArray(data.items) &&
@@ -702,11 +828,15 @@ const validateRawQuestionData = (data, rawType, isMinigame) => {
     if (!Array.isArray(data.options) || data.options.length < 3) {
       return { valid: false, reason: "Ảo giác AI: Mảng 'options' rỗng hoặc có ít hơn 3 phương án." };
     }
-    const cleanOpts = data.options.filter((o) => o && String(o.text || '').trim() !== '');
+    const cleanOpts = data.options.filter(
+      (/** @type {any} */ o) => o && String(o.text || '').trim() !== ''
+    );
     if (cleanOpts.length < 3) {
       return { valid: false, reason: "Ảo giác AI: Nhiều phương án trong 'options' bị trống chữ." };
     }
-    const uniqueOptKeys = new Set(cleanOpts.map((o) => normalizeCompare(o.text)).filter(Boolean));
+    const uniqueOptKeys = new Set(
+      cleanOpts.map((/** @type {any} */ o) => normalizeCompare(o.text)).filter(Boolean)
+    );
     if (uniqueOptKeys.size < 3) {
       return {
         valid: false,
@@ -714,7 +844,8 @@ const validateRawQuestionData = (data, rawType, isMinigame) => {
       };
     }
     const correctCount = cleanOpts.filter(
-      (o) => o.isCorrect === true || String(o.isCorrect).toLowerCase() === 'true'
+      (/** @type {any} */ o) =>
+        o.isCorrect === true || String(o.isCorrect).toLowerCase() === 'true'
     ).length;
     if (correctCount === 0) {
       return { valid: false, reason: "Ảo giác AI: Không có phương án nào mang 'isCorrect: true'." };
@@ -769,7 +900,9 @@ const validateRawQuestionData = (data, rawType, isMinigame) => {
         reason: "Ảo giác AI: 'words' có ít hơn 4 từ hoặc thiếu 'oddWord'."
       };
     }
-    const uniqueWords = new Set(data.words.map((w) => normalizeCompare(w)).filter(Boolean));
+    const uniqueWords = new Set(
+      data.words.map((/** @type {any} */ w) => normalizeCompare(w)).filter(Boolean)
+    );
     if (uniqueWords.size < 4) {
       return {
         valid: false,
@@ -777,7 +910,9 @@ const validateRawQuestionData = (data, rawType, isMinigame) => {
       };
     }
     const oddNorm = normalizeCompare(data.oddWord);
-    const matchedWord = data.words.find((w) => normalizeCompare(w) === oddNorm);
+    const matchedWord = data.words.find(
+      (/** @type {any} */ w) => normalizeCompare(w) === oddNorm
+    );
     if (!matchedWord) {
       return { valid: false, reason: "Ảo giác AI: 'oddWord' không nằm trong mảng 'words'." };
     }
@@ -796,6 +931,11 @@ const validateRawQuestionData = (data, rawType, isMinigame) => {
 };
 
 // Sinh biến dạng an toàn tối thiểu cho SpotMistake Offline nếu DistortionEngine trượt
+/**
+ * @param {any} term
+ * @param {'en' | 'zh'} targetLang
+ * @returns {{ wrongSentence: string, wrongWord: string, correction: string, explanation: string }}
+ */
 const buildSafeOfflineDistortion = (term, targetLang) => {
   const cleanTerm = String(term || '').trim();
   if (!cleanTerm) {
@@ -851,17 +991,31 @@ export const ExamEngine = {
   ...ExamFallback,
   ...ExamNormalizer,
 
+  /** @type {Record<string, Promise<any>>} */
   _passageLocks: {},
+  /** @type {Record<string, ReturnType<typeof setTimeout>>} */
   _passageLockTimers: {},
 
-  // [VER 1.1] Ghi đè dọn dẹp RAM: Giải phóng triệt để _volatileMemory, _passageLocks & hủy toàn bộ timer 5 phút
+  // Dọn dẹp RAM triệt để: đồng bộ xóa tại chỗ _volatileMemory với ExamMemory & hủy mọi timer 5 phút
   clearVolatileMemory: function () {
-    const self = this || ExamEngine;
-    if (ExamMemory && typeof ExamMemory.clearVolatileMemory === 'function') {
-      ExamMemory.clearVolatileMemory.call(self);
+    const self = /** @type {any} */ (this || ExamEngine);
+    const safeExamMem = /** @type {any} */ (ExamMemory);
+
+    if (safeExamMem && typeof safeExamMem.clearVolatileMemory === 'function') {
+      safeExamMem.clearVolatileMemory.call(self);
     }
-    self._volatileMemory = [];
-    if (ExamMemory) ExamMemory._volatileMemory = [];
+    if (Array.isArray(self._volatileMemory)) {
+      self._volatileMemory.length = 0;
+    } else {
+      self._volatileMemory = [];
+    }
+    if (safeExamMem) {
+      if (Array.isArray(safeExamMem._volatileMemory)) {
+        safeExamMem._volatileMemory.length = 0;
+      } else {
+        safeExamMem._volatileMemory = [];
+      }
+    }
 
     if (self._passageLockTimers && typeof self._passageLockTimers === 'object') {
       Object.keys(self._passageLockTimers).forEach((k) => {
@@ -872,15 +1026,26 @@ export const ExamEngine = {
     }
     self._passageLockTimers = {};
     self._passageLocks = {};
-    if (ExamMemory) ExamMemory._passageLocks = {};
+    if (safeExamMem) safeExamMem._passageLocks = {};
   },
 
   // ============================================================================
   // 1. HYDRATION LOGIC (CỖ MÁY NẠP ĐẠN NGUYÊN TỬ TỐI THƯỢNG)
   // ============================================================================
+  /**
+   * @param {Record<string, any>} metadata
+   * @param {string} apiKey
+   * @param {any[]} [passedHistory=[]]
+   */
   hydrateQuestion: async function (metadata, apiKey, passedHistory = []) {
-    const self = this || ExamEngine;
-    // [VER 1.1] Clone nông 2 pha: Không bao giờ làm bẩn metadata gốc nếu giữa chừng trượt QA / lỗi
+    const self = /** @type {any} */ (this || ExamEngine);
+    const safeIoe = /** @type {any} */ (IoeDataEngine);
+    const safeFactory = /** @type {any} */ (AiFactoryEngine);
+    const safeAlgo = /** @type {any} */ (GameAlgoEngine);
+    const safeDb = /** @type {any} */ (FcDB);
+
+    // Clone nông 2 pha: Không bao giờ làm bẩn metadata gốc nếu giữa chừng trượt QA / lỗi
+    /** @type {Record<string, any>} */
     const safeMeta = metadata && typeof metadata === 'object' ? { ...metadata } : {};
     const {
       id,
@@ -894,7 +1059,9 @@ export const ExamEngine = {
       grammarId
     } = safeMeta;
 
-    const tType = String(type || '').toLowerCase().trim();
+    const tType = String(type || '')
+      .toLowerCase()
+      .trim();
     const isMinigame = mode === 'minigame' || !['ioe', 'ielts', 'hsk'].includes(track);
     const targetLang = resolveTargetLang(safeMeta);
     const effectiveTrack = targetLang === 'zh' ? 'hsk' : track || 'ioe';
@@ -904,10 +1071,13 @@ export const ExamEngine = {
     const safeTopicLabel = topicList.length > 0 ? topicList[0] : 'General';
     const mergedHistory = getMergedHistory(passedHistory);
 
-    // [BẢN VÁ 2.9] TRẠM TRÍCH XUẤT NGỮ PHÁP & MÀNG LỌC TƯƠNG THÍCH NGƯỢC
+    // TRẠM TRÍCH XUẤT NGỮ PHÁP & MÀNG LỌC TƯƠNG THÍCH NGƯỢC
+    /** @param {any} metaId */
     const extractGrammarPrompt = (metaId) => {
-      const microPromptsRepo = IoeDataEngine?.MICRO_PROMPTS || MICRO_PROMPTS;
+      /** @type {Record<string, any>} */
+      const microPromptsRepo = safeIoe?.MICRO_PROMPTS || MICRO_PROMPTS;
       if (!metaId || metaId === 'random' || !microPromptsRepo) return '';
+      /** @type {any} */
       let foundGrammar = null;
       for (const poolKey in microPromptsRepo) {
         if (microPromptsRepo[poolKey] && microPromptsRepo[poolKey][metaId]) {
@@ -927,33 +1097,39 @@ export const ExamEngine = {
 
     console.log('[ExamEngine] Hydrating via Universal Engine for type: ' + type);
 
+    /** @type {any} */
     let generatedData = null;
     let isFromHarvestPool = false;
+    /** @type {string | null} */
     let harvestId = null;
     let isNewHarvest = false;
     let ratio = 70;
+    /** @type {Record<string, any>} */
     let harvestPool = {};
+    /** @type {any[]} */
     let userHistory = [];
 
-    // Nạp cấu hình Offline (Chỉ dành cho Mock Test - Đã gỡ lời gọi store không tồn tại fc_questions_bank)
-    if (FcDB && !isMinigame) {
+    // Nạp cấu hình Offline (Chỉ dành cho Mock Test)
+    if (safeDb && !isMinigame) {
       try {
-        const r = await FcDB.get('fc_exam_ratio');
+        const r = await safeDb.get('fc_exam_ratio');
         if (r !== undefined && r !== null && Number.isFinite(Number(r))) ratio = Number(r);
-        const p = await FcDB.get('fc_exam_pool');
+        const p = await safeDb.get('fc_exam_pool');
         if (p && typeof p === 'object') harvestPool = p;
-        const h = await FcDB.get('fc_user_exam_history');
+        const h = await safeDb.get('fc_user_exam_history');
         if (Array.isArray(h)) userHistory = h;
       } catch (e) {
-        console.warn('[ExamEngine] Lỗi đọc DB Lai:', e);
+        console.warn('[ExamEngine] Lỗi đọc DB Lai:', getErrorMessage(e));
       }
     }
 
     // Tra cứu Kho đề Offline hỗ trợ đầy đủ Multi-select Array Armor cho level & topic
+    /** @param {any} targetType */
     const fetchFromOfflinePool = (targetType) => {
       const langBucket = harvestPool?.[targetLang];
       if (!langBucket || typeof langBucket !== 'object') return null;
 
+      /** @type {any[]} */
       const candidateItems = [];
       for (let li = 0; li < levelList.length; li++) {
         const lvlBucket = langBucket[levelList[li]];
@@ -971,11 +1147,15 @@ export const ExamEngine = {
       }
 
       if (candidateItems.length === 0) return null;
-      const available = candidateItems.filter((item) => item && !userHistory.includes(item.id));
+      // [S14] Bảo vệ item.id rỗng/undefined không bị loại nhầm khi userHistory có phần tử lỗi
+      const available = candidateItems.filter(
+        (item) => item && (!item.id || !userHistory.includes(item.id))
+      );
       if (available.length === 0) return null;
       return available[Math.floor(Math.random() * available.length)];
     };
 
+    /** @param {any} itemType */
     const autoHarvest = (itemType) =>
       'ex_' +
       String(itemType || 'item') +
@@ -995,7 +1175,9 @@ export const ExamEngine = {
       const qIndex = questionIndexInPassage || 0;
 
       const loadOrForgePassage = async () => {
+        /** @type {any} */
         let pData = null;
+        /** @type {any} */
         let pLastErr = null;
         const pType = tType.includes('reading') ? 'ielts_reading_passage' : type;
 
@@ -1010,7 +1192,7 @@ export const ExamEngine = {
           ) {
             const cloned = JSON.parse(JSON.stringify(picked.content));
             cloned.questions = cloned.questions.filter(
-              (q) =>
+              (/** @type {any} */ q) =>
                 q &&
                 typeof q === 'object' &&
                 String(q.questionText || '').trim() !== '' &&
@@ -1030,12 +1212,12 @@ export const ExamEngine = {
             if (!apiKey) throw new Error('Missing API Key');
             const freshHistory = getMergedHistory(passedHistory);
             let historyPrompt =
-              AiFactoryEngine && freshHistory.length > 0
-                ? AiFactoryEngine.getHistoryPrompt(freshHistory)
+              safeFactory && freshHistory.length > 0
+                ? safeFactory.getHistoryPrompt(freshHistory)
                 : '';
             historyPrompt = userGrammarConstraint + historyPrompt;
 
-            const parsed = await AiFactoryEngine.forgeContext(
+            const parsed = await safeFactory.forgeContext(
               'reading_passage',
               level,
               targetLang,
@@ -1048,7 +1230,7 @@ export const ExamEngine = {
 
             const validQuestions = Array.isArray(parsed?.questions)
               ? parsed.questions.filter(
-                  (q) =>
+                  (/** @type {any} */ q) =>
                     q &&
                     typeof q === 'object' &&
                     String(q.questionText || '').trim() !== '' &&
@@ -1080,11 +1262,11 @@ export const ExamEngine = {
       if (!self._passageLocks) self._passageLocks = {};
       if (!self._passageLockTimers) self._passageLockTimers = {};
 
+      /** @type {Promise<any>} */
       let passagePromise;
       if (groupId) {
         if (!self._passageLocks[groupId]) {
           const createdPromise = loadOrForgePassage().catch((err) => {
-            // Diệt triệt để Poisoned Promise Cache: Xóa khóa & hủy timer ngay lập tức khi lỗi
             if (self._passageLockTimers[groupId]) {
               clearTimeout(self._passageLockTimers[groupId]);
               delete self._passageLockTimers[groupId];
@@ -1111,14 +1293,12 @@ export const ExamEngine = {
         }
         passagePromise = self._passageLocks[groupId];
       } else {
-        // Gọi reading đơn lẻ (không kèm passageGroup): đúc trực tiếp, không lưu khóa 5 phút
         passagePromise = loadOrForgePassage();
       }
 
       try {
         const passageSet = await passagePromise;
 
-        // Chế độ Mini-game Reading: Trả nguyên Tổ kén kèm đầy đủ harvestId & isNewHarvest
         if (isMinigame) {
           return {
             id: passageSet.id || autoHarvest('reading_passage'),
@@ -1130,7 +1310,7 @@ export const ExamEngine = {
           };
         }
 
-        // Chế độ Khảo thí: Tách từng câu hỏi con
+        /** @type {any} */
         let qData = passageSet.questions[qIndex];
         let isRescuedPassageChild = false;
 
@@ -1156,10 +1336,13 @@ export const ExamEngine = {
         }
 
         const originalType = safeMeta._originalType || safeMeta.type || type;
-        const subType = String(qData.type || 'mcq').toLowerCase().trim();
+        const subType = String(qData.type || 'mcq')
+          .toLowerCase()
+          .trim();
         safeMeta._originalType = originalType;
         safeMeta._subType = subType;
 
+        /** @type {Record<string, any>} */
         const tempGeneratedData = {
           passage: passageSet.passage,
           explanation: qData.explanation || '',
@@ -1187,7 +1370,7 @@ export const ExamEngine = {
             { text: 'False', isCorrect: isFalse },
             { text: 'Not Given', isCorrect: isNotGiven }
           ];
-          if (!tempGeneratedData.options.some((o) => o.isCorrect)) {
+          if (!tempGeneratedData.options.some((/** @type {any} */ o) => o.isCorrect)) {
             tempGeneratedData.options[0].isCorrect = true;
           }
           safeMeta.type = 'ioe_multiple_choice';
@@ -1198,7 +1381,7 @@ export const ExamEngine = {
               ? qData.options
               : ['A', 'B', 'C', 'D'];
           const correctIdx = resolvePassageMcqCorrectIndex(rawOpts, qData.correctAnswer);
-          const mappedOptions = rawOpts.map((o, idx) => ({
+          const mappedOptions = rawOpts.map((/** @type {any} */ o, /** @type {number} */ idx) => ({
             text: String(o || '').trim(),
             isCorrect: idx === correctIdx
           }));
@@ -1218,8 +1401,7 @@ export const ExamEngine = {
           }
         }
 
-        // [VER 1.1] Pha 2 của Clone safeMeta: Chỉ đồng bộ lại metadata gốc SAU KHI đã pass QA 100%
-        // Bảo đảm tương thích ngược tuyệt đối với useExamLogic.js dòng 268 (qData.metadata = meta)
+        // Pha 2 của Clone safeMeta: Chỉ đồng bộ lại metadata gốc SAU KHI đã pass QA 100%
         if (metadata && typeof metadata === 'object') {
           metadata._originalType = safeMeta._originalType;
           metadata._subType = safeMeta._subType;
@@ -1236,7 +1418,7 @@ export const ExamEngine = {
       } catch (e) {
         console.error(
           '[ExamEngine] Passage Cocoon break failed for ' + (groupId || 'standalone') + ':',
-          e.message
+          getErrorMessage(e)
         );
         throw e;
       }
@@ -1248,11 +1430,11 @@ export const ExamEngine = {
         tType === 'match' ||
         tType === 'match_hard' ||
         tType === 'ioe_match' ||
-        tType === IoeDataEngine?.QUESTION_TYPES?.IOE_MATCH;
+        tType === safeIoe?.QUESTION_TYPES?.IOE_MATCH;
       const isImageQuiz =
         tType.includes('image_quiz') ||
         tType.includes('imagequiz') ||
-        tType === IoeDataEngine?.QUESTION_TYPES?.IOE_IMAGE_QUIZ;
+        tType === safeIoe?.QUESTION_TYPES?.IOE_IMAGE_QUIZ;
       const isMcqQuizFlow =
         tType.includes('quiz') ||
         tType.includes('multiple_choice') ||
@@ -1301,11 +1483,12 @@ export const ExamEngine = {
           }
 
           let finalHistoryPrompt = '';
-          if (AiFactoryEngine && mergedHistory.length > 0) {
-            finalHistoryPrompt = AiFactoryEngine.getHistoryPrompt(mergedHistory);
+          if (safeFactory && mergedHistory.length > 0) {
+            finalHistoryPrompt = safeFactory.getHistoryPrompt(mergedHistory);
           }
           finalHistoryPrompt = userGrammarConstraint + finalHistoryPrompt;
 
+          /** @type {any} */
           let tempGeneratedData = null;
           const useLegacyAi =
             typeof localStorage !== 'undefined'
@@ -1318,7 +1501,7 @@ export const ExamEngine = {
           if (isMcqQuizFlow && useLegacyAi) {
             console.log('[ExamEngine] Running Legacy 2-Shot AI for: ' + type);
             const dataModeParam = isSentenceMode ? 'sentence' : 'vocab';
-            tempGeneratedData = await AiFactoryEngine.forgeBaseCard(
+            tempGeneratedData = await safeFactory.forgeBaseCard(
               level,
               targetLang,
               apiKey,
@@ -1337,11 +1520,12 @@ export const ExamEngine = {
               );
             }
 
+            /** @type {any[]} */
             let dists = [];
             const dataTypeArg = dataModeParam === 'sentence' ? 'sentence' : 'word';
             try {
-              if (GameAlgoEngine?.OptionsEngine?.ai_generateOptions) {
-                dists = await GameAlgoEngine.OptionsEngine.ai_generateOptions(
+              if (safeAlgo?.OptionsEngine?.ai_generateOptions) {
+                dists = await safeAlgo.OptionsEngine.ai_generateOptions(
                   tempGeneratedData,
                   targetLang,
                   dataTypeArg,
@@ -1353,15 +1537,18 @@ export const ExamEngine = {
                 );
               }
             } catch (aiErr) {
-              console.warn('Nhịp 2 (Options AI) thất bại, fallback sang Offline:', aiErr.message);
+              console.warn(
+                'Nhịp 2 (Options AI) thất bại, fallback sang Offline:',
+                getErrorMessage(aiErr)
+              );
             }
 
             if (!Array.isArray(dists) || dists.length < 3) {
-              if (GameAlgoEngine?.OptionsEngine?.offline_generateOptions) {
+              if (safeAlgo?.OptionsEngine?.offline_generateOptions) {
                 const baseTextForTrap = isReverse
                   ? tempGeneratedData.term
                   : tempGeneratedData.definition;
-                dists = GameAlgoEngine.OptionsEngine.offline_generateOptions(
+                dists = safeAlgo.OptionsEngine.offline_generateOptions(
                   baseTextForTrap,
                   localDeckForOffline,
                   targetLang,
@@ -1403,8 +1590,7 @@ export const ExamEngine = {
             const forgeType = useGrammarForge ? 'grammar_mcq' : 'vocab_mcq';
             const dataModeParam = useGrammarForge ? 'sentence' : 'vocab';
 
-            // Truyền đủ 8 tham số tường minh (kể cả dataMode & isReverse)
-            tempGeneratedData = await AiFactoryEngine.forgeContext(
+            tempGeneratedData = await safeFactory.forgeContext(
               forgeType,
               level,
               targetLang,
@@ -1424,7 +1610,6 @@ export const ExamEngine = {
               );
             }
 
-            // Hậu kiểm & tự phục hồi chiều đáp án (bảo toàn Cloze Grammar HSK + phòng thủ bug fc_quiz_config)
             ensureMcqOrientation(tempGeneratedData, {
               targetLang,
               isReverse,
@@ -1440,11 +1625,11 @@ export const ExamEngine = {
           // ------------------------------------------------------------------
           else {
             if (
-              tType === IoeDataEngine?.QUESTION_TYPES?.IOE_SPOT_MISTAKE ||
+              tType === safeIoe?.QUESTION_TYPES?.IOE_SPOT_MISTAKE ||
               tType === 'ioe_spot_mistake' ||
               tType === 'spotmistake'
             ) {
-              tempGeneratedData = await AiFactoryEngine.forgeContext(
+              tempGeneratedData = await safeFactory.forgeContext(
                 'spot_mistake',
                 level,
                 targetLang,
@@ -1455,11 +1640,10 @@ export const ExamEngine = {
                 false
               );
             } else if (
-              tType === IoeDataEngine?.QUESTION_TYPES?.IOE_FILL_BLANK ||
+              tType === safeIoe?.QUESTION_TYPES?.IOE_FILL_BLANK ||
               tType === 'ioe_fill_blank' ||
               tType === 'fillblank'
             ) {
-              // INJECTION ĐỘNG CƠ 3 MA TRẬN (Đã tháo gỡ mâu thuẫn gợi ý Paraphrasing với aiFactory.js)
               let matrixInstruction = '\n[YÊU CẦU SƯ PHẠM QUỐC TẾ CHO GAME ĐIỀN TỪ]:\n';
               matrixInstruction +=
                 "1. BẮT BUỘC TRẢ VỀ: Sinh thêm một mảng 'distractors' chứa CHÍNH XÁC 3 từ nhiễu sai (Bẫy), khác hẳn 'targetWord'. TUYỆT ĐỐI không để mảng này rỗng.\n";
@@ -1480,7 +1664,7 @@ export const ExamEngine = {
                 }
               }
 
-              tempGeneratedData = await AiFactoryEngine.forgeContext(
+              tempGeneratedData = await safeFactory.forgeContext(
                 'fill_blank',
                 level,
                 targetLang,
@@ -1504,12 +1688,12 @@ export const ExamEngine = {
                 );
               }
             } else if (
-              tType === IoeDataEngine?.QUESTION_TYPES?.IOE_SCRAMBLE ||
+              tType === safeIoe?.QUESTION_TYPES?.IOE_SCRAMBLE ||
               tType === 'ioe_scramble' ||
               tType === 'scramble'
             ) {
               const scrambleMode = safeMeta.dataMode === 'vocab' ? 'vocab' : 'sentence';
-              tempGeneratedData = await AiFactoryEngine.forgeBaseCard(
+              tempGeneratedData = await safeFactory.forgeBaseCard(
                 level,
                 targetLang,
                 apiKey,
@@ -1519,11 +1703,11 @@ export const ExamEngine = {
                 false
               );
             } else if (
-              tType === IoeDataEngine?.QUESTION_TYPES?.IOE_ODD_ONE_OUT ||
+              tType === safeIoe?.QUESTION_TYPES?.IOE_ODD_ONE_OUT ||
               tType === 'ioe_odd_one_out' ||
               tType === 'oddoneout'
             ) {
-              tempGeneratedData = await AiFactoryEngine.forgeMatrix(
+              tempGeneratedData = await safeFactory.forgeMatrix(
                 'odd_one_out',
                 level,
                 targetLang,
@@ -1534,11 +1718,11 @@ export const ExamEngine = {
                 false
               );
             } else if (
-              tType === IoeDataEngine?.QUESTION_TYPES?.IOE_PRONUNCIATION ||
+              tType === safeIoe?.QUESTION_TYPES?.IOE_PRONUNCIATION ||
               tType === 'ioe_pronunciation' ||
               tType === 'pronunciation'
             ) {
-              tempGeneratedData = await AiFactoryEngine.forgeMatrix(
+              tempGeneratedData = await safeFactory.forgeMatrix(
                 'pronunciation',
                 level,
                 targetLang,
@@ -1549,11 +1733,11 @@ export const ExamEngine = {
                 false
               );
             } else if (
-              tType === IoeDataEngine?.QUESTION_TYPES?.IOE_LISTENING ||
+              tType === safeIoe?.QUESTION_TYPES?.IOE_LISTENING ||
               tType === 'ioe_listening' ||
               tType === 'listening'
             ) {
-              tempGeneratedData = await AiFactoryEngine.forgeContext(
+              tempGeneratedData = await safeFactory.forgeContext(
                 'listening',
                 level,
                 targetLang,
@@ -1571,7 +1755,7 @@ export const ExamEngine = {
                 tType === 'match_hard' || safeMeta.hardMode || safeMeta.difficulty === 'hard'
                   ? 'match_hard'
                   : 'match';
-              tempGeneratedData = await AiFactoryEngine.forgeMatrix(
+              tempGeneratedData = await safeFactory.forgeMatrix(
                 subType,
                 level,
                 targetLang,
@@ -1582,7 +1766,7 @@ export const ExamEngine = {
                 false
               );
             } else {
-              tempGeneratedData = await AiFactoryEngine.forgeBaseCard(
+              tempGeneratedData = await safeFactory.forgeBaseCard(
                 level,
                 targetLang,
                 apiKey,
@@ -1609,7 +1793,6 @@ export const ExamEngine = {
 
           // ------------------------------------------------------------------
           // TRẠM KIỂM ĐỊNH THỐNG NHẤT (CHẠY CHO CẢ MOCK TEST LẪN 10 MINI-GAMES)
-          // Chạy TRƯỚC _syncMemory và TRƯỚC _normalizeForMinigame để không ghi đạn lỗi
           // ------------------------------------------------------------------
           const structuralCheck = validateRawQuestionData(tempGeneratedData, type, isMinigame);
           if (!structuralCheck.valid) {
@@ -1631,7 +1814,6 @@ export const ExamEngine = {
           // BƯỚC CHUẨN HÓA ĐẦU RA CHO MINI-GAMES (BLOCK 2.7c)
           // ------------------------------------------------------------------
           if (isMinigame && self._normalizeForMinigame) {
-            // [VER 1.1] Ánh xạ 'match_hard' -> 'match' để khớp nhánh xử lý correctPairs/trapPairs ở examNormalizer.js
             const normalizerType = tType === 'match_hard' ? 'match' : tType;
             tempGeneratedData = await self._normalizeForMinigame(
               tempGeneratedData,
@@ -1643,7 +1825,6 @@ export const ExamEngine = {
               apiKey
             );
 
-            // Phòng thủ bug dead-code nhánh image_quiz trong examNormalizer.js
             if (isImageQuiz && tempGeneratedData && typeof tempGeneratedData === 'object') {
               if (!tempGeneratedData.term && rawTermSnapshot) {
                 tempGeneratedData.term = rawTermSnapshot;
@@ -1662,7 +1843,7 @@ export const ExamEngine = {
           generatedData = tempGeneratedData;
         } catch (error) {
           console.error(
-            `[ExamEngine] Lỗi đúc AI cho ${type}. Từ chối nạp đạn. Lỗi: ${error.message}`
+            `[ExamEngine] Lỗi đúc AI cho ${type}. Từ chối nạp đạn. Lỗi: ${getErrorMessage(error)}`
           );
           throw error;
         }
@@ -1686,15 +1867,27 @@ export const ExamEngine = {
   // ============================================================================
   // 2. BỘ MÁY CỨU HỘ TOÀN CỤC (UNIVERSAL JIT FALLBACK ENGINE - 0ms KHÔNG VỠ UI)
   // ============================================================================
+  /**
+   * @param {Record<string, any>} metadata
+   * @param {any[] | null} [passedLocalDeck=null]
+   * @param {number | null} [passedIndex=null]
+   */
   getEmergencyFallback: function (metadata, passedLocalDeck = null, passedIndex = null) {
     try {
-      const self = this || ExamEngine;
+      const self = /** @type {any} */ (this || ExamEngine);
+      const safeAlgo = /** @type {any} */ (GameAlgoEngine);
+      const safeOfflineDist = /** @type {any} */ (OfflineDistractorEngine);
+      const safeFallback = /** @type {any} */ (FallbackDataEngine);
+
+      /** @type {Record<string, any>} */
       const safeMeta = metadata && typeof metadata === 'object' ? { ...metadata } : {};
       const { id, track, level, type, index, mode, passageGroup } = safeMeta;
       const isMinigame = mode === 'minigame' || !['ioe', 'ielts', 'hsk'].includes(track);
       const targetLang = resolveTargetLang(safeMeta);
       const effectiveTrack = targetLang === 'zh' ? 'hsk' : track || 'ioe';
-      const tType = String(safeMeta.type || type || '').toLowerCase().trim();
+      const tType = String(safeMeta.type || type || '')
+        .toLowerCase()
+        .trim();
 
       const isImageQuiz = tType.includes('image_quiz') || tType.includes('imagequiz');
       const isReverse = isImageQuiz || safeMeta.askMode === 'def';
@@ -1708,6 +1901,7 @@ export const ExamEngine = {
         tType.includes('pronunciation') ||
         tType.includes('tfng');
 
+      /** @type {any} */
       let rescuedData = null;
       const rescueIndexRaw = passedIndex !== null && passedIndex !== undefined ? passedIndex : index;
       const rescueIndex =
@@ -1761,8 +1955,8 @@ export const ExamEngine = {
           }
         }
 
-        if (FallbackDataEngine?.getGameReadyFallback) {
-          return FallbackDataEngine.getGameReadyFallback(
+        if (safeFallback?.getGameReadyFallback) {
+          return safeFallback.getGameReadyFallback(
             resolveFbMinigameType(),
             targetLang,
             level,
@@ -1783,7 +1977,6 @@ export const ExamEngine = {
 
       // ----------------------------------------------------------------------
       // LUỒNG A: DẠNG NGỮ CẢNH ĐẶC THÙ (LISTENING / READING / PRONUNCIATION / TFNG)
-      // Tuyệt đối KHÔNG lấy 1 thẻ đơn từ validLocalDeck gây vỡ UI
       // ----------------------------------------------------------------------
       if (isContextSpecial) {
         rescuedData = pullStaticFallback();
@@ -1792,12 +1985,13 @@ export const ExamEngine = {
         // LUỒNG B: ƯU TIÊN KHO THẺ CÁ NHÂN ("THẺ CỦA TÔI") KHI CÓ DỮ LIỆU
         // --------------------------------------------------------------------
         const rawLocalDeck = passedLocalDeck || safeJsonParse('fc_data_' + targetLang, []);
+        /** @type {any[]} */
         const validLocalDeck = Array.isArray(rawLocalDeck)
           ? rawLocalDeck.filter((c) => c && typeof c.term === 'string' && c.term.trim() !== '')
           : [];
 
         if (isMatchMinigame) {
-          // Mini-game Nối Ô: Dựng đúng khung { pairs, leftItems, rightItems } từ 2..5 thẻ thật
+          /** @type {any[]} */
           const uniquePairs = [];
           const seenTerms = new Set();
           for (let offset = 0; offset < validLocalDeck.length && uniquePairs.length < 5; offset++) {
@@ -1840,6 +2034,7 @@ export const ExamEngine = {
             rescuedData = pullStaticFallback();
           }
         } else if (validLocalDeck.length > 0) {
+          /** @type {any} */
           let fallbackCard = null;
           if (safeMeta.term) {
             fallbackCard = validLocalDeck.find((c) => c.term === safeMeta.term);
@@ -1851,6 +2046,7 @@ export const ExamEngine = {
             fallbackCard = validLocalDeck[rescueIndex % validLocalDeck.length];
           }
 
+          /** @type {Record<string, any>} */
           const baseCard = JSON.parse(JSON.stringify(fallbackCard));
           const isMCQ =
             tType.includes('multiple_choice') ||
@@ -1862,16 +2058,16 @@ export const ExamEngine = {
             const safeDef =
               String(baseCard.definition || '').trim() || `(Thẻ khuyết nghĩa) ${baseCard.term}`;
             baseCard.definition = safeDef;
-            // TUYỆT ĐỐI KHÔNG ghi đè baseCard.term bằng Tiếng Việt khi isReverse = true
             baseCard.questionText = isReverse ? safeDef : baseCard.term;
 
             const correctText = isReverse ? baseCard.term : safeDef;
             const dataType = isSentenceMode ? 'sentence' : 'word';
+            /** @type {any[]} */
             let dists = [];
 
-            if (GameAlgoEngine?.OptionsEngine?.offline_generateOptions) {
+            if (safeAlgo?.OptionsEngine?.offline_generateOptions) {
               try {
-                dists = GameAlgoEngine.OptionsEngine.offline_generateOptions(
+                dists = safeAlgo.OptionsEngine.offline_generateOptions(
                   correctText,
                   validLocalDeck,
                   targetLang,
@@ -1879,27 +2075,28 @@ export const ExamEngine = {
                   3,
                   isReverse
                 );
-              } catch (e) {
-                /* bỏ qua lỗi sinh nhiễu offline */
+              } catch {
+                // Bỏ qua lỗi sinh nhiễu offline
               }
             }
 
             if (!Array.isArray(dists) || dists.length < 3) {
-              if (OfflineDistractorEngine?.generate) {
+              if (safeOfflineDist?.generate) {
                 try {
-                  dists = OfflineDistractorEngine.generate(
+                  dists = safeOfflineDist.generate(
                     correctText,
                     validLocalDeck,
                     targetLang,
                     isReverse ? 'def' : 'term'
                   );
-                } catch (e) {
-                  /* bỏ qua lỗi fallback distractor */
+                } catch {
+                  // Bỏ qua lỗi fallback distractor
                 }
               }
             }
 
             const seenOpts = new Set([normalizeCompare(correctText)]);
+            /** @type {any[]} */
             const wrongOpts = [];
             (Array.isArray(dists) ? dists : []).forEach((d) => {
               const txt =
@@ -1929,7 +2126,7 @@ export const ExamEngine = {
             ]);
 
             if (isImageQuiz) {
-              baseCard.options = baseCard.options.map((opt) => ({
+              baseCard.options = baseCard.options.map((/** @type {any} */ opt) => ({
                 ...opt,
                 image: buildOptionImageUrl(opt, baseCard, targetLang)
               }));
@@ -1948,17 +2145,18 @@ export const ExamEngine = {
           } else if (tType.includes('spot_mistake') || tType.includes('spotmistake')) {
             const isSent = detectSentence
               ? detectSentence(baseCard.term)
-              : baseCard.term.includes(' ');
+              : String(baseCard.term || '').includes(' ');
+            /** @type {any} */
             let distorted = null;
-            if (GameAlgoEngine?.DistortionEngine?.offline_distort) {
+            if (safeAlgo?.DistortionEngine?.offline_distort) {
               try {
-                distorted = GameAlgoEngine.DistortionEngine.offline_distort(
+                distorted = safeAlgo.DistortionEngine.offline_distort(
                   baseCard.term,
                   targetLang,
                   isSent ? 'sentence' : 'word'
                 );
-              } catch (e) {
-                /* bỏ qua lỗi biến dạng offline */
+              } catch {
+                // Bỏ qua lỗi biến dạng offline
               }
             }
 
@@ -1990,18 +2188,19 @@ export const ExamEngine = {
           } else if (tType.includes('fill_blank') || tType.includes('fillblank')) {
             const isSent = detectSentence
               ? detectSentence(baseCard.term)
-              : baseCard.term.includes(' ');
+              : String(baseCard.term || '').includes(' ');
+            /** @type {any} */
             let masked = null;
-            if (GameAlgoEngine?.ClozeEngine?.offline_mask) {
+            if (safeAlgo?.ClozeEngine?.offline_mask) {
               try {
-                masked = GameAlgoEngine.ClozeEngine.offline_mask(
+                masked = safeAlgo.ClozeEngine.offline_mask(
                   baseCard.term,
                   targetLang,
                   isSent ? 'sentence' : 'word',
                   validLocalDeck
                 );
-              } catch (e) {
-                /* bỏ qua lỗi đục lỗ offline */
+              } catch {
+                // Bỏ qua lỗi đục lỗ offline
               }
             }
 
@@ -2026,15 +2225,13 @@ export const ExamEngine = {
               origin: baseCard
             };
           } else if (tType.includes('odd_one_out') || tType.includes('oddoneout')) {
+            /** @type {any} */
             let oddObj = null;
-            if (validLocalDeck.length >= 4 && GameAlgoEngine?.OddOneOutEngine?.offline_generate) {
+            if (validLocalDeck.length >= 4 && safeAlgo?.OddOneOutEngine?.offline_generate) {
               try {
-                oddObj = GameAlgoEngine.OddOneOutEngine.offline_generate(
-                  validLocalDeck,
-                  targetLang
-                );
-              } catch (e) {
-                /* bỏ qua lỗi odd_one_out offline */
+                oddObj = safeAlgo.OddOneOutEngine.offline_generate(validLocalDeck, targetLang);
+              } catch {
+                // Bỏ qua lỗi odd_one_out offline
               }
             }
             if (
@@ -2054,34 +2251,41 @@ export const ExamEngine = {
             const isZh = targetLang === 'zh';
             const isSent = detectSentence
               ? detectSentence(baseCard.term)
-              : baseCard.term.includes(' ');
+              : String(baseCard.term || '').includes(' ');
             const dataType = safeMeta.dataMode || (isSent ? 'sentence' : 'word');
+            /** @param {any} p */
             const cleanToken = (p) => {
               let s = String(p || '').replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
               if (!isZh) s = s.toLowerCase();
               return s;
             };
 
-            const parts = (isZh || !isSent ? baseCard.term.split('') : baseCard.term.split(/\s+/))
+            const parts = (
+              isZh || !isSent
+                ? String(baseCard.term || '').split('')
+                : String(baseCard.term || '').split(/\s+/)
+            )
               .map(cleanToken)
               .filter(Boolean);
 
+            /** @type {any[]} */
             let noiseWords = [];
-            if (GameAlgoEngine?.ScrambleNoiseEngine?.offline_getNoise) {
+            if (safeAlgo?.ScrambleNoiseEngine?.offline_getNoise) {
               try {
-                noiseWords = GameAlgoEngine.ScrambleNoiseEngine.offline_getNoise(
+                noiseWords = safeAlgo.ScrambleNoiseEngine.offline_getNoise(
                   baseCard.term,
                   validLocalDeck,
                   targetLang,
                   dataType,
                   2
                 );
-              } catch (e) {
-                /* bỏ qua lỗi sinh nhiễu scramble offline */
+              } catch {
+                // Bỏ qua lỗi sinh nhiễu scramble offline
               }
             }
 
             if (Array.isArray(noiseWords) && noiseWords.length > 0) {
+              /** @type {string[]} */
               const cleanedNoise = [];
               noiseWords.forEach((w) => {
                 if (isZh || dataType === 'word') {
@@ -2106,12 +2310,11 @@ export const ExamEngine = {
             rescuedData = baseCard;
           }
         } else {
-          // Kho thẻ cá nhân rỗng 0 thẻ -> Kéo cáp tĩnh từ Engine
           rescuedData = pullStaticFallback();
         }
       }
 
-      // [VER 1.1] Chốt chặn cuối cùng chống sập UI (có đủ image cho image_quiz và khung Mini-game MCQ)
+      // Chốt chặn cuối cùng chống sập UI (có đủ image cho image_quiz và khung Mini-game MCQ)
       if (!rescuedData) {
         const isFinalMCQ =
           tType.includes('multiple_choice') ||
@@ -2119,11 +2322,13 @@ export const ExamEngine = {
           isImageQuiz ||
           tType.includes('quiz');
         const isZh = targetLang === 'zh';
+
+        /** @type {Record<string, any>} */
         const fallbackBase = {
           term: isZh ? '苹果' : 'Apple',
           definition: 'Quả táo',
           image_keyword: 'fresh red apple on white plate',
-          options: [
+          options: /** @type {any[]} */ ([
             {
               text: isReverse ? (isZh ? '苹果' : 'Apple') : 'Quả táo',
               image_keyword: 'fresh red apple',
@@ -2144,11 +2349,11 @@ export const ExamEngine = {
               image_keyword: 'friendly dog',
               isCorrect: false
             }
-          ]
+          ])
         };
 
         if (isImageQuiz) {
-          fallbackBase.options = fallbackBase.options.map((opt) => ({
+          fallbackBase.options = fallbackBase.options.map((/** @type {any} */ opt) => ({
             ...opt,
             image: buildOptionImageUrl(opt, fallbackBase, targetLang)
           }));
@@ -2178,40 +2383,45 @@ export const ExamEngine = {
         timestamp: Date.now()
       };
     } catch (e) {
-      console.error('[EmergencyFallback] Động cơ cứu hộ sập toàn tập:', e);
+      console.error('[EmergencyFallback] Động cơ cứu hộ sập toàn tập:', getErrorMessage(e));
       return null;
     }
   }
 };
 
-// [VER 1.1] Khóa chuẩn 5 Named Exports theo NewMapping.md bằng arrow wrapper có guard an toàn
+// Khóa chuẩn 5 Named Exports theo Mapping.md bằng wrapper an toàn (bảo toàn this & 0 lỗi tsc)
+/** @param {...any} args */
 export const hydrateQuestion = (...args) =>
   typeof ExamEngine.hydrateQuestion === 'function'
-    ? ExamEngine.hydrateQuestion(...args)
+    ? /** @type {any} */ (ExamEngine).hydrateQuestion.apply(ExamEngine, args)
     : Promise.reject(new Error('ExamEngine.hydrateQuestion is unavailable'));
 
+/** @param {...any} args */
 export const getEmergencyFallback = (...args) =>
   typeof ExamEngine.getEmergencyFallback === 'function'
-    ? ExamEngine.getEmergencyFallback(...args)
+    ? /** @type {any} */ (ExamEngine).getEmergencyFallback.apply(ExamEngine, args)
     : null;
 
+/** @param {...any} args */
 export const clearVolatileMemory = (...args) =>
   typeof ExamEngine.clearVolatileMemory === 'function'
-    ? ExamEngine.clearVolatileMemory(...args)
+    ? /** @type {any} */ (ExamEngine).clearVolatileMemory.apply(ExamEngine, args)
     : undefined;
 
+/** @param {...any} args */
 export const _generateFallbackData = (...args) =>
-  typeof ExamEngine._generateFallbackData === 'function'
-    ? ExamEngine._generateFallbackData(...args)
+  typeof /** @type {any} */ (ExamEngine)._generateFallbackData === 'function'
+    ? /** @type {any} */ (ExamEngine)._generateFallbackData.apply(ExamEngine, args)
     : null;
 
+/** @param {...any} args */
 export const _normalizeForMinigame = (...args) =>
-  typeof ExamEngine._normalizeForMinigame === 'function'
-    ? ExamEngine._normalizeForMinigame(...args)
+  typeof /** @type {any} */ (ExamEngine)._normalizeForMinigame === 'function'
+    ? /** @type {any} */ (ExamEngine)._normalizeForMinigame.apply(ExamEngine, args)
     : Promise.resolve(null);
 
 if (typeof window !== 'undefined') {
-  window.ExamEngine = ExamEngine;
+  /** @type {any} */ (window).ExamEngine = ExamEngine;
 }
 
 export default ExamEngine;

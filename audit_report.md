@@ -1,8 +1,8 @@
 # BÁO CÁO RADAR RÀ SOÁT TOÀN ỨNG DỤNG FLASHCARD-3D
 
-* **Thời điểm quét:** 27/11/2026 - 21:58:23
+* **Thời điểm quét:** 28/11/2026 - 05:40:18
 * **Phạm vi quét:** `80` tệp mã nguồn trong `src/`
-* **Thời gian thực thi:** `298 ms`
+* **Thời gian thực thi:** `421 ms`
 
 ---
 
@@ -12,31 +12,26 @@
 | :--- | :---: | :--- |
 | 🔴 **CRITICAL** | **0** | Lỗi gãy build, crash Runtime, vi phạm Kho Master Lai hoặc StrictMode |
 | 🟠 **HIGH** | **0** | Rủi ro tràn Quota, nhánh `vi` cũ sót, hộp thoại `alert/confirm` chặn UI |
-| 🟡 **MEDIUM** | **24** | Rò rỉ Timer/Listener, phụ thuộc `window.*` legacy |
+| 🟡 **MEDIUM** | **4** | Rò rỉ Timer/Listener, phụ thuộc `window.*` legacy |
 | ⚪ **INFO** | **0** | Thông tin đối chiếu kiểm kê |
 
 ### Thống kê theo Mã Luật Radar
 
 | Mã luật | Số lượng |
 | :--- | :---: |
-| `R05_UNSAFE_LOCALSTORAGE_SET` | 6 |
-| `R06B_LEGACY_WINDOW_GLOBAL` | 18 |
+| `R05_UNSAFE_LOCALSTORAGE_SET` | 3 |
+| `R06B_LEGACY_WINDOW_GLOBAL` | 1 |
 
 ## 2. TOP ĐIỂM NÓNG (TỆP CẦN ƯU TIÊN XỬ LÝ TRƯỚC)
 
 | Tệp mã nguồn | 🔴 Critical | 🟠 High | 🟡 Medium | Tổng |
 | :--- | :---: | :---: | :---: | :---: |
-| `src/engines/queueEngine.js` | 0 | 0 | 11 | **11** |
-| `src/engines/aiFactory.js` | 0 | 0 | 4 | **4** |
 | `src/components/modals/AiChatModal.jsx` | 0 | 0 | 3 | **3** |
-| `src/engines/exam/examMemory.js` | 0 | 0 | 3 | **3** |
-| `src/engines/exam/index.js` | 0 | 0 | 1 | **1** |
-| `src/hooks/useDataIO.js` | 0 | 0 | 1 | **1** |
 | `src/main.jsx` | 0 | 0 | 1 | **1** |
 
 ## 3. CHI TIẾT PHÁT HIỆN THEO MỨC ĐỘ
 
-### 🟡 MEDIUM (24 mục)
+### 🟡 MEDIUM (4 mục)
 
 - **`src/components/modals/AiChatModal.jsx:106`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
   - Code: `localStorage.setItem('fc_ai_chat_history', JSON.stringify(messages));`
@@ -46,66 +41,6 @@
   - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
 - **`src/components/modals/AiChatModal.jsx:177`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.Utils" từ thời HTML 1 file thay vì import ES Module chuẩn.
   - Code: `(typeof window !== 'undefined' && window.Utils?.callGeminiApi);`
-  - Gợi ý vá: Chuyển sang import { Utils } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/engines/aiFactory.js:91`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.ExamProfiles" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `window.ExamProfiles &&`
-  - Gợi ý vá: Chuyển sang import { ExamProfiles } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/engines/aiFactory.js:92`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.ExamProfiles" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `typeof window.ExamProfiles.getCefrLevel === 'function'`
-  - Gợi ý vá: Chuyển sang import { ExamProfiles } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/engines/aiFactory.js:94`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.ExamProfiles" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `return window.ExamProfiles.getCefrLevel(lvlKey);`
-  - Gợi ý vá: Chuyển sang import { ExamProfiles } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/engines/aiFactory.js:138`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
-  - Code: `localStorage.setItem('fc_total_tokens', String(prevSafe + used));`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/engines/exam/examMemory.js:43`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.Utils" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `} else if (typeof window !== 'undefined' && window.Utils?.AiMemoryManager) {`
-  - Gợi ý vá: Chuyển sang import { Utils } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/engines/exam/examMemory.js:44`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.Utils" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `window.Utils.AiMemoryManager.add(cleanTerm);`
-  - Gợi ý vá: Chuyển sang import { Utils } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/engines/exam/examMemory.js:54`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
-  - Code: `localStorage.setItem('fc_ai_memory', JSON.stringify(currentMemory));`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/engines/exam/index.js:170`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
-  - Code: `localStorage.setItem('fc_total_tokens', String(prevSafe + used));`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/engines/queueEngine.js:4`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.AiFactoryEngine" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `if (typeof window !== 'undefined' && window.AiFactoryEngine && !window.__zombieKillerActive) {`
-  - Gợi ý vá: Chuyển sang import { AiFactoryEngine } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/engines/queueEngine.js:6`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.AiFactoryEngine" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `const origContext = window.AiFactoryEngine.forgeContext;`
-  - Gợi ý vá: Chuyển sang import { AiFactoryEngine } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/engines/queueEngine.js:7`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.AiFactoryEngine" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `const origMatrix = window.AiFactoryEngine.forgeMatrix;`
-  - Gợi ý vá: Chuyển sang import { AiFactoryEngine } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/engines/queueEngine.js:8`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.AiFactoryEngine" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `const origBase = window.AiFactoryEngine.forgeBaseCard;`
-  - Gợi ý vá: Chuyển sang import { AiFactoryEngine } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/engines/queueEngine.js:15`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.AiFactoryEngine" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `window.AiFactoryEngine.forgeContext = killSwitch;`
-  - Gợi ý vá: Chuyển sang import { AiFactoryEngine } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/engines/queueEngine.js:16`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.AiFactoryEngine" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `window.AiFactoryEngine.forgeMatrix = killSwitch;`
-  - Gợi ý vá: Chuyển sang import { AiFactoryEngine } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/engines/queueEngine.js:17`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.AiFactoryEngine" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `window.AiFactoryEngine.forgeBaseCard = killSwitch;`
-  - Gợi ý vá: Chuyển sang import { AiFactoryEngine } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/engines/queueEngine.js:21`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.AiFactoryEngine" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `if (window.AiFactoryEngine) {`
-  - Gợi ý vá: Chuyển sang import { AiFactoryEngine } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/engines/queueEngine.js:22`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.AiFactoryEngine" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `window.AiFactoryEngine.forgeContext = origContext;`
-  - Gợi ý vá: Chuyển sang import { AiFactoryEngine } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/engines/queueEngine.js:23`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.AiFactoryEngine" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `window.AiFactoryEngine.forgeMatrix = origMatrix;`
-  - Gợi ý vá: Chuyển sang import { AiFactoryEngine } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/engines/queueEngine.js:24`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.AiFactoryEngine" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `window.AiFactoryEngine.forgeBaseCard = origBase;`
-  - Gợi ý vá: Chuyển sang import { AiFactoryEngine } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
-- **`src/hooks/useDataIO.js:92`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.Utils" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `(typeof window !== 'undefined' && window.Utils?.fetchWithFallback);`
   - Gợi ý vá: Chuyển sang import { Utils } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
 - **`src/main.jsx:27`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
   - Code: `localStorage.setItem('fc_lang', JSON.stringify('en'));`
@@ -127,7 +62,7 @@ Các khóa dưới đây chưa có trong danh mục chuẩn `CANONICAL_FC_KEYS` 
 | `fc_current_level_vi` | 1 | `src/hooks/useCoreState.js:518` |
 | `fc_current_topic_vi` | 1 | `src/hooks/useCoreState.js:519` |
 | `fc_data_vi` | 1 | `src/hooks/useCoreState.js:517` |
-| `fc_debug_legacy_ai` | 3 | `src/engines/exam/index.js:1312`, `src/features/games/GameMenu.jsx:66`, `src/features/games/GameMenu.jsx:240` |
+| `fc_debug_legacy_ai` | 3 | `src/engines/exam/index.js:1495`, `src/features/games/GameMenu.jsx:66`, `src/features/games/GameMenu.jsx:240` |
 | `fc_fillblank_config` | 1 | `src/features/games/FillBlankUI.jsx:23` |
 | `fc_game_auto_next_delay` | 1 | `src/features/games/QuizGame.jsx:151` |
 | `fc_gemini_api_key` | 10 | `src/components/modals/AiChatModal.jsx:135`, `src/components/modals/ApiKeyModal.jsx:102`, `src/components/modals/NotebookModal.jsx:222` |
