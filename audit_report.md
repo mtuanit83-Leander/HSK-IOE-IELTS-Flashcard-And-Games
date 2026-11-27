@@ -1,8 +1,8 @@
 # BÁO CÁO RADAR RÀ SOÁT TOÀN ỨNG DỤNG FLASHCARD-3D
 
-* **Thời điểm quét:** 28/11/2026 - 05:40:18
+* **Thời điểm quét:** 28/11/2026 - 05:50:00
 * **Phạm vi quét:** `80` tệp mã nguồn trong `src/`
-* **Thời gian thực thi:** `421 ms`
+* **Thời gian thực thi:** `326 ms`
 
 ---
 
@@ -12,36 +12,25 @@
 | :--- | :---: | :--- |
 | 🔴 **CRITICAL** | **0** | Lỗi gãy build, crash Runtime, vi phạm Kho Master Lai hoặc StrictMode |
 | 🟠 **HIGH** | **0** | Rủi ro tràn Quota, nhánh `vi` cũ sót, hộp thoại `alert/confirm` chặn UI |
-| 🟡 **MEDIUM** | **4** | Rò rỉ Timer/Listener, phụ thuộc `window.*` legacy |
+| 🟡 **MEDIUM** | **1** | Rò rỉ Timer/Listener, phụ thuộc `window.*` legacy |
 | ⚪ **INFO** | **0** | Thông tin đối chiếu kiểm kê |
 
 ### Thống kê theo Mã Luật Radar
 
 | Mã luật | Số lượng |
 | :--- | :---: |
-| `R05_UNSAFE_LOCALSTORAGE_SET` | 3 |
-| `R06B_LEGACY_WINDOW_GLOBAL` | 1 |
+| `R05_UNSAFE_LOCALSTORAGE_SET` | 1 |
 
 ## 2. TOP ĐIỂM NÓNG (TỆP CẦN ƯU TIÊN XỬ LÝ TRƯỚC)
 
 | Tệp mã nguồn | 🔴 Critical | 🟠 High | 🟡 Medium | Tổng |
 | :--- | :---: | :---: | :---: | :---: |
-| `src/components/modals/AiChatModal.jsx` | 0 | 0 | 3 | **3** |
 | `src/main.jsx` | 0 | 0 | 1 | **1** |
 
 ## 3. CHI TIẾT PHÁT HIỆN THEO MỨC ĐỘ
 
-### 🟡 MEDIUM (4 mục)
+### 🟡 MEDIUM (1 mục)
 
-- **`src/components/modals/AiChatModal.jsx:106`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
-  - Code: `localStorage.setItem('fc_ai_chat_history', JSON.stringify(messages));`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/components/modals/AiChatModal.jsx:116`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
-  - Code: `localStorage.setItem('fc_aichat_size', JSON.stringify(size));`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
-- **`src/components/modals/AiChatModal.jsx:177`** [`R06B_LEGACY_WINDOW_GLOBAL`] — Đọc trực tiếp biến toàn cục "window.Utils" từ thời HTML 1 file thay vì import ES Module chuẩn.
-  - Code: `(typeof window !== 'undefined' && window.Utils?.callGeminiApi);`
-  - Gợi ý vá: Chuyển sang import { Utils } từ tệp nguồn chuẩn theo NewMapping.md để tránh lỗi undefined khi bundler tree-shake.
 - **`src/main.jsx:27`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
   - Code: `localStorage.setItem('fc_lang', JSON.stringify('en'));`
   - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
@@ -54,7 +43,7 @@ Các khóa dưới đây chưa có trong danh mục chuẩn `CANONICAL_FC_KEYS` 
 | :--- | :---: | :--- |
 | `fc_active_exam` | 3 | `src/config/constants.js:20`, `src/features/games/GameMenu.jsx:35`, `src/features/games/GameMenu.jsx:37` |
 | `fc_ai_memory_vi` | 1 | `src/hooks/useCoreState.js:522` |
-| `fc_aichat_size` | 2 | `src/components/modals/AiChatModal.jsx:66`, `src/components/modals/AiChatModal.jsx:116` |
+| `fc_aichat_size` | 2 | `src/components/modals/AiChatModal.jsx:387`, `src/components/modals/AiChatModal.jsx:541` |
 | `fc_api_cooldowns` | 4 | `src/components/modals/ApiKeyModal.jsx:86`, `src/services/geminiApi.js:215`, `src/services/geminiApi.js:231` |
 | `fc_apikey_sheet_url` | 2 | `src/components/modals/LinkManagerModal.jsx:381`, `src/config/constants.js:16` |
 | `fc_cards` | 1 | `src/config/constants.js:10` |
@@ -65,7 +54,7 @@ Các khóa dưới đây chưa có trong danh mục chuẩn `CANONICAL_FC_KEYS` 
 | `fc_debug_legacy_ai` | 3 | `src/engines/exam/index.js:1495`, `src/features/games/GameMenu.jsx:66`, `src/features/games/GameMenu.jsx:240` |
 | `fc_fillblank_config` | 1 | `src/features/games/FillBlankUI.jsx:23` |
 | `fc_game_auto_next_delay` | 1 | `src/features/games/QuizGame.jsx:151` |
-| `fc_gemini_api_key` | 10 | `src/components/modals/AiChatModal.jsx:135`, `src/components/modals/ApiKeyModal.jsx:102`, `src/components/modals/NotebookModal.jsx:222` |
+| `fc_gemini_api_key` | 9 | `src/components/modals/ApiKeyModal.jsx:102`, `src/components/modals/NotebookModal.jsx:222`, `src/components/modals/SettingsModal.jsx:633` |
 | `fc_global_api_pause` | 2 | `src/services/geminiApi.js:260`, `src/services/geminiApi.js:270` |
 | `fc_global_retry_bag_vi` | 1 | `src/hooks/useCoreState.js:540` |
 | `fc_imagequiz_config` | 2 | `src/features/games/ImageQuizUI.jsx:247`, `src/features/games/ImageQuizUI.jsx:285` |
