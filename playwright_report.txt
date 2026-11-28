@@ -2,9 +2,9 @@
 Running 4 tests using 1 worker
 
   Γ£ô  1 [chromium] ΓÇ║ tests\e2e\smoke.spec.js:579:3 ΓÇ║ Flashcard 3D ΓÇö E2E Smoke Test Suite (Zero-Crash Verification) ΓÇ║ 1. Khß╗ƒi ─æß╗Öng App, hiß╗ân thß╗ï thß║╗ hß╗ìc 3D, lß║¡t thß║╗, chuyß╗ân thß║╗ v├á giß╗» 0 lß╗ùi Runtime (8.5s)
-  Γ£ô  2 [chromium] ΓÇ║ tests\e2e\smoke.spec.js:633:3 ΓÇ║ Flashcard 3D ΓÇö E2E Smoke Test Suite (Zero-Crash Verification) ΓÇ║ 2. Chuyß╗ân ─æß╗òi Tß╗½ Vß╗▒ng <-> C├óu V─ân v├á EN <-> ZH t├ích bß║ích 100%, giß╗» nguy├¬n sau F5 & localStorage < 2MB (14.3s)
-  Γ£ô  3 [chromium] ΓÇ║ tests\e2e\smoke.spec.js:726:3 ΓÇ║ Flashcard 3D ΓÇö E2E Smoke Test Suite (Zero-Crash Verification) ΓÇ║ 3. Qu├⌐t mß╗ƒ/─æ├│ng c├íc Modals ch├¡nh (Settings, API Key, AI Chat, Link Manager, Notebook) kh├┤ng crash (13.2s)
-  Γ£ô  4 [chromium] ΓÇ║ tests\e2e\smoke.spec.js:774:3 ΓÇ║ Flashcard 3D ΓÇö E2E Smoke Test Suite (Zero-Crash Verification) ΓÇ║ 4. Chuyß╗ân sang tab Game, kiß╗âm tra sß║únh Mini-Games & mß╗ƒ thß╗¡ v├ín ch╞íi Offline kh├┤ng vß╗í Props (9.2s)
+  Γ£ô  2 [chromium] ΓÇ║ tests\e2e\smoke.spec.js:633:3 ΓÇ║ Flashcard 3D ΓÇö E2E Smoke Test Suite (Zero-Crash Verification) ΓÇ║ 2. Chuyß╗ân ─æß╗òi Tß╗½ Vß╗▒ng <-> C├óu V─ân v├á EN <-> ZH t├ích bß║ích 100%, giß╗» nguy├¬n sau F5 & localStorage < 2MB (14.4s)
+  Γ£ô  3 [chromium] ΓÇ║ tests\e2e\smoke.spec.js:726:3 ΓÇ║ Flashcard 3D ΓÇö E2E Smoke Test Suite (Zero-Crash Verification) ΓÇ║ 3. Qu├⌐t mß╗ƒ/─æ├│ng c├íc Modals ch├¡nh (Settings, API Key, AI Chat, Link Manager, Notebook) kh├┤ng crash (12.4s)
+  Γ£ô  4 [chromium] ΓÇ║ tests\e2e\smoke.spec.js:774:3 ΓÇ║ Flashcard 3D ΓÇö E2E Smoke Test Suite (Zero-Crash Verification) ΓÇ║ 4. Chuyß╗ân sang tab Game, kiß╗âm tra sß║únh Mini-Games & mß╗ƒ thß╗¡ v├ín ch╞íi Offline kh├┤ng vß╗í Props (10.2s)
 
   4 passed (1.9m)
 

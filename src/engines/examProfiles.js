@@ -1,9 +1,28 @@
+// ============================================================================
+// FILE 22/85: src/engines/examProfiles.js
+// NGUỒN GỐC: tang_2.js (Block 2.8 - ExamProfiles V1.10)
+// PHIÊN BẢN: Ver 1.0
+// NGÀY GIỜ NÂNG CẤP: 28/11/2026 - 06:30 (GMT+7)
+// NHIỆM VỤ: Từ điển cấu hình 6 kỳ thi chuẩn (IOE / IELTS / HSK — Mini & Std),
+//           ánh xạ trình độ quốc tế CEFR / HSK 3.0 và bộ sinh bản vẽ chi tiết
+//           (Blueprint Generator) với thuật toán xoay vòng 3 chủ đề & bẫy ngữ pháp.
+//           Nâng cấp Ver 1.0 (Lượt 5.2 - Zero-TSC Polish):
+//           1. Diệt trọn 43/43 lỗi TS2339: Khai báo JSDoc chuẩn cho
+//              SafeIoeEngine, types (QUESTION_TYPES), PROFILES, LEVEL_MAPPINGS,
+//              microPromptsPool, phaseTopics & passageCountTracker (0 Problems).
+//           2. Chuẩn hóa trim() cho targetTopic (cả mảng Multi-select lẫn chuỗi
+//              đơn) tránh chuỗi toàn khoảng trắng vô hiệu hóa xoay vòng chủ đề.
+//           3. Vá so sánh chỉ mục Tổ kén passageCountTracker bằng !== undefined
+//              (thay vì phủ định !0) và bảo toàn 100% hợp đồng Vitest / Radar 0/0/0.
+// ============================================================================
+
 import { shuffleArray } from '../utils/helpers.js';
 import { IoeDataEngine } from './pedagogyEngine.js';
 import { MICRO_PROMPTS } from './microPrompts.js';
 
 export const ExamProfiles = {
   // 1. TỪ ĐIỂN CẤU HÌNH ĐỀ THI TỔNG QUAN
+  /** @type {Record<string, { id: string, name: string, track: string, mode: string, totalQuestions: number, timeLimit: number, description: string }>} */
   PROFILES: {
     ioe_mini: {
       id: 'ioe_mini',
@@ -62,90 +81,140 @@ export const ExamProfiles = {
   },
 
   // 1.5 BẢNG ÁNH XẠ TRÌNH ĐỘ CHUẨN QUỐC TẾ (CEFR & HSK)
+  /** @type {Record<string, string>} */
   LEVEL_MAPPINGS: {
-    en_level_1: "Pre-A1 (Starters/Beginner)",
-    en_level_2: "A1 (Movers/Elementary)",
-    en_level_3: "A2 (Flyers/Pre-Intermediate)",
-    en_level_4: "B1 (PET/Intermediate)",
-    en_level_5: "B2 (FCE/Upper-Intermediate)",
-    en_level_6: "B2+ (IELTS 5.5 - 6.0)",
-    en_level_7: "C1 (IELTS 6.5 - 7.0/Advanced)",
-    en_level_8: "C1+ (IELTS 7.5)",
-    en_level_9: "C2 (IELTS 8.0+/Proficiency)",
-    zh_level_1: "HSK 1 (A1 - Beginner)",
-    zh_level_2: "HSK 2 (A2 - Elementary)",
-    zh_level_3: "HSK 3 (B1 - Intermediate)",
-    zh_level_4: "HSK 4 (B2 - Upper-Intermediate)",
-    zh_level_5: "HSK 5 (C1 - Advanced)",
-    zh_level_6: "HSK 6 (C2 - Proficiency)",
-    zh_level_7: "HSK 7 (Expert/Academic)",
-    zh_level_8: "HSK 8 (Mastery/Academic)",
-    zh_level_9: "HSK 9 (Native-like/Academic)",
-    vi_default: "Vietnamese Basic",
+    en_level_1: 'Pre-A1 (Starters/Beginner)',
+    en_level_2: 'A1 (Movers/Elementary)',
+    en_level_3: 'A2 (Flyers/Pre-Intermediate)',
+    en_level_4: 'B1 (PET/Intermediate)',
+    en_level_5: 'B2 (FCE/Upper-Intermediate)',
+    en_level_6: 'B2+ (IELTS 5.5 - 6.0)',
+    en_level_7: 'C1 (IELTS 6.5 - 7.0/Advanced)',
+    en_level_8: 'C1+ (IELTS 7.5)',
+    en_level_9: 'C2 (IELTS 8.0+/Proficiency)',
+    zh_level_1: 'HSK 1 (A1 - Beginner)',
+    zh_level_2: 'HSK 2 (A2 - Elementary)',
+    zh_level_3: 'HSK 3 (B1 - Intermediate)',
+    zh_level_4: 'HSK 4 (B2 - Upper-Intermediate)',
+    zh_level_5: 'HSK 5 (C1 - Advanced)',
+    zh_level_6: 'HSK 6 (C2 - Proficiency)',
+    zh_level_7: 'HSK 7 (Expert/Academic)',
+    zh_level_8: 'HSK 8 (Mastery/Academic)',
+    zh_level_9: 'HSK 9 (Native-like/Academic)',
+    vi_default: 'Vietnamese Basic',
     // Fallback mapping cho các key cũ (Kiddie/Junior)
-    level_1_kiddie: "Pre-A1 (Starters)",
-    level_2_junior_basic: "A1 (Movers)",
-    level_3_junior_advanced: "A2 (Flyers)",
-    level_4_discovery_basic: "B1 (PET)",
-    level_5_discovery_advanced: "B2 (FCE)",
-    level_6_pre_ielts: "B2+ (IELTS 5.5 - 6.0)",
-    level_7_breakthrough: "C1 (IELTS 6.5 - 7.0)",
-    level_8_academic: "C1+ (IELTS 7.5)",
-    level_9_expert: "C2 (IELTS 8.0+)"
+    level_1_kiddie: 'Pre-A1 (Starters)',
+    level_2_junior_basic: 'A1 (Movers)',
+    level_3_junior_advanced: 'A2 (Flyers)',
+    level_4_discovery_basic: 'B1 (PET)',
+    level_5_discovery_advanced: 'B2 (FCE)',
+    level_6_pre_ielts: 'B2+ (IELTS 5.5 - 6.0)',
+    level_7_breakthrough: 'C1 (IELTS 6.5 - 7.0)',
+    level_8_academic: 'C1+ (IELTS 7.5)',
+    level_9_expert: 'C2 (IELTS 8.0+)'
   },
 
+  /**
+   * Quy đổi mã cấp độ sang nhãn chuẩn quốc tế CEFR / HSK.
+   * @param {string | string[] | null | undefined} levelKey
+   * @returns {string}
+   */
   getCefrLevel: function (levelKey) {
-    if (!levelKey) return "B1 (Intermediate)";
-    const resolvedKey = Array.isArray(levelKey) ? levelKey[0] : levelKey;
-    return this.LEVEL_MAPPINGS[resolvedKey] || "B1 (Intermediate)";
+    if (!levelKey) return 'B1 (Intermediate)';
+    const resolvedKey = Array.isArray(levelKey)
+      ? String(levelKey[0] || '').trim()
+      : String(levelKey).trim();
+    return this.LEVEL_MAPPINGS[resolvedKey] || 'B1 (Intermediate)';
   },
 
   // 2. HÀM XUẤT BẢN VẼ CHI TIẾT (BLUEPRINT GENERATOR)
   // Đầu ra: Mảng chứa các object metadata nguyên tử (atomic metadata)
-  generateBlueprint: function (profileId, targetLevel, targetTopic) {
+  /**
+   * Sinh bản vẽ cấu trúc câu hỏi (Blueprint) cho bài thi Khảo thí.
+   * @param {string} profileId
+   * @param {string | string[] | null | undefined} [targetLevel]
+   * @param {string | string[] | null | undefined} [targetTopic]
+   * @returns {Array<Record<string, any>>}
+   */
+  generateBlueprint: function (
+    profileId,
+    targetLevel = undefined,
+    targetTopic = undefined
+  ) {
     const config = this.PROFILES[profileId];
     if (!config) return [];
 
+    /** @type {Array<Record<string, any>>} */
     const blueprint = [];
     let globalIndex = 1;
-    const types = IoeDataEngine?.QUESTION_TYPES || {};
+
+    /** @type {any} */
+    const safeIoeEngine = IoeDataEngine || {};
+    /** @type {Record<string, any>} */
+    const types = safeIoeEngine.QUESTION_TYPES || {};
 
     // Cập nhật các dạng bài mới từ Tầng 2.2
     const TYPE_PRONUNCIATION = types.IOE_PRONUNCIATION || 'ioe_pronunciation';
     const TYPE_IMAGE_QUIZ = types.IOE_IMAGE_QUIZ || 'ioe_image_quiz';
     const TYPE_LISTENING = types.IOE_LISTENING || 'ioe_listening';
-    const TYPE_READING_PASSAGE = types.IELTS_READING_PASSAGE || 'ielts_reading_passage';
+    const TYPE_READING_PASSAGE =
+      types.IELTS_READING_PASSAGE || 'ielts_reading_passage';
 
     // Chuẩn hóa level đại diện trong trường hợp nhận mảng Multi-select
-    const repLevel = Array.isArray(targetLevel) ? (targetLevel[0] || 'en_level_4') : (targetLevel || 'en_level_4');
+    const rawRepLevel = Array.isArray(targetLevel)
+      ? targetLevel[0]
+      : targetLevel;
+    const repLevel =
+      typeof rawRepLevel === 'string' && rawRepLevel.trim()
+        ? rawRepLevel.trim()
+        : config.track === 'hsk'
+        ? 'zh_level_1'
+        : 'en_level_4';
 
     // Xác định cấp Tiểu học (Để điều phối kết hợp Game Hình ảnh và Game Nghe)
     const isPrimary = [
-      'en_level_1', 'en_level_2', 'en_level_3',
-      'level_1_kiddie', 'level_2_junior_basic', 'level_3_junior_advanced'
+      'en_level_1',
+      'en_level_2',
+      'en_level_3',
+      'level_1_kiddie',
+      'level_2_junior_basic',
+      'level_3_junior_advanced'
     ].includes(repLevel);
 
     // [BẢN VÁ 1.10] ĐỘNG CƠ BỐC THĂM BẪY NGỮ PHÁP TỪ BLOCK 2.9
+    /**
+     * @param {string} qType
+     * @param {string | string[]} levelStr
+     * @param {string} track
+     * @returns {string | null}
+     */
     const getRandomGrammarId = (qType, levelStr, track) => {
-      const microPromptsPool = IoeDataEngine?.MICRO_PROMPTS || MICRO_PROMPTS;
-      if (!microPromptsPool) return null;
+      /** @type {Record<string, any>} */
+      const microPromptsPool =
+        safeIoeEngine.MICRO_PROMPTS || MICRO_PROMPTS || {};
 
       let poolKey = 'quiz';
-      const typeStr = String(qType).toLowerCase();
+      const typeStr = String(qType || '').toLowerCase();
       if (typeStr.includes('spot_mistake')) poolKey = 'spot_mistake';
       else if (typeStr.includes('fill_blank')) poolKey = 'fill_blank';
       else if (typeStr.includes('scramble')) poolKey = 'scramble';
 
+      /** @type {Record<string, any> | undefined} */
       const pool = microPromptsPool[poolKey];
-      if (!pool) return null;
+      if (!pool || typeof pool !== 'object') return null;
 
-      const checkLvlStr = Array.isArray(levelStr) ? (levelStr[0] || '') : String(levelStr || '');
+      const checkLvlStr = Array.isArray(levelStr)
+        ? String(levelStr[0] || '')
+        : String(levelStr || '');
       const isChinese = track === 'hsk' || checkLvlStr.startsWith('zh');
-      const isEnglish = track === 'ielts' || track === 'ioe' || checkLvlStr.startsWith('en');
+      const isEnglish =
+        track === 'ielts' || track === 'ioe' || checkLvlStr.startsWith('en');
 
       const availableKeys = Object.keys(pool).filter((k) => {
         if (isChinese && k.startsWith('zh_')) return true;
-        if (isEnglish && (k.startsWith('eng_') || k.startsWith('pre_'))) return true;
+        if (isEnglish && (k.startsWith('eng_') || k.startsWith('pre_'))) {
+          return true;
+        }
         if (k.startsWith('general_')) return true;
         return false;
       });
@@ -154,54 +223,94 @@ export const ExamProfiles = {
       return availableKeys[Math.floor(Math.random() * availableKeys.length)];
     };
 
-    // ============================================================================
+    // =========================================================================
     // [THUẬT TOÁN MỚI] DYNAMIC TOPIC HYBRID V3 (MACRO TOPICS 8+1 ADAPTATION)
-    // ============================================================================
+    // =========================================================================
+    /** @type {string[]} */
     let availableTopics = [];
-    if (Array.isArray(IoeDataEngine?.TOPICS)) {
-      availableTopics = IoeDataEngine.TOPICS;
+    if (Array.isArray(safeIoeEngine.TOPICS)) {
+      availableTopics = safeIoeEngine.TOPICS;
     }
 
     // Bỏ qua chủ đề 'Other' để đề thi tập trung vào các chủ đề học thuật cốt lõi
-    let coreTopics = availableTopics.filter((t) => t && t.toLowerCase() !== 'other');
-    if (coreTopics.length === 0) coreTopics = ["General Knowledge"];
+    let coreTopics = availableTopics.filter(
+      (t) => typeof t === 'string' && t.trim() && t.trim().toLowerCase() !== 'other'
+    );
+    if (coreTopics.length === 0) coreTopics = ['General Knowledge'];
 
+    /** @type {Record<number, string[]>} */
     const phaseTopics = {};
-    const shuffled = shuffleArray ? shuffleArray([...coreTopics]) : [...coreTopics].sort(() => Math.random() - 0.5);
+    const shuffled =
+      typeof shuffleArray === 'function'
+        ? shuffleArray([...coreTopics])
+        : [...coreTopics].sort(() => Math.random() - 0.5);
     let topicPointer = 0;
 
     for (let p = 1; p <= 10; p++) {
       // Phân bổ xoay vòng (Round-robin) 3 chủ đề cho mỗi chặng.
       // Điều này đảm bảo dù mảng có 8 phần tử vẫn rải đều liên tục và an toàn vào 10 Phase.
       phaseTopics[p] = [
-        shuffled[(topicPointer++) % shuffled.length],
-        shuffled[(topicPointer++) % shuffled.length],
-        shuffled[(topicPointer++) % shuffled.length]
+        shuffled[topicPointer++ % shuffled.length],
+        shuffled[topicPointer++ % shuffled.length],
+        shuffled[topicPointer++ % shuffled.length]
       ];
     }
 
-    const passageCountTracker = {}; // Dành riêng cho Đọc hiểu: Đếm số lượng passage group
+    // Chuẩn hóa danh sách chủ đề người dùng chỉ định (lọc chuỗi rỗng / toàn khoảng trắng)
+    /** @type {string[]} */
+    const normalizedTargetTopics = Array.isArray(targetTopic)
+      ? targetTopic
+          .map((item) => String(item || '').trim())
+          .filter((item) => item.length > 0)
+      : typeof targetTopic === 'string' && targetTopic.trim()
+      ? [targetTopic.trim()]
+      : [];
+
+    // Dành riêng cho Đọc hiểu: Đếm số lượng passage group
+    /** @type {Record<string, number>} */
+    const passageCountTracker = {};
 
     // Bơm đạn kèm Thuật toán Xoay vòng 3 Chủ đề
-    const addQuestions = (qType, count, phaseNum, chapterName, passageGroup = null, specialFocus = "") => {
-      const isPassage = qType === TYPE_READING_PASSAGE || qType.includes('reading');
-      if (isPassage && passageGroup && !passageCountTracker[passageGroup]) {
-        passageCountTracker[passageGroup] = Object.keys(passageCountTracker).length;
+    /**
+     * @param {string} qType
+     * @param {number} count
+     * @param {number} phaseNum
+     * @param {string} chapterName
+     * @param {string | null} [passageGroup]
+     * @param {string} [specialFocus]
+     */
+    const addQuestions = (
+      qType,
+      count,
+      phaseNum,
+      chapterName,
+      passageGroup = null,
+      specialFocus = ''
+    ) => {
+      const isPassage =
+        qType === TYPE_READING_PASSAGE || String(qType).includes('reading');
+      if (
+        isPassage &&
+        passageGroup &&
+        passageCountTracker[passageGroup] === undefined
+      ) {
+        passageCountTracker[passageGroup] =
+          Object.keys(passageCountTracker).length;
       }
 
       for (let i = 0; i < count; i++) {
-        let selectedTopic = "";
-        if (Array.isArray(targetTopic)) {
-          selectedTopic = targetTopic.length > 0 ? targetTopic[i % targetTopic.length] : "";
-        } else {
-          selectedTopic = targetTopic; // Tôn trọng user nếu ép 1 chủ đề từ Menu
+        let selectedTopic = '';
+        if (normalizedTargetTopics.length > 0) {
+          selectedTopic =
+            normalizedTargetTopics[i % normalizedTargetTopics.length];
         }
 
         if (!selectedTopic) {
-          const phaseTopicsList = phaseTopics[phaseNum] || ["", "", ""];
+          const phaseTopicsList = phaseTopics[phaseNum] || ['', '', ''];
           if (isPassage && passageGroup) {
             // [LƯU Ý 1] Các câu hỏi con trong cùng Tổ kén phải chung 1 chủ đề
-            selectedTopic = phaseTopicsList[passageCountTracker[passageGroup] % 3];
+            const groupIdx = passageCountTracker[passageGroup] || 0;
+            selectedTopic = phaseTopicsList[groupIdx % 3];
           } else {
             // [LƯU Ý 2] Các câu hỏi rời rạc phải được đan xen 3 chủ đề liên tục
             selectedTopic = phaseTopicsList[i % 3];
@@ -209,7 +318,9 @@ export const ExamProfiles = {
         }
 
         // Cấy Chỉ mục Vi phân (Micro-Topic Index) để phá Local Minimum của AI
-        let microTopic = selectedTopic ? `${selectedTopic} (Specific Scenario ${i + 1})` : "";
+        let microTopic = selectedTopic
+          ? `${selectedTopic} (Specific Scenario ${i + 1})`
+          : '';
 
         // Bơm Meta-tag Sư phạm
         if (specialFocus) {
@@ -227,16 +338,21 @@ export const ExamProfiles = {
           qType === 'ioe_spot_mistake';
 
         if (isTopicFreeType) {
-          microTopic = "ANY";
+          microTopic = 'ANY';
         }
 
         // [BẢN VÁ 1.10] Ép AI sử dụng bẫy ngữ pháp linh động từ kho
+        /** @type {string | null} */
         let dynamicGrammarId = null;
         const isGrammarFocusType =
-          qType === types.IOE_MULTIPLE_CHOICE || qType === 'ioe_multiple_choice' ||
-          qType === types.IOE_SPOT_MISTAKE || qType === 'ioe_spot_mistake' ||
-          qType === types.IOE_FILL_BLANK || qType === 'ioe_fill_blank' ||
-          qType === types.IOE_SCRAMBLE || qType === 'ioe_scramble';
+          qType === types.IOE_MULTIPLE_CHOICE ||
+          qType === 'ioe_multiple_choice' ||
+          qType === types.IOE_SPOT_MISTAKE ||
+          qType === 'ioe_spot_mistake' ||
+          qType === types.IOE_FILL_BLANK ||
+          qType === 'ioe_fill_blank' ||
+          qType === types.IOE_SCRAMBLE ||
+          qType === 'ioe_scramble';
 
         // Tỷ lệ 70% ép khung ngữ pháp, 30% cho AI thả rông
         if (isGrammarFocusType && Math.random() > 0.3) {
@@ -274,31 +390,111 @@ export const ExamProfiles = {
           addQuestions(TYPE_IMAGE_QUIZ, 5, 1, 'Kỹ năng Hình ảnh');
           // Phase 2 (10 câu)
           addQuestions(TYPE_PRONUNCIATION, 5, 2, 'Ngữ âm & Trọng âm');
-          addQuestions(types.IOE_ODD_ONE_OUT || 'ioe_odd_one_out', 5, 2, 'Từ khác loại');
+          addQuestions(
+            types.IOE_ODD_ONE_OUT || 'ioe_odd_one_out',
+            5,
+            2,
+            'Từ khác loại'
+          );
           // Phase 3 (10 câu)
-          addQuestions(types.IOE_MATCH || 'ioe_match', 5, 3, 'Nhận diện Từ vựng');
-          addQuestions(types.IOE_MULTIPLE_CHOICE || 'ioe_multiple_choice', 5, 3, 'Ngữ pháp Tổng hợp', null, 'Functional Grammar');
+          addQuestions(
+            types.IOE_MATCH || 'ioe_match',
+            5,
+            3,
+            'Nhận diện Từ vựng'
+          );
+          addQuestions(
+            types.IOE_MULTIPLE_CHOICE || 'ioe_multiple_choice',
+            5,
+            3,
+            'Ngữ pháp Tổng hợp',
+            null,
+            'Functional Grammar'
+          );
           // Phase 4 (10 câu)
-          addQuestions(TYPE_READING_PASSAGE, 5, 4, 'Đọc hiểu Đoạn văn', `ioe_passage_mini_${Date.now()}`);
-          addQuestions(types.IOE_MULTIPLE_CHOICE || 'ioe_multiple_choice', 5, 4, 'Ngữ pháp P2', null, 'Lexical Grammar');
+          addQuestions(
+            TYPE_READING_PASSAGE,
+            5,
+            4,
+            'Đọc hiểu Đoạn văn',
+            `ioe_passage_mini_${Date.now()}`
+          );
+          addQuestions(
+            types.IOE_MULTIPLE_CHOICE || 'ioe_multiple_choice',
+            5,
+            4,
+            'Ngữ pháp P2',
+            null,
+            'Lexical Grammar'
+          );
           // Phase 5 (10 câu)
-          addQuestions(types.IOE_FILL_BLANK || 'ioe_fill_blank', 5, 5, 'Điền từ khóa');
-          addQuestions(types.IOE_SCRAMBLE || 'ioe_scramble', 5, 5, 'Tái cấu trúc câu');
+          addQuestions(
+            types.IOE_FILL_BLANK || 'ioe_fill_blank',
+            5,
+            5,
+            'Điền từ khóa'
+          );
+          addQuestions(
+            types.IOE_SCRAMBLE || 'ioe_scramble',
+            5,
+            5,
+            'Tái cấu trúc câu'
+          );
         } else {
           // Phase 1 (10 câu)
           addQuestions(TYPE_LISTENING, 10, 1, 'Kỹ năng Nghe (Listening)');
           // Phase 2 (10 câu)
           addQuestions(TYPE_PRONUNCIATION, 5, 2, 'Ngữ âm & Trọng âm');
-          addQuestions(types.IOE_SPOT_MISTAKE || 'ioe_spot_mistake', 5, 2, 'Săn lỗi sai Ngữ pháp');
+          addQuestions(
+            types.IOE_SPOT_MISTAKE || 'ioe_spot_mistake',
+            5,
+            2,
+            'Săn lỗi sai Ngữ pháp'
+          );
           // Phase 3 (10 câu)
-          addQuestions(types.IOE_MATCH || 'ioe_match', 5, 3, 'Nhận diện Từ vựng');
-          addQuestions(types.IOE_MULTIPLE_CHOICE || 'ioe_multiple_choice', 5, 3, 'Ngữ pháp Tổng hợp', null, 'Functional Grammar');
+          addQuestions(
+            types.IOE_MATCH || 'ioe_match',
+            5,
+            3,
+            'Nhận diện Từ vựng'
+          );
+          addQuestions(
+            types.IOE_MULTIPLE_CHOICE || 'ioe_multiple_choice',
+            5,
+            3,
+            'Ngữ pháp Tổng hợp',
+            null,
+            'Functional Grammar'
+          );
           // Phase 4 (10 câu)
-          addQuestions(TYPE_READING_PASSAGE, 5, 4, 'Đọc hiểu Đoạn văn', `ioe_passage_mini_${Date.now()}`);
-          addQuestions(types.IOE_MULTIPLE_CHOICE || 'ioe_multiple_choice', 5, 4, 'Ngữ pháp P2', null, 'Lexical Grammar');
+          addQuestions(
+            TYPE_READING_PASSAGE,
+            5,
+            4,
+            'Đọc hiểu Đoạn văn',
+            `ioe_passage_mini_${Date.now()}`
+          );
+          addQuestions(
+            types.IOE_MULTIPLE_CHOICE || 'ioe_multiple_choice',
+            5,
+            4,
+            'Ngữ pháp P2',
+            null,
+            'Lexical Grammar'
+          );
           // Phase 5 (10 câu)
-          addQuestions(types.IOE_FILL_BLANK || 'ioe_fill_blank', 5, 5, 'Điền từ khóa');
-          addQuestions(types.IOE_SCRAMBLE || 'ioe_scramble', 5, 5, 'Tái cấu trúc câu');
+          addQuestions(
+            types.IOE_FILL_BLANK || 'ioe_fill_blank',
+            5,
+            5,
+            'Điền từ khóa'
+          );
+          addQuestions(
+            types.IOE_SCRAMBLE || 'ioe_scramble',
+            5,
+            5,
+            'Tái cấu trúc câu'
+          );
         }
         break;
 
@@ -314,30 +510,96 @@ export const ExamProfiles = {
         }
         // Phase 2: Ngữ âm & Phân nhóm (20 câu)
         addQuestions(TYPE_PRONUNCIATION, 10, 2, 'Ngữ âm & Trọng âm');
-        addQuestions(types.IOE_ODD_ONE_OUT || 'ioe_odd_one_out', 10, 2, 'Phân nhóm Từ vựng');
+        addQuestions(
+          types.IOE_ODD_ONE_OUT || 'ioe_odd_one_out',
+          10,
+          2,
+          'Phân nhóm Từ vựng'
+        );
         // Phase 3: Nhận diện Từ vựng 1 (20 câu)
-        addQuestions(types.IOE_MATCH || 'ioe_match', 20, 3, 'Nhận diện Từ vựng - P1');
+        addQuestions(
+          types.IOE_MATCH || 'ioe_match',
+          20,
+          3,
+          'Nhận diện Từ vựng - P1'
+        );
         // Phase 4: Nhận diện Từ vựng 2 & Lỗi sai (20 câu)
-        addQuestions(types.IOE_MATCH || 'ioe_match', 10, 4, 'Nhận diện Từ vựng - P2');
-        addQuestions(types.IOE_SPOT_MISTAKE || 'ioe_spot_mistake', 10, 4, 'Săn lỗi sai Ngữ pháp');
+        addQuestions(
+          types.IOE_MATCH || 'ioe_match',
+          10,
+          4,
+          'Nhận diện Từ vựng - P2'
+        );
+        addQuestions(
+          types.IOE_SPOT_MISTAKE || 'ioe_spot_mistake',
+          10,
+          4,
+          'Săn lỗi sai Ngữ pháp'
+        );
         // Phase 5: Ngữ pháp 1 (20 câu)
-        addQuestions(types.IOE_MULTIPLE_CHOICE || 'ioe_multiple_choice', 20, 5, 'Trắc nghiệm Ngữ pháp - P1', null, 'Functional Grammar');
+        addQuestions(
+          types.IOE_MULTIPLE_CHOICE || 'ioe_multiple_choice',
+          20,
+          5,
+          'Trắc nghiệm Ngữ pháp - P1',
+          null,
+          'Functional Grammar'
+        );
         // Phase 6: Ngữ pháp 2 (20 câu)
-        addQuestions(types.IOE_MULTIPLE_CHOICE || 'ioe_multiple_choice', 20, 6, 'Trắc nghiệm Ngữ pháp - P2', null, 'Lexical Grammar');
+        addQuestions(
+          types.IOE_MULTIPLE_CHOICE || 'ioe_multiple_choice',
+          20,
+          6,
+          'Trắc nghiệm Ngữ pháp - P2',
+          null,
+          'Lexical Grammar'
+        );
         // Phase 7: Đọc hiểu 1 (20 câu - 4 tổ kén)
         for (let p = 1; p <= 4; p++) {
-          addQuestions(TYPE_READING_PASSAGE, 5, 7, `Đọc hiểu: Đoạn văn ${p}`, `ioe_passage_std_${p}_${Date.now()}`);
+          addQuestions(
+            TYPE_READING_PASSAGE,
+            5,
+            7,
+            `Đọc hiểu: Đoạn văn ${p}`,
+            `ioe_passage_std_${p}_${Date.now()}`
+          );
         }
         // Phase 8: Đọc hiểu 2 (20 câu - 4 tổ kén)
         for (let p = 5; p <= 8; p++) {
-          addQuestions(TYPE_READING_PASSAGE, 5, 8, `Đọc hiểu: Đoạn văn ${p}`, `ioe_passage_std_${p}_${Date.now()}`);
+          addQuestions(
+            TYPE_READING_PASSAGE,
+            5,
+            8,
+            `Đọc hiểu: Đoạn văn ${p}`,
+            `ioe_passage_std_${p}_${Date.now()}`
+          );
         }
         // Phase 9: Điền từ khuyết (20 câu)
-        addQuestions(types.IOE_FILL_BLANK || 'ioe_fill_blank', 10, 9, 'Điền từ khuyết - P1');
-        addQuestions(types.IOE_FILL_BLANK || 'ioe_fill_blank', 10, 9, 'Điền từ khuyết - P2');
+        addQuestions(
+          types.IOE_FILL_BLANK || 'ioe_fill_blank',
+          10,
+          9,
+          'Điền từ khuyết - P1'
+        );
+        addQuestions(
+          types.IOE_FILL_BLANK || 'ioe_fill_blank',
+          10,
+          9,
+          'Điền từ khuyết - P2'
+        );
         // Phase 10: Tái cấu trúc câu (20 câu)
-        addQuestions(types.IOE_SCRAMBLE || 'ioe_scramble', 10, 10, 'Tái cấu trúc câu - P1');
-        addQuestions(types.IOE_SCRAMBLE || 'ioe_scramble', 10, 10, 'Tái cấu trúc câu - P2');
+        addQuestions(
+          types.IOE_SCRAMBLE || 'ioe_scramble',
+          10,
+          10,
+          'Tái cấu trúc câu - P1'
+        );
+        addQuestions(
+          types.IOE_SCRAMBLE || 'ioe_scramble',
+          10,
+          10,
+          'Tái cấu trúc câu - P2'
+        );
         break;
 
       // ----------------------------------------------------
@@ -345,16 +607,33 @@ export const ExamProfiles = {
       // ----------------------------------------------------
       case 'ielts_mini':
         // 15 CÂU => CHIA LÀM 3 CHẶNG
-        addQuestions(TYPE_READING_PASSAGE, 5, 1, 'Reading: Academic Passage', `passage_mini_${Date.now()}`);
+        addQuestions(
+          TYPE_READING_PASSAGE,
+          5,
+          1,
+          'Reading: Academic Passage',
+          `passage_mini_${Date.now()}`
+        );
         addQuestions(TYPE_LISTENING, 5, 2, 'Listening: Academic Monologue');
-        addQuestions(types.IOE_SPOT_MISTAKE || 'ioe_spot_mistake', 5, 3, 'Grammar: Error Correction');
+        addQuestions(
+          types.IOE_SPOT_MISTAKE || 'ioe_spot_mistake',
+          5,
+          3,
+          'Grammar: Error Correction'
+        );
         break;
 
       case 'ielts_std':
         // 40 CÂU => CHIA LÀM 4 CHẶNG
         for (let p = 1; p <= 8; p++) {
           const phaseNum = Math.ceil(p / 2); // p=1,2 -> phase=1; p=3,4 -> phase=2...
-          addQuestions(TYPE_READING_PASSAGE, 5, phaseNum, `Reading: Passage ${p}`, `passage_std_${p}_${Date.now()}`);
+          addQuestions(
+            TYPE_READING_PASSAGE,
+            5,
+            phaseNum,
+            `Reading: Passage ${p}`,
+            `passage_std_${p}_${Date.now()}`
+          );
         }
         break;
 
@@ -363,26 +642,76 @@ export const ExamProfiles = {
       // ----------------------------------------------------
       case 'hsk_mini':
         // 15 CÂU => CHIA LÀM 3 CHẶNG
-        addQuestions(types.IOE_MATCH || 'ioe_match', 5, 1, 'Nhận diện Hán tự');
-        addQuestions(types.IOE_MULTIPLE_CHOICE || 'ioe_multiple_choice', 5, 2, 'Trắc nghiệm Ngữ pháp');
-        addQuestions(types.IOE_FILL_BLANK || 'ioe_fill_blank', 5, 3, 'Điền Lượng từ');
+        addQuestions(
+          types.IOE_MATCH || 'ioe_match',
+          5,
+          1,
+          'Nhận diện Hán tự'
+        );
+        addQuestions(
+          types.IOE_MULTIPLE_CHOICE || 'ioe_multiple_choice',
+          5,
+          2,
+          'Trắc nghiệm Ngữ pháp'
+        );
+        addQuestions(
+          types.IOE_FILL_BLANK || 'ioe_fill_blank',
+          5,
+          3,
+          'Điền Lượng từ'
+        );
         break;
 
       case 'hsk_std':
         // 45 CÂU => CHIA LÀM 3 CHẶNG
         // Phase 1 (15 câu)
-        addQuestions(types.IOE_MULTIPLE_CHOICE || 'ioe_multiple_choice', 10, 1, 'Nghe hiểu (Mô phỏng)');
-        addQuestions(types.IOE_MATCH || 'ioe_match', 5, 1, 'Nối Pinyin & Hán tự P1');
+        addQuestions(
+          types.IOE_MULTIPLE_CHOICE || 'ioe_multiple_choice',
+          10,
+          1,
+          'Nghe hiểu (Mô phỏng)'
+        );
+        addQuestions(
+          types.IOE_MATCH || 'ioe_match',
+          5,
+          1,
+          'Nối Pinyin & Hán tự P1'
+        );
         // Phase 2 (15 câu)
-        addQuestions(types.IOE_MATCH || 'ioe_match', 5, 2, 'Nối Pinyin & Hán tự P2');
-        addQuestions(types.IOE_MULTIPLE_CHOICE || 'ioe_multiple_choice', 10, 2, 'Đọc hiểu & Ngữ pháp');
+        addQuestions(
+          types.IOE_MATCH || 'ioe_match',
+          5,
+          2,
+          'Nối Pinyin & Hán tự P2'
+        );
+        addQuestions(
+          types.IOE_MULTIPLE_CHOICE || 'ioe_multiple_choice',
+          10,
+          2,
+          'Đọc hiểu & Ngữ pháp'
+        );
         // Phase 3 (15 câu)
-        addQuestions(types.IOE_FILL_BLANK || 'ioe_fill_blank', 10, 3, 'Điền từ vào chỗ trống');
-        addQuestions(types.IOE_SCRAMBLE || 'ioe_scramble', 5, 3, 'Tái cấu trúc câu (Tập viết)');
+        addQuestions(
+          types.IOE_FILL_BLANK || 'ioe_fill_blank',
+          10,
+          3,
+          'Điền từ vào chỗ trống'
+        );
+        addQuestions(
+          types.IOE_SCRAMBLE || 'ioe_scramble',
+          5,
+          3,
+          'Tái cấu trúc câu (Tập viết)'
+        );
         break;
 
       default:
-        addQuestions(types.IOE_MULTIPLE_CHOICE || 'ioe_multiple_choice', 10, 1, 'General Practice');
+        addQuestions(
+          types.IOE_MULTIPLE_CHOICE || 'ioe_multiple_choice',
+          10,
+          1,
+          'General Practice'
+        );
     }
 
     return blueprint;

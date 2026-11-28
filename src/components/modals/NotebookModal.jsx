@@ -1,14 +1,27 @@
 // ============================================================================
 // FILE 37/85: src/components/modals/NotebookModal.jsx
 // NGUỒN GỐC: tang_4.js (Block 4.3 - Version 1.05)
-// PHIÊN BẢN: Ver 1.2
-// NGÀY GIỜ NÂNG CẤP: 24/11/2026 - 23:05 (GMT+7)
+// PHIÊN BẢN: Ver 1.3
+// NGÀY GIỜ NÂNG CẤP: 28/11/2026 - 07:08 (GMT+7)
 // NHIỆM VỤ: Modal Sổ tay từ vựng (ReviewDropdown ôn tập vạn năng, Global
 //           Local-First Lookup chuẩn NFC, hợp nhất tiêu chí thiếu trường lõi
 //           chống bẫy Token grammar_type:[], sạch 0 CRITICAL / 0 HIGH / 0 MEDIUM
-//           nhờ Utils.safeLocalStorageSet & gỡ 2/2 window.Utils, đọc API Key
+//           nhờ Utils.safeLocalStorageSet & gỡ sạch window.Utils, đọc API Key
 //           tương thích kép fc_gemini_api_key/fc_apikey, bảo vệ bản nháp chuẩn
-//           React 18 StrictMode, bảng màu Tailwind tĩnh và chuẩn A11y Dialog).
+//           React 18 StrictMode, bảng màu Tailwind tĩnh 12 tông và chuẩn A11y).
+//           Nâng cấp Ver 1.3 (Lượt 5.2 - Zero-TSC Polish):
+//           1. Diệt trọn 2/2 lỗi tsc --noEmit (2× TS2810 tại cancellableBatchDelay)
+//              bằng kiểu tường minh `Promise<void>` + `resolve(undefined)` & JSDoc
+//              đầy đủ (dọn timer/Promise cũ nếu bị gọi chồng).
+//           2. Diệt D13 (IME): bảo vệ `!e.isComposing` cho phím Escape ở cả
+//              ReviewDropdown lẫn NotebookModal (tránh đóng mất bản nháp khi hủy
+//              bảng gợi ý Pinyin/Telex).
+//           3. Diệt D14: nhấn Escape khi đang chạy AI Tự điền hàng loạt sẽ dừng
+//              an toàn vòng lặp Batch và giữ nguyên Modal mở để người dùng lưu.
+//           4. Diệt D15: khóa đồng bộ `isAutoFillingAllRef` chống click đúp nút
+//              "Bắt đầu" phóng 2 vòng lặp `executeAiFillAll` song song đốt đôi Token.
+//           5. Diệt D16 & D17: chuẩn A11y `role="alertdialog"` cho 2 popup con,
+//              mở rộng bảng màu tĩnh 12 tông và chuẩn hóa `parseInt(String(...))`.
 // ============================================================================
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -38,7 +51,10 @@ const INVALID_IMAGE_KEYWORDS = new Set([
   '-'
 ]);
 
-// Bảng ánh xạ lớp Tailwind tĩnh theo mainColor (chống bị Tailwind JIT purge)
+/**
+ * Bảng ánh xạ 12 lớp Tailwind tĩnh theo mainColor (chống bị Tailwind JIT purge)
+ * @type {Record<string, { btnBg: string, itemHover: string, iconText: string, headerBg: string, headerText: string, playBtn: string }>}
+ */
 const COLOR_THEMES = {
   sky: {
     btnBg: 'bg-sky-600 hover:bg-sky-700',
@@ -80,6 +96,14 @@ const COLOR_THEMES = {
     headerText: 'text-emerald-700',
     playBtn: 'text-emerald-500 hover:bg-emerald-50'
   },
+  green: {
+    btnBg: 'bg-green-600 hover:bg-green-700',
+    itemHover: 'hover:bg-green-50 hover:text-green-700',
+    iconText: 'text-green-500',
+    headerBg: 'bg-green-50',
+    headerText: 'text-green-700',
+    playBtn: 'text-green-500 hover:bg-green-50'
+  },
   purple: {
     btnBg: 'bg-purple-600 hover:bg-purple-700',
     itemHover: 'hover:bg-purple-50 hover:text-purple-700',
@@ -103,9 +127,38 @@ const COLOR_THEMES = {
     headerBg: 'bg-teal-50',
     headerText: 'text-teal-700',
     playBtn: 'text-teal-500 hover:bg-teal-50'
+  },
+  pink: {
+    btnBg: 'bg-pink-600 hover:bg-pink-700',
+    itemHover: 'hover:bg-pink-50 hover:text-pink-700',
+    iconText: 'text-pink-500',
+    headerBg: 'bg-pink-50',
+    headerText: 'text-pink-700',
+    playBtn: 'text-pink-500 hover:bg-pink-50'
+  },
+  cyan: {
+    btnBg: 'bg-cyan-600 hover:bg-cyan-700',
+    itemHover: 'hover:bg-cyan-50 hover:text-cyan-700',
+    iconText: 'text-cyan-500',
+    headerBg: 'bg-cyan-50',
+    headerText: 'text-cyan-700',
+    playBtn: 'text-cyan-500 hover:bg-cyan-50'
+  },
+  slate: {
+    btnBg: 'bg-slate-600 hover:bg-slate-700',
+    itemHover: 'hover:bg-slate-50 hover:text-slate-700',
+    iconText: 'text-slate-500',
+    headerBg: 'bg-slate-50',
+    headerText: 'text-slate-700',
+    playBtn: 'text-slate-500 hover:bg-slate-50'
   }
 };
 
+/**
+ * Lấy bảng lớp Tailwind tĩnh theo màu chủ đạo
+ * @param {string} mainColor
+ * @param {string} [fallbackKey='sky']
+ */
 const getColorTheme = (mainColor, fallbackKey = 'sky') => {
   return COLOR_THEMES[mainColor] || COLOR_THEMES[fallbackKey] || COLOR_THEMES.sky;
 };
@@ -114,7 +167,22 @@ const getColorTheme = (mainColor, fallbackKey = 'sky') => {
 let notebookRowUidCounter = 1;
 
 /**
+ * Trích xuất thông điệp lỗi an toàn cho tsc/checkJs
+ * @param {unknown} err
+ * @returns {string}
+ */
+const getErrorMessage = (err) => {
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === 'object' && 'message' in err) {
+    return String(/** @type {{ message?: any }} */ (err).message || 'Không xác định');
+  }
+  return String(err || 'Không xác định');
+};
+
+/**
  * Helper hiển thị thông báo an toàn qua hệ thống Toast toàn cục
+ * @param {string} msg
+ * @param {string} [type='info']
  */
 const notify = (msg, type = 'info') => {
   if (typeof window !== 'undefined' && typeof window.globalShowToast === 'function') {
@@ -126,6 +194,9 @@ const notify = (msg, type = 'info') => {
 
 /**
  * Đọc an toàn chuỗi từ localStorage (chống lỗi khi trình duyệt chặn Storage)
+ * @param {string} key
+ * @param {string} [fallback='']
+ * @returns {string}
  */
 const safeReadStorage = (key, fallback = '') => {
   if (!key || typeof localStorage === 'undefined') return fallback;
@@ -139,6 +210,7 @@ const safeReadStorage = (key, fallback = '') => {
 
 /**
  * Cộng dồn tổng Token đã tiêu thụ an toàn qua Utils.safeLocalStorageSet
+ * @param {any} usedTokens
  */
 const safeAddTotalTokens = (usedTokens) => {
   const used = Number(usedTokens);
@@ -157,6 +229,8 @@ const safeAddTotalTokens = (usedTokens) => {
 
 /**
  * Chuẩn hóa khóa so khớp thuật ngữ theo chuẩn Unicode NFC (đồng bộ 1:1 toàn dự án)
+ * @param {any} val
+ * @returns {string}
  */
 const normalizeTermKey = (val) => {
   if (val === null || val === undefined) return '';
@@ -165,9 +239,12 @@ const normalizeTermKey = (val) => {
 
 /**
  * Sao chép sâu danh sách thẻ an toàn, lọc bỏ phần tử hỏng/null
+ * @param {any} rows
+ * @returns {Record<string, any>[]}
  */
 const cloneCardRowsSafe = (rows) => {
   if (!Array.isArray(rows)) return [];
+  /** @type {Record<string, any>[]} */
   const cloned = [];
   for (const item of rows) {
     if (!item || typeof item !== 'object') continue;
@@ -191,6 +268,8 @@ const cloneCardRowsSafe = (rows) => {
 
 /**
  * Đọc trực tiếp ngữ cảnh cấp độ hiện tại từ LocalStorage (an toàn tuyệt đối với try/catch)
+ * @param {string} lang
+ * @returns {string[]}
  */
 const getDirectLevelContext = (lang) => {
   const defaultLvl = lang === 'zh' ? 'zh_level_1' : 'en_level_4';
@@ -199,7 +278,9 @@ const getDirectLevelContext = (lang) => {
 
   try {
     const parsed = JSON.parse(saved);
-    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed.map((v) => String(v || '').trim()).filter(Boolean);
+    }
     if (typeof parsed === 'string' && parsed.trim() !== '') return [parsed.trim()];
   } catch {
     const clean = saved.replace(/["[\]]/g, '').trim();
@@ -211,8 +292,11 @@ const getDirectLevelContext = (lang) => {
 /**
  * Đọc API Key khả dụng đồng nhất 5 tầng tương thích kép:
  * Props -> STORAGE_KEYS.API_KEY ('fc_gemini_api_key') -> 'fc_apikey' -> 'fc_paid_apikey' -> 'fc_apikey_pool'
+ * @param {string} [propApiKey='']
+ * @returns {string}
  */
 const resolveActiveApiKey = (propApiKey = '') => {
+  /** @param {any} val */
   const cleanKey = (val) =>
     typeof val === 'string' ? val.replace(/["'\s]/g, '').trim() : '';
 
@@ -244,13 +328,15 @@ const resolveActiveApiKey = (propApiKey = '') => {
 
 /**
  * Đọc động khoảng nghỉ giữa các thẻ từ fc_ai_config (luôn chặn sàn nhất quán ở 3000ms)
+ * @param {number} [defaultMs=4000]
+ * @returns {number}
  */
 const getDynamicBatchDelayMs = (defaultMs = 4000) => {
   try {
     const aiCfg = Utils?.safeJsonParse
       ? Utils.safeJsonParse('fc_ai_config', null)
       : null;
-    const configured = parseInt(aiCfg?.delayMs, 10);
+    const configured = parseInt(String(aiCfg?.delayMs ?? ''), 10);
     if (Number.isFinite(configured) && configured >= 0) {
       return Math.max(3000, configured);
     }
@@ -262,6 +348,8 @@ const getDynamicBatchDelayMs = (defaultMs = 4000) => {
 
 /**
  * Kiểm tra đường dẫn ảnh hợp lệ (hỗ trợ http/https/data:image và loại bỏ chuỗi rác)
+ * @param {any} val
+ * @returns {boolean}
  */
 const checkIsValidImage = (val) => {
   if (typeof isValidImageUrl === 'function') return isValidImageUrl(val);
@@ -279,6 +367,8 @@ const checkIsValidImage = (val) => {
 /**
  * Lọc sạch ứng viên từ khóa ảnh:
  * Chặn chuỗi rác, đường dẫn file tương đối, đuôi tệp ảnh, tiền tố URL gãy và chữ Hán
+ * @param {any} raw
+ * @returns {string}
  */
 const sanitizeImageKeywordCandidate = (raw) => {
   if (!raw || typeof raw !== 'string') return '';
@@ -306,6 +396,12 @@ const sanitizeImageKeywordCandidate = (raw) => {
 /**
  * Dựng URL ảnh sạch qua buildSmartImageUrl, chặn tuyệt đối fallback bằng chữ Hán,
  * đường dẫn hỏng hoặc câu văn dài
+ * @param {any} aiImage
+ * @param {any} existingImage
+ * @param {string} fallbackTerm
+ * @param {string} lang
+ * @param {string} dataMode
+ * @returns {string}
  */
 const resolveSafeNotebookImage = (
   aiImage,
@@ -314,8 +410,8 @@ const resolveSafeNotebookImage = (
   lang,
   dataMode
 ) => {
-  if (checkIsValidImage(aiImage)) return aiImage.trim();
-  if (checkIsValidImage(existingImage)) return existingImage.trim();
+  if (checkIsValidImage(aiImage)) return String(aiImage).trim();
+  if (checkIsValidImage(existingImage)) return String(existingImage).trim();
 
   const smartBuilder =
     typeof buildSmartImageUrl === 'function'
@@ -349,11 +445,18 @@ const resolveSafeNotebookImage = (
 
 /**
  * Lọc bỏ các trường nháp/metadata trước khi lưu thẻ vào Sổ tay
+ * @param {Record<string, any>} card
+ * @returns {Record<string, any>}
  */
 const sanitizeCardForStorage = (card) => {
   if (!card || typeof card !== 'object') return card;
-  const { _tempId, _tokenUsage, posAnalysis, image_keyword, ...cleanCard } =
-    card;
+  const {
+    _tempId: _tid,
+    _tokenUsage: _tu,
+    posAnalysis: _pa,
+    image_keyword: _ik,
+    ...cleanCard
+  } = card;
   return cleanCard;
 };
 
@@ -361,6 +464,10 @@ const sanitizeCardForStorage = (card) => {
  * Bộ kiểm tra trường lõi còn thiếu dùng chung cho cả điền lẻ & điền hàng loạt.
  * Lưu ý: KHÔNG đưa điều kiện grammar_type.length === 0 vào cổng kích hoạt để tránh
  * lặp gọi AI vô hạn trên các câu giao tiếp bình thường (vốn hợp lệ với grammar_type: []).
+ * @param {Record<string, any>} item
+ * @param {string} lang
+ * @param {string} dataMode
+ * @returns {string[]}
  */
 const getCoreMissingFieldsForRow = (item, lang, dataMode) => {
   const isSentenceMode = dataMode === 'sentence';
@@ -385,13 +492,17 @@ const getCoreMissingFieldsForRow = (item, lang, dataMode) => {
     if (field === 'image') {
       return !checkIsValidImage(val);
     }
-    return !val || val.toString().trim() === '';
+    return !val || String(val).trim() === '';
   });
 };
 
 /**
  * Xây dựng danh sách đầy đủ các trường gửi lên AI khi đã qua cổng kích hoạt.
  * Tự động đính kèm 'grammar_type' ở chế độ câu văn để AI điền kèm trong cùng 1 lượt gọi.
+ * @param {Record<string, any>} item
+ * @param {string} lang
+ * @param {string} dataMode
+ * @returns {string[]}
  */
 const getMissingFieldsForRow = (item, lang, dataMode) => {
   const missing = getCoreMissingFieldsForRow(item, lang, dataMode);
@@ -407,6 +518,10 @@ const getMissingFieldsForRow = (item, lang, dataMode) => {
 /**
  * Tra cứu thẻ trong toàn bộ các kho dữ liệu cục bộ (Local-First Lookup chuẩn NFC)
  * Sử dụng trực tiếp ES Module Utils.safeJsonParse (đọc 0ms từ RAM Mirror cho Master Data)
+ * @param {string} term
+ * @param {string} lang
+ * @param {any[]} [sourceData=[]]
+ * @returns {Record<string, any> | null}
  */
 const findCardInLocalPools = (term, lang, sourceData = []) => {
   const target = normalizeTermKey(term);
@@ -425,7 +540,7 @@ const findCardInLocalPools = (term, lang, sourceData = []) => {
       c.term &&
       normalizeTermKey(c.term) === target &&
       c.definition &&
-      c.definition.toString().trim() !== ''
+      String(c.definition).trim() !== ''
   );
   if (directMatch) return directMatch;
 
@@ -445,7 +560,7 @@ const findCardInLocalPools = (term, lang, sourceData = []) => {
               c.term &&
               normalizeTermKey(c.term) === target &&
               c.definition &&
-              c.definition.toString().trim() !== ''
+              String(c.definition).trim() !== ''
           );
           if (found) return found;
         }
@@ -458,6 +573,7 @@ const findCardInLocalPools = (term, lang, sourceData = []) => {
 
 /**
  * Tạo dòng trống mặc định ở cuối bảng Sổ tay với mã _tempId duy nhất
+ * @returns {Record<string, any>}
  */
 const createBlankNotebookRow = () => ({
   term: '',
@@ -476,6 +592,7 @@ const createBlankNotebookRow = () => ({
 /**
  * Component Menu Ôn Tập Vạn Năng (ReviewDropdown)
  * Dùng chung cho cả Sổ tay từ vựng (NotebookModal) và Sổ tay cần nhớ (IncorrectModal)
+ * @param {Record<string, any>} props
  */
 export const ReviewDropdown = ({
   onSelect,
@@ -484,12 +601,14 @@ export const ReviewDropdown = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const theme = getColorTheme(mainColor, 'blue');
+  const iconsMap = /** @type {Record<string, any>} */ (Icons);
 
-  // Cho phép đóng menu bằng phím Escape mà không đóng nhầm Modal cha
+  // Cho phép đóng menu bằng phím Escape (bảo vệ bộ gõ IME & không đóng nhầm Modal cha)
   useEffect(() => {
     if (!isOpen || typeof window === 'undefined') return;
+    /** @param {KeyboardEvent} e */
     const handleEsc = (e) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !e.isComposing) {
         e.stopPropagation();
         setIsOpen(false);
       }
@@ -548,7 +667,7 @@ export const ReviewDropdown = ({
             Chọn chế độ ôn tập
           </div>
           {games.map((game) => {
-            const IconComp = Icons[game.icon] || Icons.Gamepad2;
+            const IconComp = iconsMap[game.icon] || Icons.Gamepad2;
             const isDisabled = dataLength < game.min;
             return (
               <button
@@ -594,6 +713,7 @@ export const ReviewDropdown = ({
 
 /**
  * Modal Sổ Tay Từ Vựng (NotebookModal)
+ * @param {Record<string, any>} props
  */
 export const NotebookModal = ({
   isOpen,
@@ -601,7 +721,7 @@ export const NotebookModal = ({
   data = [],
   onSave,
   onPlay,
-  t = (k) => k,
+  t = (/** @type {string} */ k) => k,
   mainColor = 'sky',
   apiKey = '',
   lang = 'en',
@@ -611,10 +731,17 @@ export const NotebookModal = ({
   onReviewGame,
   dataMode = 'vocab'
 }) => {
-  const [editingData, setEditingData] = useState([]);
-  const [fillingRowIds, setFillingRowIds] = useState(new Set());
+  const [editingData, setEditingData] = useState(
+    /** @type {Record<string, any>[]} */ ([])
+  );
+  
+  const [fillingRowIds, setFillingRowIds] = useState(
+    () => /** @type {Set<string>} */ (new Set())
+  );
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
-  const [pendingFillRowIds, setPendingFillRowIds] = useState(null);
+  const [pendingFillRowIds, setPendingFillRowIds] = useState(
+    /** @type {string[] | null} */ (null)
+  );
   const [isAutoFillingAll, setIsAutoFillingAll] = useState(false);
   const [isStoppingBatch, setIsStoppingBatch] = useState(false);
   const [fillProgress, setFillProgress] = useState({ current: 0, total: 0 });
@@ -634,9 +761,16 @@ export const NotebookModal = ({
 
   const prevIsOpenRef = useRef(false);
 
+  // Khóa đồng bộ chống double-click nút "Bắt đầu" & kiểm soát Escape khi đang Batch
+  const isAutoFillingAllRef = useRef(false);
+  const isStoppingBatchRef = useRef(false);
+  isStoppingBatchRef.current = isStoppingBatch;
+
   const isBatchCancelledRef = useRef(false);
-  const batchTimerRef = useRef(null);
-  const batchTimerResolveRef = useRef(null);
+  const batchTimerRef = useRef(
+    /** @type {ReturnType<typeof setTimeout> | null} */ (null)
+  );
+  const batchTimerResolveRef = useRef(/** @type {(() => void) | null} */ (null));
 
   const showConfirmDeleteRef = useRef(showConfirmDelete);
   showConfirmDeleteRef.current = showConfirmDelete;
@@ -648,10 +782,15 @@ export const NotebookModal = ({
   onCloseRef.current = onClose;
 
   const isSentenceMode = dataMode === 'sentence';
-  const ImageIcon = Icons.Image || null;
+  const iconsRecord = /** @type {Record<string, any>} */ (Icons);
+  const ImageIcon = iconsRecord.Image || null;
   const theme = getColorTheme(mainColor, 'sky');
 
-  // Chỉ hiển thị Toast khi Modal vẫn đang mở (chặn Toast muộn sau khi đóng)
+  /**
+   * Chỉ hiển thị Toast khi Modal vẫn đang mở (chặn Toast muộn sau khi đóng)
+   * @param {string} msg
+   * @param {string} [type='info']
+   */
   const safeNotify = (msg, type = 'info') => {
     if (isOpenRef.current) {
       notify(msg, type);
@@ -672,25 +811,48 @@ export const NotebookModal = ({
     }
   };
 
-  // Hàm chờ có thể đánh thức lập tức khi người dùng hủy hoặc đóng Modal
+  /**
+   * Hàm chờ có thể đánh thức lập tức khi người dùng hủy hoặc đóng Modal.
+   * Tự dọn timer/Promise cũ nếu bị gọi chồng và đạt chuẩn 0 TS2810.
+   * @param {number} ms
+   * @returns {Promise<void>}
+   */
   const cancellableBatchDelay = (ms) =>
-    new Promise((resolve) => {
-      if (isBatchCancelledRef.current) {
-        resolve();
-        return;
-      }
-      batchTimerResolveRef.current = resolve;
-      batchTimerRef.current = setTimeout(() => {
-        batchTimerRef.current = null;
-        batchTimerResolveRef.current = null;
-        resolve();
-      }, ms);
-    });
+    /** @type {Promise<void>} */ (
+      new Promise((resolve) => {
+        if (batchTimerRef.current) {
+          clearTimeout(batchTimerRef.current);
+          batchTimerRef.current = null;
+        }
+        if (batchTimerResolveRef.current) {
+          const prevResolve = batchTimerResolveRef.current;
+          batchTimerResolveRef.current = null;
+          prevResolve();
+        }
+        if (isBatchCancelledRef.current) {
+          resolve(undefined);
+          return;
+        }
+        const done = () => {
+          if (batchTimerRef.current) {
+            clearTimeout(batchTimerRef.current);
+            batchTimerRef.current = null;
+          }
+          if (batchTimerResolveRef.current === done) {
+            batchTimerResolveRef.current = null;
+          }
+          resolve(undefined);
+        };
+        batchTimerResolveRef.current = done;
+        batchTimerRef.current = setTimeout(done, ms);
+      })
+    );
 
   // Dọn dẹp vòng lặp Batch và reset cờ StrictMode khi component unmount
   useEffect(() => {
     return () => {
       cancelBatchWorker();
+      isAutoFillingAllRef.current = false;
       prevIsOpenRef.current = false;
     };
   }, []);
@@ -703,6 +865,7 @@ export const NotebookModal = ({
     if (isOpen && !wasOpen) {
       cancelBatchWorker();
       isBatchCancelledRef.current = false;
+      isAutoFillingAllRef.current = false;
 
       const loaded = cloneCardRowsSafe(dataRef.current);
       loaded.push(createBlankNotebookRow());
@@ -717,24 +880,38 @@ export const NotebookModal = ({
       setFillProgress({ current: 0, total: 0 });
     } else if (!isOpen && wasOpen) {
       cancelBatchWorker();
+      isAutoFillingAllRef.current = false;
       setIsAutoFillingAll(false);
       setIsStoppingBatch(false);
       setFillProgress({ current: 0, total: 0 });
     }
   }, [isOpen]);
 
-  // Hỗ trợ đóng Modal / popup xác nhận an toàn bằng phím Escape
+  // Hỗ trợ phím Escape phân tầng an toàn:
+  // 1. Bảo vệ IME (!e.isComposing)
+  // 2. Đóng popup xác nhận con trước
+  // 3. Nếu đang chạy AI Batch -> chỉ dừng Batch an toàn (giữ nguyên Modal để không mất bản nháp)
+  // 4. Khi đã rảnh -> đóng Modal bình thường
   useEffect(() => {
     if (!isOpen || typeof window === 'undefined') return;
 
+    /** @param {KeyboardEvent} e */
     const handleKeyDown = (e) => {
-      if (e.key !== 'Escape') return;
+      if (e.key !== 'Escape' || e.isComposing) return;
       if (showConfirmDeleteRef.current) {
         setShowConfirmDelete(false);
         return;
       }
       if (pendingFillRowIdsRef.current) {
         setPendingFillRowIds(null);
+        return;
+      }
+      if (isAutoFillingAllRef.current) {
+        if (!isStoppingBatchRef.current) {
+          setIsStoppingBatch(true);
+          cancelBatchWorker();
+          safeNotify('Đang dừng tiến trình AI Tự điền hàng loạt...', 'info');
+        }
         return;
       }
       cancelBatchWorker();
@@ -749,10 +926,15 @@ export const NotebookModal = ({
 
   // Danh sách các thẻ hợp lệ đang có trên bảng soạn thảo
   const validEditingItems = editingData.filter(
-    (item) => item && item.term && item.term.trim() !== ''
+    (item) => item && item.term && String(item.term).trim() !== ''
   );
   const validCount = validEditingItems.length;
 
+  /**
+   * @param {number} index
+   * @param {string} field
+   * @param {string} value
+   */
   const handleChange = (index, field, value) => {
     setEditingData((prev) => {
       const newData = [...prev];
@@ -769,9 +951,12 @@ export const NotebookModal = ({
     });
   };
 
-  // Xóa 1 dòng trên bản nháp editingData (Chỉ lưu chính thức khi bấm handleSave)
+  /**
+   * Xóa 1 dòng trên bản nháp editingData (Chỉ lưu chính thức khi bấm handleSave)
+   * @param {number} index
+   */
   const handleDelete = (index) => {
-    if (isAutoFillingAll) return;
+    if (isAutoFillingAll || isAutoFillingAllRef.current) return;
     setEditingData((prev) => {
       const newData = [...prev];
       newData.splice(index, 1);
@@ -811,6 +996,9 @@ export const NotebookModal = ({
   /**
    * Tự động điền thông minh cho 1 dòng (Hỗ trợ truyền index hoặc _tempId)
    * Trả về { filled: boolean, apiHit: boolean } để vòng lặp Batch kiểm soát Retry & Delay chính xác
+   * @param {number | string} indexOrRowId
+   * @param {boolean} [isBatch=false]
+   * @returns {Promise<{ filled: boolean, apiHit: boolean }>}
    */
   const handleAiFill = async (indexOrRowId, isBatch = false) => {
     const currentRows = editingDataRef.current;
@@ -822,21 +1010,24 @@ export const NotebookModal = ({
     }
 
     let item = targetIndex >= 0 ? currentRows[targetIndex] : null;
-    if (!item || !item.term || item.term.trim() === '') {
+    if (!item || !item.term || String(item.term).trim() === '') {
       if (!isBatch) {
         safeNotify('Vui lòng nhập từ vựng trước khi gọi AI!', 'warning');
       }
       return { filled: false, apiHit: false };
     }
 
-    const rowId = item._tempId;
+    const rowId = String(item._tempId || '');
 
     // Chặn double-click / chạy chồng trên cùng 1 dòng
     if (fillingRowIdsRef.current.has(rowId)) {
       return { filled: false, apiHit: false };
     }
 
-    // Helper cập nhật đúng dòng theo _tempId (an toàn tuyệt đối chống lệch chỉ mục)
+    /**
+     * Helper cập nhật đúng dòng theo _tempId (an toàn tuyệt đối chống lệch chỉ mục)
+     * @param {(row: Record<string, any>) => Record<string, any>} updaterFn
+     */
     const patchRowById = (updaterFn) => {
       if (!isOpenRef.current) return;
       setEditingData((prev) => {
@@ -855,7 +1046,7 @@ export const NotebookModal = ({
     if (localMatch) {
       const nextImage =
         !checkIsValidImage(item.image) && checkIsValidImage(localMatch.image)
-          ? localMatch.image.trim()
+          ? String(localMatch.image).trim()
           : item.image;
       const nextGrammarType =
         Array.isArray(item.grammar_type) && item.grammar_type.length > 0
@@ -864,6 +1055,7 @@ export const NotebookModal = ({
             ? [...localMatch.grammar_type]
             : [];
 
+      /** @type {Record<string, any>} */
       const mergedItem = {
         ...item,
         definition: item.definition || localMatch.definition || '',
@@ -889,10 +1081,11 @@ export const NotebookModal = ({
         'sinoViet',
         'image'
       ];
+      const baseItem = item;
       localUpdated =
-        checkChangedKeys.some((k) => (mergedItem[k] || '') !== (item[k] || '')) ||
+        checkChangedKeys.some((k) => (mergedItem[k] || '') !== (baseItem[k] || '')) ||
         (nextGrammarType.length > 0 &&
-          (!Array.isArray(item.grammar_type) || item.grammar_type.length === 0));
+          (!Array.isArray(baseItem.grammar_type) || baseItem.grammar_type.length === 0));
 
       if (localUpdated) {
         patchRowById(() => mergedItem);
@@ -950,10 +1143,11 @@ export const NotebookModal = ({
 
       // Xác định ngữ cảnh cấp độ (Ưu tiên level riêng của thẻ hoặc level đang chọn)
       const levelContext = item.level
-        ? [item.level]
+        ? [String(item.level)]
         : getDirectLevelContext(lang);
 
       // Truyền đầy đủ 7 tham số (bao gồm item làm existingData) để AI vẽ ảnh sát nghĩa
+      /** @type {Record<string, any> | null} */
       const result = await fillCardWithAi(
         item.term,
         lang,
@@ -974,6 +1168,7 @@ export const NotebookModal = ({
         }
 
         patchRowById((currentRow) => {
+          /** @type {Record<string, any>} */
           const updatedRow = {
             ...currentRow,
             definition: currentRow.definition || result.definition || '',
@@ -1023,7 +1218,7 @@ export const NotebookModal = ({
     } catch (e) {
       console.error(e);
       if (!isBatch) {
-        safeNotify('Lỗi AI: ' + (e?.message || 'Không xác định'), 'error');
+        safeNotify('Lỗi AI: ' + getErrorMessage(e), 'error');
         return { filled: false, apiHit: true };
       }
       throw e;
@@ -1038,8 +1233,8 @@ export const NotebookModal = ({
   };
 
   const handleAiFillAll = () => {
-    if (isAutoFillingAll) {
-      if (isStoppingBatch) return;
+    if (isAutoFillingAll || isAutoFillingAllRef.current) {
+      if (isStoppingBatch || isStoppingBatchRef.current) return;
       setIsStoppingBatch(true);
       cancelBatchWorker();
       safeNotify('Đang dừng tiến trình AI Tự điền hàng loạt...', 'info');
@@ -1055,10 +1250,11 @@ export const NotebookModal = ({
     // Đồng bộ tuyệt đối với getCoreMissingFieldsForRow (bao gồm analysis, partOfSpeech, topic, sinoViet, image)
     const rowIdsToFill = editingDataRef.current
       .filter((item) => {
-        if (!item || !item.term || item.term.trim() === '') return false;
+        if (!item || !item.term || String(item.term).trim() === '') return false;
         return getCoreMissingFieldsForRow(item, lang, dataMode).length > 0;
       })
-      .map((item) => item._tempId);
+      .map((item) => String(item._tempId || ''))
+      .filter(Boolean);
 
     if (rowIdsToFill.length === 0) {
       safeNotify(
@@ -1072,10 +1268,14 @@ export const NotebookModal = ({
   };
 
   const executeAiFillAll = async () => {
-    const rowIdsToFill = pendingFillRowIds;
+    // Khóa đồng bộ tức thì chống click đúp nút "Bắt đầu" phóng 2 vòng lặp song song đốt đôi Token
+    if (isAutoFillingAllRef.current) return;
+
+    const rowIdsToFill = pendingFillRowIdsRef.current || pendingFillRowIds;
     setPendingFillRowIds(null);
     if (!rowIdsToFill || rowIdsToFill.length === 0) return;
 
+    isAutoFillingAllRef.current = true;
     isBatchCancelledRef.current = false;
     setIsStoppingBatch(false);
     setIsAutoFillingAll(true);
@@ -1114,11 +1314,12 @@ export const NotebookModal = ({
             apiHit = Boolean(res?.apiHit);
             consecutiveCardFailures = 0;
           } catch (err) {
+            const errMsg = getErrorMessage(err);
             const currentTerm =
               editingDataRef.current.find((r) => r && r._tempId === rowId)
                 ?.term || rowId;
 
-            if (err?.message && err.message.includes('GLOBAL_PAUSE')) {
+            if (errMsg.includes('GLOBAL_PAUSE')) {
               globalPauseRetries++;
               if (globalPauseRetries >= MAX_GLOBAL_PAUSE_RETRIES) {
                 stoppedByOverload = true;
@@ -1135,7 +1336,7 @@ export const NotebookModal = ({
               continue;
             }
 
-            if (err?.message === 'Missing API Key') {
+            if (errMsg === 'Missing API Key') {
               stoppedByOverload = true;
               safeNotify('Thiếu API Key khả dụng. Đã dừng tự điền!', 'warning');
               break;
@@ -1181,6 +1382,7 @@ export const NotebookModal = ({
         }
       }
     } finally {
+      isAutoFillingAllRef.current = false;
       setIsAutoFillingAll(false);
       setIsStoppingBatch(false);
       setFillProgress({ current: 0, total: 0 });
@@ -1193,7 +1395,10 @@ export const NotebookModal = ({
     }
   };
 
-  // Xử lý khi chọn chế độ Ôn tập lại từ Sổ tay (Tự động lấy danh sách thẻ đang soạn thảo)
+  /**
+   * Xử lý khi chọn chế độ Ôn tập lại từ Sổ tay (Tự động lấy danh sách thẻ đang soạn thảo)
+   * @param {string} type
+   */
   const handleSelectReviewGame = (type) => {
     cancelBatchWorker();
     const cleanData = validEditingItems.map(sanitizeCardForStorage);
@@ -1217,12 +1422,20 @@ export const NotebookModal = ({
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden relative">
         {/* Popup xác nhận xóa toàn bộ */}
         {showConfirmDelete && (
-          <div className="absolute inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="notebook-confirm-delete-title"
+            className="absolute inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in"
+          >
             <div className="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full text-center border-2 border-red-100">
               <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Icons.Trash2 size={32} />
               </div>
-              <h3 className="text-xl font-bold text-gray-800 mb-2">
+              <h3
+                id="notebook-confirm-delete-title"
+                className="text-xl font-bold text-gray-800 mb-2"
+              >
                 Xóa toàn bộ sổ tay?
               </h3>
               <p className="text-gray-600 mb-6 text-sm">
@@ -1251,12 +1464,20 @@ export const NotebookModal = ({
 
         {/* Popup xác nhận AI Tự điền hàng loạt */}
         {pendingFillRowIds && (
-          <div className="absolute inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="notebook-confirm-fill-title"
+            className="absolute inset-0 z-50 bg-black/60 flex items-center justify-center p-4 animate-in fade-in"
+          >
             <div className="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full text-center border-2 border-purple-100">
               <div className="w-16 h-16 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Icons.Sparkles size={32} />
               </div>
-              <h3 className="text-xl font-bold text-gray-800 mb-2">
+              <h3
+                id="notebook-confirm-fill-title"
+                className="text-xl font-bold text-gray-800 mb-2"
+              >
                 AI Tự điền hàng loạt?
               </h3>
               <p className="text-gray-600 mb-6 text-sm">
@@ -1276,7 +1497,8 @@ export const NotebookModal = ({
                 <button
                   type="button"
                   onClick={executeAiFillAll}
-                  className="flex-1 py-3 bg-purple-600 text-white font-bold rounded-xl hover:bg-purple-700 transition-colors shadow-lg shadow-purple-200"
+                  disabled={isAutoFillingAll}
+                  className="flex-1 py-3 bg-purple-600 text-white font-bold rounded-xl hover:bg-purple-700 transition-colors shadow-lg shadow-purple-200 disabled:opacity-50"
                 >
                   Bắt đầu
                 </button>
@@ -1567,8 +1789,9 @@ export const NotebookModal = ({
 
 // Gắn vào window để tương thích ngược
 if (typeof window !== 'undefined') {
-  window.ReviewDropdown = ReviewDropdown;
-  window.NotebookModal = NotebookModal;
+  const win = /** @type {any} */ (window);
+  win.ReviewDropdown = ReviewDropdown;
+  win.NotebookModal = NotebookModal;
 }
 
 export default NotebookModal;

@@ -1,13 +1,20 @@
 // ============================================================================
 // FILE 75/85: src/hooks/useCoreState.js
 // NGUỒN GỐC: Tầng 6 - Block 6.1 (Core State - Version 2.4)
-// PHIÊN BẢN: Ver 1.1
-// NGÀY GIỜ NÂNG CẤP: 23/11/2026 - 06:46 (GMT+7)
+// PHIÊN BẢN: Ver 1.2
+// NGÀY GIỜ NÂNG CẤP: 28/11/2026 - 07:05 (GMT+7)
 // NHIỆM VỤ: Quản lý toàn bộ State gốc, layoutAlign, khởi tạo & tự động di cư
 //           4 Kho Master Data sang IndexedDB + RAM Mirror 0ms (FcDB),
 //           vận hành Động cơ "Vòi nước" tách bạch tuyệt đối Từ Vựng <-> Câu Văn,
 //           chốt chặn chống ghi đè chéo EN <-> CN, bảo vệ uiLang ('vi'|'en'|'zh'),
 //           chống lỗi Regex link Publish CSV và giữ trạng thái Shuffle an toàn.
+//           Nâng cấp Ver 1.2 (Lượt 5.2 - Zero-TSC Polish):
+//           1. Diệt trọn 3/3 lỗi tsc --noEmit (3× TS2339 tại loadFont) bằng
+//              thu hẹp kiểu chuẩn DOM `instanceof HTMLLinkElement` + JSDoc.
+//           2. Diệt D5: lưu `null` (xóa hẳn khóa) khi xóa sạch `apiKey` khớp
+//              `ApiKeyModal Ver 1.1` và bổ sung fallback di cư từ `'fc_apikey'`.
+//           3. Diệt D8: gỡ nhánh dự phòng legacy `window.FcDB` và
+//              `Utils?.fetchWithFallback`, sử dụng 100% ES Modules trực tiếp.
 // ============================================================================
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -35,49 +42,76 @@ export const MASTER_DATA_KEYS = [
   'fc_master_data_zh_sentence'
 ];
 
-// Chuẩn hóa ngôn ngữ học (chỉ hỗ trợ en | zh)
+/**
+ * Chuẩn hóa ngôn ngữ học (chỉ hỗ trợ en | zh)
+ * @param {any} val
+ * @returns {'en' | 'zh'}
+ */
 const normalizeLang = (val) => (val === 'zh' ? 'zh' : 'en');
 
-// Chuẩn hóa ngôn ngữ giao diện (hỗ trợ đầy đủ vi | en | zh)
+/**
+ * Chuẩn hóa ngôn ngữ giao diện (hỗ trợ đầy đủ vi | en | zh)
+ * @param {any} val
+ * @returns {'vi' | 'en' | 'zh'}
+ */
 const normalizeUiLang = (val) =>
   val === 'vi' || val === 'zh' || val === 'en' ? val : 'en';
 
-// Chuẩn hóa chế độ dữ liệu (chỉ hỗ trợ vocab | sentence)
+/**
+ * Chuẩn hóa chế độ dữ liệu (chỉ hỗ trợ vocab | sentence)
+ * @param {any} val
+ * @returns {'vocab' | 'sentence'}
+ */
 const normalizeDataMode = (val) => {
   const clean = typeof val === 'string' ? val.replace(/"/g, '').trim() : '';
   return clean === 'sentence' ? 'sentence' : 'vocab';
 };
 
-// Lấy cấp độ mặc định theo ngôn ngữ
+/**
+ * Lấy cấp độ mặc định theo ngôn ngữ
+ * @param {'en' | 'zh'} targetLang
+ * @returns {string[]}
+ */
 const getDefaultLevelsForLang = (targetLang) =>
   targetLang === 'zh' ? ['zh_level_1'] : ['en_level_4'];
 
-// Kiểm tra đối tượng Master Data hợp lệ (Plain Object có ít nhất 1 level chứa mảng thẻ)
+/**
+ * Kiểm tra đối tượng Master Data hợp lệ (Plain Object có ít nhất 1 level chứa mảng thẻ)
+ * @param {any} obj
+ * @returns {boolean}
+ */
 const isValidMasterDataObject = (obj) => {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
   return Object.values(obj).some((arr) => Array.isArray(arr) && arr.length > 0);
 };
 
-// Trình lấy FcDB an toàn
-const getDbInstance = () =>
-  FcDB || (typeof window !== 'undefined' ? window.FcDB : null);
-
-// Hàm nạp Font chữ động cho Tiếng Trung / Thư pháp
+/**
+ * Hàm nạp Font chữ động cho Tiếng Trung / Thư pháp (chuẩn DOM HTMLLinkElement, 0 TS2339)
+ * @param {string} id
+ * @param {string} url
+ */
 const loadFont = (id, url) => {
   if (typeof document === 'undefined') return;
-  let link = document.getElementById(id);
-  if (!link) {
-    link = document.createElement('link');
-    link.id = id;
-    link.rel = 'stylesheet';
-    document.head.appendChild(link);
+  const existing = document.getElementById(id);
+  if (existing) {
+    if (existing instanceof HTMLLinkElement && existing.href !== url) {
+      existing.href = url;
+    }
+    return;
   }
-  if (link.href !== url) {
-    link.href = url;
-  }
+  const link = document.createElement('link');
+  link.id = id;
+  link.rel = 'stylesheet';
+  link.href = url;
+  document.head.appendChild(link);
 };
 
-// [BẢN VÁ V2.1] Trình phân tích Storage thông minh, dọn dẹp rác chuỗi
+/**
+ * [BẢN VÁ V2.1] Trình phân tích Storage thông minh, dọn dẹp rác chuỗi
+ * @param {string} key
+ * @param {string[] | null} defaultArr
+ * @returns {string[] | null}
+ */
 const parseArrayStorage = (key, defaultArr) => {
   if (typeof localStorage === 'undefined') return defaultArr;
   try {
@@ -104,7 +138,12 @@ const parseArrayStorage = (key, defaultArr) => {
   }
 };
 
-// Đọc chuỗi an toàn từ localStorage
+/**
+ * Đọc chuỗi an toàn từ localStorage
+ * @param {string} key
+ * @param {string} [fallback='']
+ * @returns {string}
+ */
 const safeReadStringStorage = (key, fallback = '') => {
   if (typeof localStorage === 'undefined') return fallback;
   try {
@@ -115,7 +154,11 @@ const safeReadStringStorage = (key, fallback = '') => {
   }
 };
 
-// Chuẩn hóa URL Sheet thành endpoint GViz CSV (bảo vệ nguyên vẹn link Publish /d/e/.../pub?output=csv)
+/**
+ * Chuẩn hóa URL Sheet thành endpoint GViz CSV (bảo vệ nguyên vẹn link Publish /d/e/.../pub?output=csv)
+ * @param {any} rawUrl
+ * @returns {string}
+ */
 const resolveApiKeySheetFetchUrl = (rawUrl) => {
   const trimmed = String(rawUrl || '').trim();
   if (!trimmed) return '';
@@ -171,7 +214,9 @@ export const useCoreState = () => {
   // Chốt chặn đồng bộ ngôn ngữ: Ngăn Effect lưu nhầm Level/Topic/RetryBag của ngôn ngữ cũ sang ngôn ngữ mới
   const prevLangRef = useRef(lang);
   const [syncedLang, setSyncedLang] = useState(lang);
-  const [hydratedUserLang, setHydratedUserLang] = useState(null);
+  const [hydratedUserLang, setHydratedUserLang] = useState(
+    /** @type {'en' | 'zh' | null} */ (null)
+  );
   const [isHarvestHydrated, setIsHarvestHydrated] = useState(false);
 
   const [uiLang, setUiLang] = useState(() => {
@@ -225,16 +270,18 @@ export const useCoreState = () => {
   });
 
   const [currentTopic, setCurrentTopic] = useState(() => {
-    return parseArrayStorage('fc_current_topic_' + lang, []);
+    return parseArrayStorage('fc_current_topic_' + lang, []) || [];
   });
 
   // Data States
-  const [cards, setCards] = useState([]);
-  const [notebook, setNotebook] = useState([]);
-  const [mastered, setMastered] = useState([]);
-  const [incorrectList, setIncorrectList] = useState([]);
+  const [cards, setCards] = useState(/** @type {any[]} */ ([]));
+  const [notebook, setNotebook] = useState(/** @type {any[]} */ ([]));
+  const [mastered, setMastered] = useState(/** @type {any[]} */ ([]));
+  const [incorrectList, setIncorrectList] = useState(/** @type {any[]} */ ([]));
   const [isStudyingNotebook, setIsStudyingNotebook] = useState(false);
-  const [studySourceName, setStudySourceName] = useState(null);
+  const [studySourceName, setStudySourceName] = useState(
+    /** @type {string | null} */ (null)
+  );
 
   // INDEXEDDB ASYNC STATE & TÍN HIỆU PHIÊN BẢN KHO MASTER
   const [isDbReady, setIsDbReady] = useState(false);
@@ -243,8 +290,12 @@ export const useCoreState = () => {
     setMasterDataVersion((v) => v + 1);
   }, []);
 
-  const [aiHarvestPool, setAiHarvestPool] = useState({});
-  const [globalRetryBag, setGlobalRetryBag] = useState({});
+  const [aiHarvestPool, setAiHarvestPool] = useState(
+    /** @type {Record<string, any>} */ ({})
+  );
+  const [globalRetryBag, setGlobalRetryBag] = useState(
+    /** @type {Record<string, any>} */ ({})
+  );
 
   // SYSTEM EVENT LOGS STATE
   const [systemLogs, setSystemLogs] = useState(() => {
@@ -252,10 +303,16 @@ export const useCoreState = () => {
     return Array.isArray(logs) ? logs : [];
   });
 
-  // Config & Token
-  const [apiKey, setApiKey] = useState(() =>
-    safeReadStringStorage(STORAGE_KEYS?.API_KEY || 'fc_apikey', '')
-  );
+  // Config & Token (đọc khóa chuẩn + fallback di cư từ 'fc_apikey')
+  const [apiKey, setApiKey] = useState(() => {
+    const primaryKey = STORAGE_KEYS?.API_KEY || 'fc_gemini_api_key';
+    const fromPrimary = safeReadStringStorage(primaryKey, '');
+    if (fromPrimary) return fromPrimary;
+    if (primaryKey !== 'fc_apikey') {
+      return safeReadStringStorage('fc_apikey', '');
+    }
+    return '';
+  });
   const [totalTokens, setTotalTokens] = useState(() => {
     const parsed = parseInt(safeReadStringStorage('fc_total_tokens', '0'), 10);
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
@@ -303,7 +360,7 @@ export const useCoreState = () => {
   const [showHanziWriter, setShowHanziWriter] = useState(false);
   const [currentHanziChar, setCurrentHanziChar] = useState('');
   const [wordSelectTarget, setWordSelectTarget] = useState('');
-  const [toast, setToast] = useState(null);
+  const [toast, setToast] = useState(/** @type {any} */ (null));
   const [isAiLoading, setIsAiLoading] = useState(false);
 
   // AI Modes & Pending Actions
@@ -339,14 +396,19 @@ export const useCoreState = () => {
   // Quản lý Sessions đa ngôn ngữ (kiểm tra chặt Plain Object)
   const [globalGameSessions, setGlobalGameSessions] = useState(() => {
     const data = Utils?.safeJsonParse('fc_game_sessions', {});
-    if (!data || typeof data !== 'object' || Array.isArray(data)) return {};
-    if (data.quiz || data.match || data.scramble) return {};
-    return data;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      return /** @type {Record<string, any>} */ ({});
+    }
+    if (data.quiz || data.match || data.scramble) {
+      return /** @type {Record<string, any>} */ ({});
+    }
+    return /** @type {Record<string, any>} */ (data);
   });
 
   // Proxy các biến state cho riêng ngôn ngữ hiện tại (ổn định tham chiếu theo lang)
   const gameSessions = globalGameSessions[lang] || {};
   const setGameSessions = useCallback(
+    /** @param {any} updater */
     (updater) => {
       setGlobalGameSessions((prev) => {
         const currentLangSessions = prev[lang] || {};
@@ -379,16 +441,16 @@ export const useCoreState = () => {
     return merged;
   });
 
-  const [voices, setVoices] = useState([]);
+  const [voices, setVoices] = useState(/** @type {SpeechSynthesisVoice[]} */ ([]));
   const [isContentHidden, setIsContentHidden] = useState(false);
   const [isBatterySaverMode, setIsBatterySaverMode] = useState(false);
 
   // --- REFS ---
-  const audioTimeoutRef = useRef(null);
-  const autoPlayTimeoutRef = useRef(null);
-  const processingCardsRef = useRef(new Set());
-  const resetTimeoutRef = useRef(null);
-  const aiQueueRef = useRef([]);
+  const audioTimeoutRef = useRef(/** @type {any} */ (null));
+  const autoPlayTimeoutRef = useRef(/** @type {any} */ (null));
+  const processingCardsRef = useRef(/** @type {Set<string>} */ (new Set()));
+  const resetTimeoutRef = useRef(/** @type {any} */ (null));
+  const aiQueueRef = useRef(/** @type {any[]} */ ([]));
   const isAiQueueProcessing = useRef(false);
   const userLoadSeqRef = useRef(0);
   const isShuffleRef = useRef(isShuffle);
@@ -420,8 +482,7 @@ export const useCoreState = () => {
     };
 
     const initPersistence = async () => {
-      const dbInstance = getDbInstance();
-      if (!dbInstance) {
+      if (!FcDB) {
         console.error(
           '[CoreState] FcDB not found. Falling back to RAM + LocalStorage.'
         );
@@ -435,10 +496,10 @@ export const useCoreState = () => {
       }
 
       try {
-        await dbInstance.init();
+        await FcDB.init();
 
         // 1. Nạp Kho Thu Hoạch AI từ IndexedDB
-        const pool = await dbInstance.get('fc_ai_harvest_pool');
+        const pool = await FcDB.get('fc_ai_harvest_pool');
         if (
           !cancelled &&
           pool &&
@@ -452,7 +513,7 @@ export const useCoreState = () => {
         let migratedCount = 0;
         for (const key of MASTER_DATA_KEYS) {
           try {
-            const dbData = await dbInstance.get(key);
+            const dbData = await FcDB.get(key);
             let legacyData = null;
             let hasLegacyKey = false;
 
@@ -486,7 +547,7 @@ export const useCoreState = () => {
             } else if (isValidMasterDataObject(legacyData)) {
               // Di cư tự động từ localStorage sang IndexedDB + nạp ngay vào RAM Cache
               setMasterDataCache(key, legacyData);
-              await dbInstance.set(key, legacyData);
+              await FcDB.set(key, legacyData);
               migratedCount++;
               if (typeof localStorage !== 'undefined') {
                 try {
@@ -530,14 +591,14 @@ export const useCoreState = () => {
               }
             });
           }
-          await dbInstance.set('fc_notebook_vi', []);
-          await dbInstance.set('fc_mastered_vi', []);
+          await FcDB.set('fc_notebook_vi', []);
+          await FcDB.set('fc_mastered_vi', []);
           const incorrectKey =
             STORAGE_KEYS && STORAGE_KEYS.INCORRECT_LIST
               ? STORAGE_KEYS.INCORRECT_LIST + '_vi'
               : 'fc_incorrect_list_vi';
-          await dbInstance.set(incorrectKey, []);
-          await dbInstance.set('fc_global_retry_bag_vi', {});
+          await FcDB.set(incorrectKey, []);
+          await FcDB.set('fc_global_retry_bag_vi', {});
         } catch (err) {
           console.warn('[CoreState] Silenced Cleanup Error:', err);
         }
@@ -621,7 +682,6 @@ export const useCoreState = () => {
       JSON.stringify(lang)
     );
 
-    const dbInstance = getDbInstance();
     const isLangChanged = prevLangRef.current !== lang;
 
     // Cầu dao bảo vệ: Chỉ reset các trạng thái khi THỰC SỰ đổi ngôn ngữ
@@ -654,12 +714,11 @@ export const useCoreState = () => {
       // Khởi tạo Level & Topic của ngôn ngữ mới (lọc đúng prefix ngôn ngữ)
       const defLvl = getDefaultLevelsForLang(lang);
       const expectedPrefix = lang === 'zh' ? 'zh_level_' : 'en_level_';
-      const savedLevels = parseArrayStorage(
-        'fc_current_level_' + lang,
-        defLvl
+      const savedLevels = (
+        parseArrayStorage('fc_current_level_' + lang, defLvl) || defLvl
       ).filter((lv) => typeof lv === 'string' && lv.startsWith(expectedPrefix));
       setCurrentLevel(savedLevels.length > 0 ? savedLevels : defLvl);
-      setCurrentTopic(parseArrayStorage('fc_current_topic_' + lang, []));
+      setCurrentTopic(parseArrayStorage('fc_current_topic_' + lang, []) || []);
       prevLangRef.current = lang;
       setSyncedLang(lang);
     }
@@ -668,7 +727,7 @@ export const useCoreState = () => {
       if (!isDbReady) return;
       const seq = ++userLoadSeqRef.current;
 
-      if (!dbInstance) {
+      if (!FcDB) {
         if (!cancelled && seq === userLoadSeqRef.current) {
           setHydratedUserLang(lang);
         }
@@ -680,10 +739,10 @@ export const useCoreState = () => {
           (STORAGE_KEYS?.INCORRECT_LIST || 'fc_incorrect_list') + '_' + lang;
         const [savedNote, savedMaster, savedIncorrect, savedRetryBag] =
           await Promise.all([
-            dbInstance.get('fc_notebook_' + lang),
-            dbInstance.get('fc_mastered_' + lang),
-            dbInstance.get(incorrectKey),
-            dbInstance.get('fc_global_retry_bag_' + lang)
+            FcDB.get('fc_notebook_' + lang),
+            FcDB.get('fc_mastered_' + lang),
+            FcDB.get(incorrectKey),
+            FcDB.get('fc_global_retry_bag_' + lang)
           ]);
 
         if (cancelled || seq !== userLoadSeqRef.current) return;
@@ -729,6 +788,7 @@ export const useCoreState = () => {
       getMasterDataCache(storageKey, null) ||
       Utils?.safeJsonParse(storageKey, null);
 
+    /** @type {any[]} */
     let targetCards = [];
 
     if (isValidMasterDataObject(masterData)) {
@@ -778,12 +838,13 @@ export const useCoreState = () => {
             Utils?.safeJsonParse(sentenceKey, null)
         );
 
+      const samplesByLang = /** @type {Record<string, any>} */ (CONFIG_SAMPLES);
       if (
         !hasAnyMasterForLang &&
         safeMode === 'vocab' &&
-        CONFIG_SAMPLES?.[lang]?.cards
+        samplesByLang?.[lang]?.cards
       ) {
-        targetCards = CONFIG_SAMPLES[lang].cards;
+        targetCards = samplesByLang[lang].cards;
       }
     }
 
@@ -827,6 +888,7 @@ export const useCoreState = () => {
       const t = setTimeout(() => setToast(null), 3000);
       return () => clearTimeout(t);
     }
+    return undefined;
   }, [toast]);
 
   useEffect(() => {
@@ -837,7 +899,8 @@ export const useCoreState = () => {
   }, [settings]);
 
   useEffect(() => {
-    Utils?.safeLocalStorageSet(STORAGE_KEYS?.API_KEY || 'fc_apikey', apiKey);
+    const primaryKey = STORAGE_KEYS?.API_KEY || 'fc_gemini_api_key';
+    Utils?.safeLocalStorageSet(primaryKey, apiKey ? apiKey : null);
   }, [apiKey]);
 
   useEffect(() => {
@@ -866,20 +929,18 @@ export const useCoreState = () => {
 
   // LƯU TRỮ TRÊN INDEXEDDB (ASYNC - CHỐNG GHI ĐÈ KHI CHƯA HYDRATE XONG)
   useEffect(() => {
-    const dbInstance = getDbInstance();
-    if (isDbReady && isHarvestHydrated && dbInstance) {
-      Promise.resolve(dbInstance.set('fc_ai_harvest_pool', aiHarvestPool)).catch(
+    if (isDbReady && isHarvestHydrated && FcDB) {
+      Promise.resolve(FcDB.set('fc_ai_harvest_pool', aiHarvestPool)).catch(
         (err) => console.warn('[CoreState] Persist aiHarvestPool failed:', err)
       );
     }
   }, [aiHarvestPool, isDbReady, isHarvestHydrated]);
 
   useEffect(() => {
-    const dbInstance = getDbInstance();
     // Chốt chặn tuyệt đối: Chỉ lưu Túi Nháp xuống IndexedDB khi đã nạp đúng dữ liệu của `lang` hiện tại
-    if (isDbReady && hydratedUserLang === lang && dbInstance) {
+    if (isDbReady && hydratedUserLang === lang && FcDB) {
       Promise.resolve(
-        dbInstance.set('fc_global_retry_bag_' + lang, globalRetryBag)
+        FcDB.set('fc_global_retry_bag_' + lang, globalRetryBag)
       ).catch((err) =>
         console.warn(`[CoreState] Persist retryBag (${lang}) failed:`, err)
       );
@@ -920,14 +981,13 @@ export const useCoreState = () => {
       STORAGE_KEYS?.API_KEY_SHEET || 'fc_apikey_sheet',
       ''
     );
-    const fetchFn = fetchWithFallback || Utils?.fetchWithFallback;
     if (
       savedSheetUrl &&
       savedSheetUrl.trim().length > 5 &&
-      typeof fetchFn === 'function'
+      typeof fetchWithFallback === 'function'
     ) {
       const targetUrl = resolveApiKeySheetFetchUrl(savedSheetUrl);
-      fetchFn(targetUrl)
+      fetchWithFallback(targetUrl)
         .then((res) => {
           if (!res || !res.ok) throw new Error(`HTTP ${res?.status || 'ERR'}`);
           return res.text();
@@ -1103,8 +1163,9 @@ export const useCoreState = () => {
 export const Block6_1_useCoreState = useCoreState;
 
 if (typeof window !== 'undefined') {
-  window.Block6_1_useCoreState = useCoreState;
-  window.useCoreState = useCoreState;
+  const win = /** @type {any} */ (window);
+  win.Block6_1_useCoreState = useCoreState;
+  win.useCoreState = useCoreState;
 }
 
 export default useCoreState;

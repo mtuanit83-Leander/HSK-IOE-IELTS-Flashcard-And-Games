@@ -1,12 +1,24 @@
 // ============================================================================
 // FILE 32/85: src/components/layout/FlashcardDisplay.jsx
 // NGUỒN GỐC: tang_3.js (Block 3.2 - Version 1.13)
-// PHIÊN BẢN: Ver 1.0
-// NGÀY GIỜ NÂNG CẤP: 20/11/2026 - 05:28 (GMT+7)
+// PHIÊN BẢN: Ver 1.1
+// NGÀY GIỜ NÂNG CẤP: 28/11/2026 - 06:36 (GMT+7)
 // NHIỆM VỤ: Thẻ lật 3D, ô gõ kiểm tra từ vựng (vá lỗi placeholder Scramble),
 //           nhảy thẻ nhanh, hiển thị ảnh minh họa bổ trợ bằng React State
 //           (tự ẩn khung & căn giữa chữ khi lỗi, referrerPolicy="no-referrer",
 //           Thumbnail mặt sau tự nhường chỗ cho Analysis) và 4 nút SRS.
+//           Nâng cấp Ver 1.1 (Lượt 5.2 - Zero-TSC Polish):
+//           1. Diệt trọn 9/9 lỗi tsc --noEmit (8× TS2339 + 1× TS2559): chuẩn hóa
+//              JSDoc props & safeSettings, thu hẹp HTMLElement cho .blur(), và
+//              ép kiểu React.CSSProperties cho biến CSS '--fc-scale'.
+//           2. Diệt D1 (IME Protection): chặn kích hoạt chấm gõ phím / nhảy thẻ
+//              khi nhấn Enter xác nhận bộ gõ Tiếng Trung / Tiếng Việt (isComposing)
+//              và chuẩn hóa NFC trong handleCheckTyping.
+//           3. Diệt D2 (Cached Broken Image): tự phát hiện ảnh lỗi từ cache
+//              (imgEl.complete && imgEl.naturalWidth === 0) để ẩn khung pulse ngay.
+//           4. Diệt D3 (Tailwind JIT & Clean Architecture): tĩnh hóa toàn bộ màu
+//              sắc qua FLASHCARD_COLOR_THEMES, gỡ sạch fallback window.Utils.*,
+//              dọn sạch focus timer khi unmount và bổ sung type="button" A11y.
 // ============================================================================
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -37,7 +49,82 @@ const INVALID_IMAGE_VALUES = new Set([
 ]);
 
 /**
+ * Bảng màu tĩnh cho FlashcardDisplay (chống Tailwind JIT purge ở bản build Production).
+ * @type {Record<string, { checkBtn: string, speakBtn: string, backFace: string, pronText: string }>}
+ */
+const FLASHCARD_COLOR_THEMES = {
+  sky: {
+    checkBtn: 'bg-sky-500 hover:bg-sky-600',
+    speakBtn: 'text-sky-500 border-sky-100',
+    backFace: 'bg-sky-50 border-sky-100',
+    pronText: 'text-sky-600'
+  },
+  red: {
+    checkBtn: 'bg-red-500 hover:bg-red-600',
+    speakBtn: 'text-red-500 border-red-100',
+    backFace: 'bg-red-50 border-red-100',
+    pronText: 'text-red-600'
+  },
+  blue: {
+    checkBtn: 'bg-blue-500 hover:bg-blue-600',
+    speakBtn: 'text-blue-500 border-blue-100',
+    backFace: 'bg-blue-50 border-blue-100',
+    pronText: 'text-blue-600'
+  },
+  indigo: {
+    checkBtn: 'bg-indigo-500 hover:bg-indigo-600',
+    speakBtn: 'text-indigo-500 border-indigo-100',
+    backFace: 'bg-indigo-50 border-indigo-100',
+    pronText: 'text-indigo-600'
+  },
+  emerald: {
+    checkBtn: 'bg-emerald-500 hover:bg-emerald-600',
+    speakBtn: 'text-emerald-500 border-emerald-100',
+    backFace: 'bg-emerald-50 border-emerald-100',
+    pronText: 'text-emerald-600'
+  },
+  green: {
+    checkBtn: 'bg-green-500 hover:bg-green-600',
+    speakBtn: 'text-green-500 border-green-100',
+    backFace: 'bg-green-50 border-green-100',
+    pronText: 'text-green-600'
+  },
+  orange: {
+    checkBtn: 'bg-orange-500 hover:bg-orange-600',
+    speakBtn: 'text-orange-500 border-orange-100',
+    backFace: 'bg-orange-50 border-orange-100',
+    pronText: 'text-orange-600'
+  },
+  purple: {
+    checkBtn: 'bg-purple-500 hover:bg-purple-600',
+    speakBtn: 'text-purple-500 border-purple-100',
+    backFace: 'bg-purple-50 border-purple-100',
+    pronText: 'text-purple-600'
+  },
+  pink: {
+    checkBtn: 'bg-pink-500 hover:bg-pink-600',
+    speakBtn: 'text-pink-500 border-pink-100',
+    backFace: 'bg-pink-50 border-pink-100',
+    pronText: 'text-pink-600'
+  },
+  cyan: {
+    checkBtn: 'bg-cyan-500 hover:bg-cyan-600',
+    speakBtn: 'text-cyan-500 border-cyan-100',
+    backFace: 'bg-cyan-50 border-cyan-100',
+    pronText: 'text-cyan-600'
+  },
+  slate: {
+    checkBtn: 'bg-slate-500 hover:bg-slate-600',
+    speakBtn: 'text-slate-500 border-slate-100',
+    backFace: 'bg-slate-50 border-slate-100',
+    pronText: 'text-slate-600'
+  }
+};
+
+/**
  * Kiểm tra đường dẫn ảnh hợp lệ (hỗ trợ http/https/data:image)
+ * @param {any} val
+ * @returns {boolean}
  */
 const checkIsValidImage = (val) => {
   if (typeof isValidImageUrl === 'function') return isValidImageUrl(val);
@@ -54,6 +141,8 @@ const checkIsValidImage = (val) => {
 
 /**
  * Lọc sạch ứng viên từ khóa ảnh Tiếng Anh (chặn rác, đường dẫn file gãy, chữ Hán)
+ * @param {any} raw
+ * @returns {string}
  */
 const sanitizeImageKeywordCandidate = (raw) => {
   if (!raw || typeof raw !== 'string') return '';
@@ -76,6 +165,9 @@ const sanitizeImageKeywordCandidate = (raw) => {
  * - Giữ nguyên URL hợp lệ (http/https/data:image)
  * - Chuyển từ khóa Tiếng Anh sạch (VD từ file Excel cũ) sang URL chuẩn qua buildSmartImageUrl
  * - Trả về chuỗi rỗng nếu là giá trị rác hoặc không hợp lệ
+ * @param {any} rawImage
+ * @param {boolean} isSentence
+ * @returns {string}
  */
 const resolveCardImageUrl = (rawImage, isSentence) => {
   if (!rawImage || typeof rawImage !== 'string') return '';
@@ -104,46 +196,57 @@ const resolveCardImageUrl = (rawImage, isSentence) => {
 
 /**
  * Component hiển thị Thẻ học 3D trung tâm (FlashcardDisplay)
+ * @param {Record<string, any>} props
  */
 export const FlashcardDisplay = ({
-  isFlipped,
-  setIsFlipped,
-  isAutoPlaying,
-  currentCardIndex,
+  isFlipped = false,
+  setIsFlipped = undefined,
+  isAutoPlaying = false,
+  currentCardIndex = 0,
   cards = [],
   settings = {},
   mainColor = 'sky',
-  speak,
-  getCardStyle,
-  isAiMode,
-  setAiMode,
-  t = (k) => k,
-  onMissingKey,
-  isLoading,
+  speak = undefined,
+  getCardStyle = undefined,
+  isAiMode = false,
+  setAiMode = undefined,
+  t = (/** @type {string} */ k) => k,
+  onMissingKey = undefined,
+  isLoading = false,
   AiModeSwitch = DefaultAiModeSwitch,
-  onEnrichCard,
-  onNext,
-  onPrev,
-  onExplainGrammar,
-  onSrsGrade,
-  onResetSrs,
-  isContentHidden,
-  isMuted,
-  onToggleMute,
-  lang,
-  onOpenHanzi,
-  onJumpToCard
+  onEnrichCard = undefined,
+  onNext = undefined,
+  onPrev = undefined,
+  onExplainGrammar = undefined,
+  onSrsGrade = undefined,
+  onResetSrs = undefined,
+  isContentHidden = false,
+  isMuted = false,
+  onToggleMute = undefined,
+  lang = 'en',
+  onOpenHanzi = undefined,
+  onJumpToCard = undefined
 }) => {
-  const currentCard = cards[currentCardIndex];
-  const isDefFirst = settings?.startSide === 'def';
-  const scale = settings?.cardSize || 1;
+  /** @type {Array<Record<string, any>>} */
+  const safeCards = Array.isArray(cards) ? cards : [];
+  /** @type {Record<string, any>} */
+  const safeSettings = settings && typeof settings === 'object' ? settings : {};
+  const theme = FLASHCARD_COLOR_THEMES[mainColor] || FLASHCARD_COLOR_THEMES.sky;
+
+  const currentCard = safeCards[currentCardIndex] || null;
+  const isDefFirst = safeSettings.startSide === 'def';
+  const parsedScale = Number(safeSettings.cardSize);
+  const scale = Number.isFinite(parsedScale) && parsedScale > 0 ? parsedScale : 1;
 
   const detectSentenceFn =
-    detectSentence ||
-    Utils?.detectSentence ||
-    (typeof window !== 'undefined' ? window.Utils?.detectSentence : null);
-  const isSentence =
-    currentCard && detectSentenceFn ? detectSentenceFn(currentCard.term) : false;
+    typeof detectSentence === 'function'
+      ? detectSentence
+      : typeof Utils?.detectSentence === 'function'
+      ? Utils.detectSentence
+      : null;
+  const isSentence = Boolean(
+    currentCard && detectSentenceFn ? detectSentenceFn(currentCard.term) : false
+  );
 
   // Chuẩn hóa đường dẫn ảnh an toàn (lọc rác & hỗ trợ từ khóa sạch ở dữ liệu cũ)
   const resolvedImageUrl = useMemo(
@@ -154,7 +257,7 @@ export const FlashcardDisplay = ({
   // Quản lý vòng đời tải ảnh bằng React State (xóa sổ lỗi khung trắng & lệch chữ)
   const [imgError, setImgError] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
-  const frontImgRef = useRef(null);
+  const frontImgRef = useRef(/** @type {HTMLImageElement | null} */ (null));
 
   // Tự động khôi phục trạng thái ảnh mỗi khi đổi thẻ hoặc AI vừa bổ sung URL ảnh mới
   useEffect(() => {
@@ -162,11 +265,15 @@ export const FlashcardDisplay = ({
     setImgLoaded(false);
   }, [currentCardIndex, resolvedImageUrl]);
 
-  // Nếu ảnh đã có sẵn trong bộ nhớ đệm trình duyệt (cached), đánh dấu đã tải ngay lập tức
+  // Kiểm tra trạng thái ảnh có sẵn từ bộ nhớ đệm trình duyệt (cả tải thành công lẫn lỗi từ cache)
   useEffect(() => {
+    if (!resolvedImageUrl) return;
     const imgEl = frontImgRef.current;
-    if (imgEl && imgEl.complete && imgEl.naturalWidth > 0) {
+    if (!imgEl || !imgEl.complete) return;
+    if (imgEl.naturalWidth > 0) {
       setImgLoaded(true);
+    } else {
+      setImgError(true);
     }
   }, [currentCardIndex, resolvedImageUrl]);
 
@@ -177,17 +284,20 @@ export const FlashcardDisplay = ({
   const isMissingCoreFields = Boolean(
     currentCard &&
       (!currentCard.pronunciation ||
-        currentCard.pronunciation.toString().trim() === '' ||
+        String(currentCard.pronunciation).trim() === '' ||
         !currentCard.definition ||
-        currentCard.definition.toString().trim() === '' ||
+        String(currentCard.definition).trim() === '' ||
         !currentCard.example ||
-        currentCard.example.toString().trim() === '' ||
+        String(currentCard.example).trim() === '' ||
         (!isSentence && !resolvedImageUrl))
   );
 
   const [typingInput, setTypingInput] = useState('');
   const [typingStatus, setTypingStatus] = useState('idle');
-  const typingInputRef = useRef(null);
+  const typingInputRef = useRef(/** @type {HTMLInputElement | null} */ (null));
+  const focusTimerRef = useRef(
+    /** @type {ReturnType<typeof setTimeout> | null} */ (null)
+  );
   const [jumpInput, setJumpInput] = useState('');
 
   // [V1.09] State ẩn/hiện trường Analysis (Progressive Disclosure)
@@ -210,28 +320,39 @@ export const FlashcardDisplay = ({
 
   // Phím tắt toàn cục Delete: Xóa nhanh ô gõ từ vựng và tự động Focus
   useEffect(() => {
+    /** @param {KeyboardEvent} e */
     const handleGlobalKeyDown = (e) => {
       if (e.key === 'Delete') {
+        const targetEl = /** @type {HTMLElement | null} */ (e.target);
         if (
-          e.target.tagName === 'TEXTAREA' ||
-          (e.target.tagName === 'INPUT' && e.target !== typingInputRef.current)
+          targetEl?.tagName === 'TEXTAREA' ||
+          targetEl?.isContentEditable ||
+          (targetEl?.tagName === 'INPUT' && targetEl !== typingInputRef.current)
         ) {
           return;
         }
         e.preventDefault();
         setTypingInput('');
         setTypingStatus('idle');
-        setTimeout(() => {
+        if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
+        focusTimerRef.current = setTimeout(() => {
           typingInputRef.current?.focus();
+          focusTimerRef.current = null;
         }, 10);
       }
     };
     window.addEventListener('keydown', handleGlobalKeyDown);
-    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+      if (focusTimerRef.current) {
+        clearTimeout(focusTimerRef.current);
+        focusTimerRef.current = null;
+      }
+    };
   }, []);
 
   // Trễ hiển thị mặt chữ khi bật chế độ Kiểm tra trí nhớ (isContentHidden)
-  const [delayedHidden, setDelayedHidden] = useState(isContentHidden);
+  const [delayedHidden, setDelayedHidden] = useState(Boolean(isContentHidden));
   useEffect(() => {
     if (isContentHidden) {
       setDelayedHidden(true);
@@ -244,11 +365,17 @@ export const FlashcardDisplay = ({
   }, [isContentHidden, currentCardIndex]);
 
   // Xử lý thao tác vuốt (Swipe) trên màn hình cảm ứng
-  const [touchStart, setTouchStart] = useState(null);
-  const [touchEnd, setTouchEnd] = useState(null);
+  const [touchStart, setTouchStart] = useState(
+    /** @type {{ x: number, y: number } | null} */ (null)
+  );
+  const [touchEnd, setTouchEnd] = useState(
+    /** @type {{ x: number, y: number } | null} */ (null)
+  );
   const minSwipeDistance = 50;
 
+  /** @param {React.TouchEvent} e */
   const onTouchStart = (e) => {
+    if (!e.targetTouches || !e.targetTouches[0]) return;
     setTouchEnd(null);
     setTouchStart({
       x: e.targetTouches[0].clientX,
@@ -256,7 +383,9 @@ export const FlashcardDisplay = ({
     });
   };
 
+  /** @param {React.TouchEvent} e */
   const onTouchMove = (e) => {
+    if (!e.targetTouches || !e.targetTouches[0]) return;
     setTouchEnd({
       x: e.targetTouches[0].clientX,
       y: e.targetTouches[0].clientY
@@ -268,31 +397,41 @@ export const FlashcardDisplay = ({
     const distanceX = touchStart.x - touchEnd.x;
     const distanceY = touchStart.y - touchEnd.y;
     if (Math.abs(distanceY) > Math.abs(distanceX)) return;
-    if (distanceX > minSwipeDistance && onNext) onNext();
-    if (distanceX < -minSwipeDistance && onPrev) onPrev();
+    if (distanceX > minSwipeDistance && typeof onNext === 'function') onNext();
+    if (distanceX < -minSwipeDistance && typeof onPrev === 'function') onPrev();
   };
 
   // Tính toán nhãn thời gian ôn tập tiếp theo cho 4 nút SRS
   const srsLabelFn =
-    getSrsTimeLabel ||
-    Utils?.getSrsTimeLabel ||
-    (typeof window !== 'undefined' ? window.Utils?.getSrsTimeLabel : null);
+    typeof getSrsTimeLabel === 'function'
+      ? getSrsTimeLabel
+      : typeof Utils?.getSrsTimeLabel === 'function'
+      ? Utils.getSrsTimeLabel
+      : null;
 
+  /**
+   * @param {string} grade
+   * @returns {string}
+   */
   const getSrsLabel = (grade) => {
     if (!currentCard) return '';
     const calcFn =
-      calculateSRS ||
-      Utils?.calculateSRS ||
-      (typeof window !== 'undefined' ? window.Utils?.calculateSRS : null);
+      typeof calculateSRS === 'function'
+        ? calculateSRS
+        : typeof Utils?.calculateSRS === 'function'
+        ? Utils.calculateSRS
+        : null;
     if (!calcFn || !srsLabelFn) return '';
-    const result = calcFn(currentCard, grade, settings);
-    return srsLabelFn(result.srs_interval);
+    const result = calcFn(currentCard, grade, safeSettings);
+    return srsLabelFn(result?.srs_interval);
   };
 
   // Lấy font-family theo cài đặt người dùng
   const getFontFamily = () => {
-    if (utilGetFontFamily) return utilGetFontFamily(settings);
-    const font = settings?.fontFamily || 'sans';
+    if (typeof utilGetFontFamily === 'function') {
+      return utilGetFontFamily(safeSettings);
+    }
+    const font = safeSettings.fontFamily || 'sans';
     switch (font) {
       case 'serif':
         return '"Noto Serif SC", serif';
@@ -307,11 +446,13 @@ export const FlashcardDisplay = ({
     }
   };
 
-  // Kiểm tra kết quả gõ từ vựng (loại bỏ ký tự gạch chân \u0332 & dấu câu)
+  // Kiểm tra kết quả gõ từ vựng (chuẩn hóa NFC, loại bỏ ký tự gạch chân \u0332 & dấu câu)
   const handleCheckTyping = () => {
     if (!currentCard) return;
+    /** @param {any} str */
     const clean = (str) =>
       String(str || '')
+        .normalize('NFC')
         .replace(/\u0332/g, '')
         .toLowerCase()
         .replace(/[^\p{L}\p{N}]/gu, '')
@@ -324,7 +465,9 @@ export const FlashcardDisplay = ({
     const targetClean = clean(currentCard.term);
     if (inputClean === targetClean) {
       setTypingStatus('correct');
-      if (speak && !isAutoPlaying) speak(currentCard.term);
+      if (typeof speak === 'function' && !isAutoPlaying) {
+        speak(currentCard.term);
+      }
     } else {
       setTypingStatus('wrong');
     }
@@ -332,49 +475,69 @@ export const FlashcardDisplay = ({
 
   // Xử lý nhảy nhanh đến số thứ tự thẻ (Quick Jump)
   const handleJumpSubmit = () => {
-    if (!jumpInput || cards.length === 0) {
+    if (!jumpInput || safeCards.length === 0) {
       setJumpInput('');
       return;
     }
-    let target = parseInt(jumpInput, 10);
-    if (isNaN(target)) {
+    let target = parseInt(String(jumpInput), 10);
+    if (Number.isNaN(target)) {
       setJumpInput('');
       return;
     }
     if (target < 1) target = 1;
-    if (target > cards.length) target = cards.length;
-    if (onJumpToCard && target !== currentCardIndex + 1) {
+    if (target > safeCards.length) target = safeCards.length;
+    if (typeof onJumpToCard === 'function' && target !== currentCardIndex + 1) {
       onJumpToCard(target);
     }
     setJumpInput('');
-    if (document.activeElement) document.activeElement.blur();
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
   };
 
   // Kích hoạt làm giàu hoặc phân tích ngữ pháp thông minh ở mặt sau thẻ
   // Truyền silent = false khi bấm thủ công để bật loading, hiển thị Toast & không rò rỉ Rejection
+  /** @param {React.MouseEvent} e */
   const handleSmartBackAiAction = (e) => {
     e.stopPropagation();
     if (isLoading) return;
-    if (isMissingCoreFields && onEnrichCard) {
+    if (isMissingCoreFields && typeof onEnrichCard === 'function') {
       Promise.resolve(onEnrichCard(currentCardIndex, false)).catch(() => {});
-    } else if (onExplainGrammar) {
+    } else if (typeof onExplainGrammar === 'function') {
       Promise.resolve(onExplainGrammar(currentCardIndex)).catch(() => {});
-    } else if (onEnrichCard) {
+    } else if (typeof onEnrichCard === 'function') {
       Promise.resolve(onEnrichCard(currentCardIndex, false)).catch(() => {});
     }
   };
 
-  const isSrsEnabled = settings?.srsEnabled !== false;
+  const isSrsEnabled = safeSettings.srsEnabled !== false;
   const sinoVietLabel = mainColor === 'sky' ? 'Dịch chi tiết' : t('sinoVietLabel');
   const typingPlaceholder = isSentence
     ? 'Gõ lại câu văn... (Phím Delete để xóa nhanh)'
     : 'Gõ lại từ vựng... (Phím Delete để xóa nhanh)';
-  const cardStyle = {
+  /** @type {React.CSSProperties} */
+  const cardStyle = /** @type {React.CSSProperties} */ ({
     '--fc-scale': scale,
     transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)'
-  };
-  const inputGroupStyle = { '--fc-scale': scale };
-  const safeGetCardStyle = getCardStyle || (() => ({}));
+  });
+  /** @type {React.CSSProperties} */
+  const inputGroupStyle = /** @type {React.CSSProperties} */ ({
+    '--fc-scale': scale
+  });
+  const safeGetCardStyle =
+    typeof getCardStyle === 'function' ? getCardStyle : () => ({});
+  const formattedExample =
+    typeof currentCard?.example === 'string'
+      ? currentCard.example.includes('- ')
+        ? currentCard.example
+            .split('- ')
+            .filter((p) => p.trim() !== '')
+            .map((p) => '- ' + p.trim())
+            .join('\n')
+        : currentCard.example
+      : currentCard?.example != null
+      ? String(currentCard.example)
+      : '';
 
   return (
     <div className="w-full flex flex-col items-center shrink-0 my-auto py-2">
@@ -455,9 +618,9 @@ export const FlashcardDisplay = ({
             setTypingStatus('idle');
           }}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') {
+            if (e.key === 'Enter' && !e.nativeEvent?.isComposing) {
               handleCheckTyping();
-              e.target.blur();
+              e.currentTarget.blur();
             }
           }}
           className={`flex-1 min-w-0 p-3 rounded-xl border-2 outline-none transition-all font-medium shadow-sm ${
@@ -473,13 +636,15 @@ export const FlashcardDisplay = ({
           autoCapitalize="off"
         />
         <button
+          type="button"
           onClick={handleCheckTyping}
+          aria-label="Kiểm tra gõ từ vựng"
           className={`px-4 rounded-xl font-bold text-white shadow transition-all active:scale-95 flex items-center justify-center flex-shrink-0 ${
             typingStatus === 'correct'
               ? 'bg-green-500'
               : typingStatus === 'wrong'
               ? 'bg-red-500'
-              : `bg-${mainColor}-500 hover:bg-${mainColor}-600`
+              : theme.checkBtn
           }`}
         >
           {typingStatus === 'correct' ? (
@@ -503,7 +668,11 @@ export const FlashcardDisplay = ({
           key={currentCardIndex}
           className="fc-card cursor-pointer"
           style={cardStyle}
-          onClick={() => !isAutoPlaying && setIsFlipped(!isFlipped)}
+          onClick={() => {
+            if (!isAutoPlaying && typeof setIsFlipped === 'function') {
+              setIsFlipped(!isFlipped);
+            }
+          }}
         >
           {/* ================= MẶT TRƯỚC (FRONT FACE) ================= */}
           <div className="fc-face fc-front flex flex-col items-center justify-between p-6 border-2 border-gray-100">
@@ -530,32 +699,37 @@ export const FlashcardDisplay = ({
                 value={
                   jumpInput !== ''
                     ? jumpInput
-                    : cards.length > 0
+                    : safeCards.length > 0
                     ? currentCardIndex + 1
                     : 0
                 }
                 onChange={(e) => setJumpInput(e.target.value.replace(/\D/g, ''))}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleJumpSubmit();
+                  if (e.key === 'Enter' && !e.nativeEvent?.isComposing) {
+                    handleJumpSubmit();
+                  }
                 }}
-                disabled={isAutoPlaying || cards.length === 0}
+                disabled={isAutoPlaying || safeCards.length === 0}
                 className={`w-8 sm:w-10 text-center bg-transparent outline-none transition-all py-0.5 rounded font-bold ${
-                  isAutoPlaying || cards.length === 0
+                  isAutoPlaying || safeCards.length === 0
                     ? 'cursor-default'
                     : 'hover:bg-gray-100 focus:bg-blue-50 focus:text-blue-600 focus:ring-1 focus:ring-blue-300 cursor-text'
                 }`}
                 title={isAutoPlaying ? 'Đang chạy tự động' : 'Nhập số để chuyển thẻ'}
               />
               <span className="mx-0.5">/</span>
-              <span>{cards.length}</span>
-              {jumpInput !== '' && parseInt(jumpInput, 10) !== currentCardIndex + 1 && (
-                <button
-                  onClick={handleJumpSubmit}
-                  className="ml-1.5 p-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-200 transition-colors flex items-center justify-center shadow-sm"
-                >
-                  <Icons.Check size={12} strokeWidth={3} />
-                </button>
-              )}
+              <span>{safeCards.length}</span>
+              {jumpInput !== '' &&
+                parseInt(jumpInput, 10) !== currentCardIndex + 1 && (
+                  <button
+                    type="button"
+                    onClick={handleJumpSubmit}
+                    aria-label="Chuyển tới thẻ"
+                    className="ml-1.5 p-1 bg-blue-100 text-blue-600 rounded hover:bg-blue-200 transition-colors flex items-center justify-center shadow-sm"
+                  >
+                    <Icons.Check size={12} strokeWidth={3} />
+                  </button>
+                )}
             </div>
 
             {/* Nội dung chính mặt trước */}
@@ -568,7 +742,7 @@ export const FlashcardDisplay = ({
                     } flex-1 flex flex-col justify-center overflow-y-auto custom-scrollbar transition-all`}
                     style={{
                       ...safeGetCardStyle(false),
-                      fontWeight: settings?.fontWeight || 'bold',
+                      fontWeight: safeSettings.fontWeight || 'bold',
                       fontFamily: isDefFirst ? 'inherit' : getFontFamily()
                     }}
                   >
@@ -614,11 +788,15 @@ export const FlashcardDisplay = ({
             {/* Hàng nút chức năng mặt trước (Loa, Tập viết Hán tự, Mute) */}
             <div className="flex justify-center mt-2 gap-3 shrink-0">
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (speak) speak(cards[currentCardIndex]?.term);
+                  if (typeof speak === 'function') {
+                    speak(currentCard?.term);
+                  }
                 }}
-                className={`p-3 rounded-full bg-white text-${mainColor}-500 shadow border-2 border-${mainColor}-100 hover:scale-105 disabled:opacity-20`}
+                aria-label="Nghe phát âm"
+                className={`p-3 rounded-full bg-white shadow border-2 hover:scale-105 disabled:opacity-20 ${theme.speakBtn}`}
                 disabled={isContentHidden}
               >
                 <Icons.Volume2 size={24} />
@@ -626,13 +804,17 @@ export const FlashcardDisplay = ({
 
               {lang === 'zh' && (
                 <button
+                  type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (onOpenHanzi) onOpenHanzi(cards[currentCardIndex]?.term);
+                    if (typeof onOpenHanzi === 'function') {
+                      onOpenHanzi(currentCard?.term);
+                    }
                   }}
                   className="p-3 rounded-full bg-white text-red-600 shadow border-2 border-red-100 hover:scale-105 transition-transform"
                   disabled={isContentHidden}
                   title="Tập viết chữ Hán"
+                  aria-label="Tập viết chữ Hán"
                 >
                   <Icons.Brush size={24} />
                 </button>
@@ -640,9 +822,10 @@ export const FlashcardDisplay = ({
 
               {isAutoPlaying && (
                 <button
+                  type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (onToggleMute) onToggleMute();
+                    if (typeof onToggleMute === 'function') onToggleMute();
                   }}
                   className={`p-3 rounded-full shadow border-2 hover:scale-105 transition-all ${
                     isMuted
@@ -650,6 +833,7 @@ export const FlashcardDisplay = ({
                       : 'bg-white text-gray-400 border-gray-200'
                   }`}
                   title={isMuted ? 'Bật tiếng' : 'Tắt tiếng (Giữ thời gian đọc)'}
+                  aria-label={isMuted ? 'Bật tiếng' : 'Tắt tiếng'}
                 >
                   {isMuted ? (
                     <Icons.VolumeX size={24} />
@@ -663,7 +847,7 @@ export const FlashcardDisplay = ({
 
           {/* ================= MẶT SAU (BACK FACE) ================= */}
           <div
-            className={`fc-face fc-back bg-${mainColor}-50 border-${mainColor}-100 flex flex-col items-center justify-between pt-6 px-6 pb-2 border-2`}
+            className={`fc-face fc-back ${theme.backFace} flex flex-col items-center justify-between pt-6 px-6 pb-2 border-2`}
           >
             {/* Huy hiệu chu kỳ SRS ở góc trên bên trái */}
             {isSrsEnabled && (
@@ -683,12 +867,14 @@ export const FlashcardDisplay = ({
                         : `${currentCard.srs_interval}d`}
                     </span>
                     <button
+                      type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (onResetSrs) onResetSrs();
+                        if (typeof onResetSrs === 'function') onResetSrs();
                       }}
                       className="p-1 bg-white text-gray-400 rounded-full border border-gray-200 hover:text-red-500 hover:border-red-200 hover:bg-red-50 hover:rotate-180 transition-all shadow-sm"
                       title="Reset về trạng thái Mới"
+                      aria-label="Reset về trạng thái Mới"
                     >
                       <Icons.RotateCcw size={14} />
                     </button>
@@ -728,7 +914,7 @@ export const FlashcardDisplay = ({
             >
               {/* [V1.12] Phiên âm + Từ loại kiểu từ điển (Dictionary Style + Parentheses) */}
               <div
-                className={`text-${mainColor}-600 font-medium flex items-center justify-center flex-wrap gap-3`}
+                className={`${theme.pronText} font-medium flex items-center justify-center flex-wrap gap-3`}
                 style={{ fontSize: '1.1em' }}
               >
                 <span>{currentCard?.pronunciation}</span>
@@ -745,7 +931,7 @@ export const FlashcardDisplay = ({
                 style={{
                   fontSize: '1em',
                   marginTop: '8px',
-                  fontWeight: settings?.fontWeight || 'bold',
+                  fontWeight: safeSettings.fontWeight || 'bold',
                   fontFamily: isDefFirst ? getFontFamily() : 'inherit'
                 }}
               >
@@ -756,6 +942,7 @@ export const FlashcardDisplay = ({
               {currentCard?.analysis && (
                 <div className="w-full flex flex-col items-center mt-2 mb-1 animate-in fade-in">
                   <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       setShowAnalysis(!showAnalysis);
@@ -798,29 +985,24 @@ export const FlashcardDisplay = ({
                   >
                     {sinoVietLabel}:
                   </span>
-                  {currentCard?.sinoViet}
+                  {currentCard.sinoViet}
                 </div>
               )}
 
               {/* [V1.13 DEFENSIVE RENDERING] Câu ví dụ kèm thuật toán bẻ dòng thông minh nhận diện marker "- " */}
-              {currentCard?.example && (
+              {formattedExample && (
                 <div
                   className="text-gray-600 text-left italic w-full border-t border-gray-200 pt-2 whitespace-pre-wrap mt-2"
                   style={{ fontSize: '0.85em' }}
                 >
-                  {currentCard.example.includes('- ')
-                    ? currentCard.example
-                        .split('- ')
-                        .filter((p) => p.trim() !== '')
-                        .map((p) => '- ' + p.trim())
-                        .join('\n')
-                    : currentCard.example}
+                  {formattedExample}
                 </div>
               )}
 
               {/* Nút gọi AI tạo phân tích hoặc làm giàu toàn diện nếu thẻ còn thiếu thông tin */}
               {(!currentCard?.analysis || (isMissingCoreFields && onEnrichCard)) && (
                 <button
+                  type="button"
                   onClick={handleSmartBackAiAction}
                   disabled={isLoading}
                   className={`mt-2 px-3 py-1.5 bg-purple-50 text-purple-600 font-bold border border-purple-200 rounded-full shadow-sm hover:bg-purple-100 transition-colors flex items-center gap-1 shrink-0 disabled:opacity-50 ${
@@ -841,9 +1023,10 @@ export const FlashcardDisplay = ({
             </div>
 
             {/* 4 Nút chấm điểm SRS (Again / Hard / Good / Easy) */}
-            {onSrsGrade && isSrsEnabled && (
+            {typeof onSrsGrade === 'function' && isSrsEnabled && (
               <div className="w-full mt-2 pt-2 border-t border-gray-200/30 grid grid-cols-4 gap-1.5 z-20 shrink-0">
                 <button
+                  type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     onSrsGrade('again');
@@ -856,6 +1039,7 @@ export const FlashcardDisplay = ({
                   </span>
                 </button>
                 <button
+                  type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     onSrsGrade('hard');
@@ -868,6 +1052,7 @@ export const FlashcardDisplay = ({
                   </span>
                 </button>
                 <button
+                  type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     onSrsGrade('good');
@@ -880,6 +1065,7 @@ export const FlashcardDisplay = ({
                   </span>
                 </button>
                 <button
+                  type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     onSrsGrade('easy');
@@ -902,7 +1088,7 @@ export const FlashcardDisplay = ({
 
 // Gắn vào window để tương thích ngược
 if (typeof window !== 'undefined') {
-  window.FlashcardDisplay = FlashcardDisplay;
+  /** @type {any} */ (window).FlashcardDisplay = FlashcardDisplay;
 }
 
 export default FlashcardDisplay;

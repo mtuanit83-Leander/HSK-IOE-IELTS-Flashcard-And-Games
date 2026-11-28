@@ -1,8 +1,8 @@
 # BÁO CÁO RADAR RÀ SOÁT TOÀN ỨNG DỤNG FLASHCARD-3D
 
-* **Thời điểm quét:** 28/11/2026 - 05:50:00
+* **Thời điểm quét:** 28/11/2026 - 05:53:37
 * **Phạm vi quét:** `80` tệp mã nguồn trong `src/`
-* **Thời gian thực thi:** `326 ms`
+* **Thời gian thực thi:** `336 ms`
 
 ---
 
@@ -12,28 +12,12 @@
 | :--- | :---: | :--- |
 | 🔴 **CRITICAL** | **0** | Lỗi gãy build, crash Runtime, vi phạm Kho Master Lai hoặc StrictMode |
 | 🟠 **HIGH** | **0** | Rủi ro tràn Quota, nhánh `vi` cũ sót, hộp thoại `alert/confirm` chặn UI |
-| 🟡 **MEDIUM** | **1** | Rò rỉ Timer/Listener, phụ thuộc `window.*` legacy |
+| 🟡 **MEDIUM** | **0** | Rò rỉ Timer/Listener, phụ thuộc `window.*` legacy |
 | ⚪ **INFO** | **0** | Thông tin đối chiếu kiểm kê |
-
-### Thống kê theo Mã Luật Radar
-
-| Mã luật | Số lượng |
-| :--- | :---: |
-| `R05_UNSAFE_LOCALSTORAGE_SET` | 1 |
-
-## 2. TOP ĐIỂM NÓNG (TỆP CẦN ƯU TIÊN XỬ LÝ TRƯỚC)
-
-| Tệp mã nguồn | 🔴 Critical | 🟠 High | 🟡 Medium | Tổng |
-| :--- | :---: | :---: | :---: | :---: |
-| `src/main.jsx` | 0 | 0 | 1 | **1** |
 
 ## 3. CHI TIẾT PHÁT HIỆN THEO MỨC ĐỘ
 
-### 🟡 MEDIUM (1 mục)
-
-- **`src/main.jsx:27`** [`R05_UNSAFE_LOCALSTORAGE_SET`] — Gọi trực tiếp localStorage.setItem() (dù có try/catch gần đó, nên thống nhất qua Utils.safeLocalStorageSet).
-  - Code: `localStorage.setItem('fc_lang', JSON.stringify('en'));`
-  - Gợi ý vá: Thay thế bằng Utils.safeLocalStorageSet(key, value).
+✅ **XUẤT SẮC!** Không phát hiện vi phạm nào trên toàn bộ 9 luật đặc chủng của Flashcard-3D.
 
 ## 4. KIỂM KÊ KHÓA LƯU TRỮ (`fc_*`) NGOÀI DANH MỤC CHUẨN
 

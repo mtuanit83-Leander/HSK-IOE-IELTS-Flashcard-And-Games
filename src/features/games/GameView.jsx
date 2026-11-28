@@ -1,16 +1,19 @@
 // ============================================================================
 // FILE 51/85: src/features/games/GameView.jsx
 // NGUỒN GỐC: tang_5.js (Block 5.7 - GameView V1.09)
-// PHIÊN BẢN: Ver 1.4
-// NGÀY GIỜ NÂNG CẤP: 25/11/2026 - 21:33 (GMT+7)
+// PHIÊN BẢN: Ver 1.5
+// NGÀY GIỜ NÂNG CẤP: 28/11/2026 - 06:25 (GMT+7)
 // NHIỆM VỤ: Bộ định tuyến trung tâm điều hướng giữa GameMenu, 10 màn hình Setup,
 //           10 Mini-games PlayScreen, GameResult và ExamUIShell.
-//           Nâng cấp Ver 1.4 (Chốt 0/28 Problems tsc / checkJs):
-//           1. Khôi phục prop bắt buộc t={t} cho <ScrambleSetup /> (vá ts(2741)).
-//           2. Gỡ bỏ prop di sản thừa AiModeSwitch khỏi <QuizGame /> (vá ts(2322))
-//              và dọn sạch import AiModeSwitch không còn sử dụng (chuẩn Knip 0 hints).
-//           3. Bảo toàn 100% logic điều phối, Auto-save, Resume, Âm thanh & 7 prop
-//              dùng chung từ Ver 1.2–1.3.
+//           Nâng cấp Ver 1.5 (Lượt 5.2 - Zero-TSC Polish):
+//           1. Diệt 4/4 lỗi TS2322 trên 10/10 màn hình Setup: Cập nhật chữ ký
+//              onStart={(arg1, arg2 = undefined) => ...} & resolveSetupStartArgs
+//              kèm JSDoc chuẩn, tương thích 100% cả onStart(config) 1 tham số
+//              lẫn onStart(type, config) 2 tham số.
+//           2. Chuẩn hóa JSDoc tham số tùy chọn cho handleStartGame,
+//              handleEndGame, handleFinishGame và các hàm phụ trợ (0 Problems).
+//           3. Bảo toàn 100% năng lực Ver 1.4 (0/0/0 Radar, Auto-save, Resume,
+//              Âm thanh & 7 prop dùng chung xuống 10/10 Mini-Games).
 // ============================================================================
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
@@ -70,28 +73,43 @@ const CONTEXT_AI_GAMES = new Set(['pronunciation', 'listening', 'reading']);
 const SINGLE_CARD_GAMES = new Set(['fillblank', 'spotmistake', 'imagequiz']);
 
 /**
- * Chuẩn hóa tham số trả về từ các màn hình Setup
- * Hỗ trợ cả 2 chuẩn gọi: onStart('quiz', config) và onStart(config)
+ * Chuẩn hóa tham số trả về từ các màn hình Setup.
+ * Hỗ trợ cả 2 chuẩn gọi: onStart('quiz', config) và onStart(config).
+ * @param {string} defaultType
+ * @param {any} arg1
+ * @param {any} [arg2]
+ * @returns {{ type: string, config: Record<string, any> }}
  */
-const resolveSetupStartArgs = (defaultType, arg1, arg2) => {
+const resolveSetupStartArgs = (defaultType, arg1, arg2 = undefined) => {
   if (typeof arg1 === 'string') {
-    return { type: arg1, config: arg2 || {} };
+    return {
+      type: arg1,
+      config: arg2 && typeof arg2 === 'object' ? arg2 : {}
+    };
   }
-  return { type: defaultType, config: arg1 || {} };
+  return {
+    type: defaultType,
+    config: arg1 && typeof arg1 === 'object' ? arg1 : {}
+  };
 };
 
 /**
- * Kiểm tra cấu hình có thuộc chế độ AI Tự sinh (Pure AI) hay không
+ * Kiểm tra cấu hình có thuộc chế độ AI Tự sinh (Pure AI) hay không.
+ * @param {Record<string, any>} [config]
+ * @returns {boolean}
  */
-const isPureAiSource = (config) => {
+const isPureAiSource = (config = undefined) => {
   const src = config?.sourceMode;
   return src === 'ai_pure' || src === 'ai';
 };
 
 /**
- * Chuẩn hóa cờ isAiMode nhất quán cho từng Mini-Game
+ * Chuẩn hóa cờ isAiMode nhất quán cho từng Mini-Game.
+ * @param {Record<string, any>} [config]
+ * @param {boolean} [fallbackAiMode]
+ * @returns {boolean}
  */
-const resolveConfigAiMode = (config, fallbackAiMode = false) => {
+const resolveConfigAiMode = (config = undefined, fallbackAiMode = false) => {
   if (isPureAiSource(config)) return true;
   if (config?.isAiMode !== undefined) return Boolean(config.isAiMode);
   if (config?.aiMode !== undefined) return Boolean(config.aiMode);
@@ -99,9 +117,12 @@ const resolveConfigAiMode = (config, fallbackAiMode = false) => {
 };
 
 /**
- * Tính ngưỡng số thẻ tối thiểu an toàn theo từng loại game & nguồn câu hỏi
+ * Tính ngưỡng số thẻ tối thiểu an toàn theo từng loại game & nguồn câu hỏi:
  * - Chặn lỗ hổng lọt 0 thẻ ở chế độ Thẻ cá nhân
  * - Không chặn oan 3 game ngữ cảnh AI (pronunciation, listening, reading) khi không ép sourceMode === 'card'
+ * @param {string} type
+ * @param {Record<string, any>} [config]
+ * @returns {number}
  */
 const getMinRequiredCards = (type, config = {}) => {
   if (isPureAiSource(config)) return 0;
@@ -122,7 +143,7 @@ const getMinRequiredCards = (type, config = {}) => {
 };
 
 /**
- * Đánh thức luồng âm thanh & Web Audio Context trên iOS/Safari/Mobile
+ * Đánh thức luồng âm thanh & Web Audio Context trên iOS/Safari/Mobile.
  */
 const unlockMobileAudio = () => {
   try {
@@ -144,6 +165,10 @@ const unlockMobileAudio = () => {
   }
 };
 
+/**
+ * Bộ định tuyến trung tâm cho hệ sinh thái 10 Mini-Games & Phòng thi Khảo thí.
+ * @param {Record<string, any>} props
+ */
 export const GameView = (props) => {
   // ==========================================================================
   // 1. LỚP ĐỆM TƯƠNG THÍCH KÉP (FLAT PROPS & { state, actions, setters })
@@ -162,31 +187,40 @@ export const GameView = (props) => {
   const cards = props.cards || stateObj.cards || [];
   const lang = props.lang || stateObj.lang || 'en';
   const onPlay = props.onPlay || props.speak || actionsObj.speak;
-  const stopSpeakingAction = props.stopSpeaking || props.onPause || actionsObj.stopSpeaking;
+  const stopSpeakingAction =
+    props.stopSpeaking || props.onPause || actionsObj.stopSpeaking;
   const notebook = props.notebook || stateObj.notebook || [];
   const showToast = props.showToast || actionsObj.showToast;
   const onLogWrong = props.onLogWrong || actionsObj.handleLogWrong;
   const setIsGamePlaying =
-    props.setIsGamePlaying || actionsObj.setIsGamePlaying || settersObj.setIsGamePlaying;
+    props.setIsGamePlaying ||
+    actionsObj.setIsGamePlaying ||
+    settersObj.setIsGamePlaying;
   const gameSessions = props.gameSessions || stateObj.gameSessions || {};
   const setGameSessions = props.setGameSessions || settersObj.setGameSessions;
   const settings = props.settings || stateObj.settings || {};
-  const onSaveToHarvest = props.onSaveToHarvest || actionsObj.handleSaveToHarvest;
+  const onSaveToHarvest =
+    props.onSaveToHarvest || actionsObj.handleSaveToHarvest;
   const dataMode = props.dataMode || stateObj.dataMode || 'vocab';
   const currentLevel = props.currentLevel ?? stateObj.currentLevel;
   const currentTopic = props.currentTopic ?? stateObj.currentTopic;
   const globalRetryBag = props.globalRetryBag || stateObj.globalRetryBag || {};
   const addToRetryBag = props.addToRetryBag || actionsObj.addToRetryBag;
-  const removeFromRetryBag = props.removeFromRetryBag || actionsObj.removeFromRetryBag;
-  const onOpenIncorrect = props.onOpenIncorrect || actionsObj.handleOpenIncorrect;
+  const removeFromRetryBag =
+    props.removeFromRetryBag || actionsObj.removeFromRetryBag;
+  const onOpenIncorrect =
+    props.onOpenIncorrect || actionsObj.handleOpenIncorrect;
   const onOpenExamPoolManager =
     props.onOpenExamPoolManager ||
     actionsObj.handleOpenExamPoolManager ||
-    (() => settersObj.setShowExamPoolManager && settersObj.setShowExamPoolManager(true));
+    (() =>
+      settersObj.setShowExamPoolManager &&
+      settersObj.setShowExamPoolManager(true));
   const onOpenAiConfig =
     props.onOpenAiConfig ||
     actionsObj.handleOpenAiConfig ||
-    (() => settersObj.setShowAiConfigModal && settersObj.setShowAiConfigModal(true));
+    (() =>
+      settersObj.setShowAiConfigModal && settersObj.setShowAiConfigModal(true));
   const examLogic = props.examLogic || stateObj.examLogic;
 
   // Helper ngắt hoàn toàn âm thanh TTS & đồng bộ Khiên Bluetooth của useAppLogic
@@ -227,7 +261,12 @@ export const GameView = (props) => {
       console.warn('[GameView] Thiếu handler onBookmark / handleSmartBookmark.');
       return undefined;
     },
-    [props.onBookmark, props.onSaveToNotebook, actionsObj.handleSmartBookmark, actionsObj.handleSaveWords]
+    [
+      props.onBookmark,
+      props.onSaveToNotebook,
+      actionsObj.handleSmartBookmark,
+      actionsObj.handleSaveWords
+    ]
   );
 
   // [VÁ BUG 02 + Ver 1.1] Ánh xạ chuẩn onUpdateCards -> handleUpdateCards
@@ -241,16 +280,24 @@ export const GameView = (props) => {
         return actionsObj.handleUpdateCards(updatedPayload);
       }
       if (typeof settersObj.setCards === 'function' && updatedPayload) {
-        const updatesList = Array.isArray(updatedPayload) ? updatedPayload : [updatedPayload];
-        const hasValidId = (val) => val !== undefined && val !== null && String(val).trim() !== '';
+        const updatesList = Array.isArray(updatedPayload)
+          ? updatedPayload
+          : [updatedPayload];
+        const hasValidId = (val) =>
+          val !== undefined && val !== null && String(val).trim() !== '';
         const validUpdates = updatesList.filter(
-          (item) => item && typeof item === 'object' && (hasValidId(item.id) || item.term)
+          (item) =>
+            item &&
+            typeof item === 'object' &&
+            (hasValidId(item.id) || item.term)
         );
         if (validUpdates.length === 0) return undefined;
 
         const normalizeKey = (val) => String(val || '').trim().toLowerCase();
         settersObj.setCards((prevCards) => {
-          if (!Array.isArray(prevCards) || prevCards.length === 0) return prevCards;
+          if (!Array.isArray(prevCards) || prevCards.length === 0) {
+            return prevCards;
+          }
 
           const idMap = new Map();
           const termMap = new Map();
@@ -262,8 +309,12 @@ export const GameView = (props) => {
           let hasChanged = false;
           const merged = prevCards.map((card) => {
             if (!card) return card;
-            const patchById = hasValidId(card.id) ? idMap.get(String(card.id)) : undefined;
-            const patchByTerm = card.term ? termMap.get(normalizeKey(card.term)) : undefined;
+            const patchById = hasValidId(card.id)
+              ? idMap.get(String(card.id))
+              : undefined;
+            const patchByTerm = card.term
+              ? termMap.get(normalizeKey(card.term))
+              : undefined;
             const patch = patchById || patchByTerm;
             if (!patch) return card;
             hasChanged = true;
@@ -287,12 +338,17 @@ export const GameView = (props) => {
       if (VALID_GAME_ROUTES.has(pending)) {
         return pending;
       }
-      console.warn('[GameView] Bỏ qua pending route khởi tạo không hợp lệ:', pending);
+      console.warn(
+        '[GameView] Bỏ qua pending route khởi tạo không hợp lệ:',
+        pending
+      );
     }
     return 'menu';
   });
   const [gameType, setGameType] = useState(/** @type {string | null} */ (null));
-  const [gameConfig, setGameConfig] = useState(/** @type {Record<string, any>} */ ({}));
+  const [gameConfig, setGameConfig] = useState(
+    /** @type {Record<string, any>} */ ({})
+  );
   const [restoredSession, setRestoredSession] = useState(
     /** @type {Record<string, any> | null} */ (null)
   );
@@ -349,9 +405,15 @@ export const GameView = (props) => {
         }
         return;
       }
-      if (typeof window !== 'undefined' && typeof window.globalShowToast === 'function') {
+      if (
+        typeof window !== 'undefined' &&
+        typeof window.globalShowToast === 'function'
+      ) {
         if (typeof msg === 'object' && msg !== null) {
-          window.globalShowToast(msg.text || msg.message || '', msg.type || type);
+          window.globalShowToast(
+            msg.text || msg.message || '',
+            msg.type || type
+          );
         } else {
           window.globalShowToast(String(msg), type);
         }
@@ -366,7 +428,11 @@ export const GameView = (props) => {
     const originalToast = window.globalShowToast;
     const bridgedToast = (msg, type = 'success') => {
       if (typeof msg === 'object' && msg !== null) {
-        showToast({ text: msg.text || msg.message || '', type: msg.type || type, id: Date.now() });
+        showToast({
+          text: msg.text || msg.message || '',
+          type: msg.type || type,
+          id: Date.now()
+        });
       } else {
         showToast({ text: String(msg), type, id: Date.now() });
       }
@@ -385,7 +451,10 @@ export const GameView = (props) => {
     const targetRoute = window.__pendingGameRoute;
     window.__pendingGameRoute = null;
     if (!VALID_GAME_ROUTES.has(targetRoute)) {
-      console.warn('[GameView] Bỏ qua pending route không hợp lệ:', targetRoute);
+      console.warn(
+        '[GameView] Bỏ qua pending route không hợp lệ:',
+        targetRoute
+      );
       return;
     }
     activeSessionIdRef.current = null;
@@ -405,7 +474,9 @@ export const GameView = (props) => {
 
   // Tương thích ngược 100% với useAppLogic.handleReviewWithGame (chỉ gán window.__pendingGameRoute + cập nhật cards)
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.__pendingGameRoute) return undefined;
+    if (typeof window === 'undefined' || !window.__pendingGameRoute) {
+      return undefined;
+    }
     const timer = setTimeout(consumePendingRoute, 0);
     return () => clearTimeout(timer);
   }, [cards, lang, dataMode, consumePendingRoute]);
@@ -424,9 +495,12 @@ export const GameView = (props) => {
   // Báo trạng thái đang chơi lên App để ẩn BottomNav (không có cleanup để tránh nhấp nháy khi đổi chặng thi)
   useEffect(() => {
     const isExamRunning =
-      activeExamLogic?.examState?.status && activeExamLogic.examState.status !== 'idle';
+      activeExamLogic?.examState?.status &&
+      activeExamLogic.examState.status !== 'idle';
     const isPlayingNow =
-      gameState === 'playing' || gameState === 'mock_test' || Boolean(isExamRunning);
+      gameState === 'playing' ||
+      gameState === 'mock_test' ||
+      Boolean(isExamRunning);
     if (setIsGamePlaying) {
       setIsGamePlaying(isPlayingNow);
     }
@@ -518,16 +592,24 @@ export const GameView = (props) => {
     }
   };
 
-  // Bắt đầu ván chơi mới từ màn hình Setup
+  /**
+   * Bắt đầu ván chơi mới từ màn hình Setup.
+   * @param {string} type
+   * @param {Record<string, any>} [config]
+   */
   const handleStartGame = (type, config = {}) => {
     unlockMobileAudio();
 
-    const isPureMode = isPureAiSource(config);
-    const minCards = getMinRequiredCards(type, config);
+    /** @type {Record<string, any>} */
+    const safeCfg = config && typeof config === 'object' ? config : {};
+    const isPureMode = isPureAiSource(safeCfg);
+    const minCards = getMinRequiredCards(type, safeCfg);
     const cardCount = Array.isArray(cards) ? cards.length : 0;
 
     if (minCards > 0 && cardCount < minCards) {
-      let msg = t('needMoreCards', { n: minCards }) || `Cần ít nhất ${minCards} thẻ để chơi`;
+      let msg =
+        t('needMoreCards', { n: minCards }) ||
+        `Cần ít nhất ${minCards} thẻ để chơi`;
       if (type === 'oddoneout') {
         msg = 'Cần ít nhất 4 thẻ để chơi Tìm Từ Khác Loại';
       } else if (minCards === 1) {
@@ -537,7 +619,7 @@ export const GameView = (props) => {
       return;
     }
 
-    const effectiveAiMode = resolveConfigAiMode(config, false);
+    const effectiveAiMode = resolveConfigAiMode(safeCfg, false);
     const liveKey = resolveActiveApiKey(preferredApiKey);
     if ((effectiveAiMode || isPureMode) && !liveKey) {
       onMissingKey();
@@ -550,12 +632,12 @@ export const GameView = (props) => {
     gameTypeRef.current = type;
 
     const snapshotConfig = {
-      ...config,
+      ...safeCfg,
       isAiMode: effectiveAiMode,
-      aiMode: isPureMode ? true : Boolean(config.aiMode ?? effectiveAiMode),
-      level: config.level !== undefined ? config.level : currentLevel,
-      dataMode: config.dataMode || dataMode,
-      topic: config.topic !== undefined ? config.topic : currentTopic
+      aiMode: isPureMode ? true : Boolean(safeCfg.aiMode ?? effectiveAiMode),
+      level: safeCfg.level !== undefined ? safeCfg.level : currentLevel,
+      dataMode: safeCfg.dataMode || dataMode,
+      topic: safeCfg.topic !== undefined ? safeCfg.topic : currentTopic
     };
     setGameConfig(snapshotConfig);
     gameConfigRef.current = snapshotConfig;
@@ -582,7 +664,12 @@ export const GameView = (props) => {
       stopAllSpeech();
       setRestoredSession(null);
 
-      if (hadActiveSession && gameState === 'playing' && childData && setGameSessions) {
+      if (
+        hadActiveSession &&
+        gameState === 'playing' &&
+        childData &&
+        setGameSessions
+      ) {
         const currentType = gameType || gameTypeRef.current;
         if (currentType) {
           const currentSessionData = {
@@ -591,7 +678,10 @@ export const GameView = (props) => {
             config: gameConfigRef.current,
             ...childData
           };
-          setGameSessions((prev) => ({ ...(prev || {}), [currentType]: currentSessionData }));
+          setGameSessions((prev) => ({
+            ...(prev || {}),
+            [currentType]: currentSessionData
+          }));
         }
       }
 
@@ -613,7 +703,10 @@ export const GameView = (props) => {
             config: gameConfigRef.current,
             ...childData
           };
-          setGameSessions((prev) => ({ ...(prev || {}), [currentType]: currentSessionData }));
+          setGameSessions((prev) => ({
+            ...(prev || {}),
+            [currentType]: currentSessionData
+          }));
         }
       }
     },
@@ -628,7 +721,8 @@ export const GameView = (props) => {
 
       const restoredConfig = session.config || {};
       const needsAiKey =
-        resolveConfigAiMode(restoredConfig, false) || isPureAiSource(restoredConfig);
+        resolveConfigAiMode(restoredConfig, false) ||
+        isPureAiSource(restoredConfig);
       if (needsAiKey && !resolveActiveApiKey(preferredApiKey)) {
         onMissingKey();
         return;
@@ -642,9 +736,15 @@ export const GameView = (props) => {
         aiMode: isPureAiSource(restoredConfig)
           ? true
           : Boolean(restoredConfig.aiMode ?? restoredConfig.isAiMode),
-        level: restoredConfig.level !== undefined ? restoredConfig.level : currentLevel,
+        level:
+          restoredConfig.level !== undefined
+            ? restoredConfig.level
+            : currentLevel,
         dataMode: restoredConfig.dataMode || dataMode,
-        topic: restoredConfig.topic !== undefined ? restoredConfig.topic : currentTopic
+        topic:
+          restoredConfig.topic !== undefined
+            ? restoredConfig.topic
+            : currentTopic
       };
 
       const sessionKey = nextSessionKey();
@@ -657,19 +757,37 @@ export const GameView = (props) => {
       setGameSessionId(sessionKey);
       setGameState('playing');
     },
-    [gameSessions, preferredApiKey, onMissingKey, currentLevel, dataMode, currentTopic, nextSessionKey]
+    [
+      gameSessions,
+      preferredApiKey,
+      onMissingKey,
+      currentLevel,
+      dataMode,
+      currentTopic,
+      nextSessionKey
+    ]
   );
 
   // Kết thúc ván chơi và chuyển sang màn hình Tổng kết (GameResult)
   const handleEndGame = useCallback(
+    /**
+     * @param {Record<string, any>} [stats]
+     */
     (stats = { correct: 0, wrong: 0 }) => {
       activeSessionIdRef.current = null;
       stopAllSpeech();
       setRestoredSession(null);
 
-      const isPlainStats = stats && typeof stats === 'object' && !stats.nativeEvent;
-      const correctVal = Math.max(0, Number(isPlainStats ? stats.correct ?? stats.score : 0) || 0);
-      const wrongVal = Math.max(0, Number(isPlainStats ? stats.wrong : 0) || 0);
+      const isPlainStats =
+        stats && typeof stats === 'object' && !stats.nativeEvent;
+      const correctVal = Math.max(
+        0,
+        Number(isPlainStats ? stats.correct ?? stats.score : 0) || 0
+      );
+      const wrongVal = Math.max(
+        0,
+        Number(isPlainStats ? stats.wrong : 0) || 0
+      );
       setFinalStats({
         score: correctVal,
         wrong: wrongVal,
@@ -694,7 +812,12 @@ export const GameView = (props) => {
 
   // Bộ chuyển đổi chuẩn hóa cho các game gọi onFinish(score, time, wrongCount) hoặc onFinish(statsObj)
   const handleFinishGame = useCallback(
-    (arg1, _time, wrongCount) => {
+    /**
+     * @param {any} arg1
+     * @param {any} [_time]
+     * @param {any} [wrongCount]
+     */
+    (arg1, _time = undefined, wrongCount = undefined) => {
       if (arg1 && typeof arg1 === 'object' && !arg1.nativeEvent) {
         handleEndGame(arg1);
         return;
@@ -727,8 +850,10 @@ export const GameView = (props) => {
 
   // Tính cờ AI thống nhất cho phiên đang chạy
   const activeGameAiMode = resolveConfigAiMode(gameConfig, isAiMode);
-  const resolvedLevel = gameConfig.level !== undefined ? gameConfig.level : currentLevel;
-  const resolvedTopic = gameConfig.topic !== undefined ? gameConfig.topic : currentTopic;
+  const resolvedLevel =
+    gameConfig.level !== undefined ? gameConfig.level : currentLevel;
+  const resolvedTopic =
+    gameConfig.topic !== undefined ? gameConfig.topic : currentTopic;
   const resolvedDataMode = gameConfig.dataMode || dataMode;
 
   // [Ver 1.2] Gói props dùng chung đầy đủ cho 10/10 Mini-Games (dùng restoredSession chống re-render mỗi 5s)
@@ -880,10 +1005,14 @@ export const GameView = (props) => {
             lang={lang}
             currentLevel={currentLevel}
             onOpenAiConfig={onOpenAiConfig}
-            onStart={(arg1, arg2) => {
+            onStart={(arg1, arg2 = undefined) => {
               const { config } = resolveSetupStartArgs('quiz', arg1, arg2);
               const resolvedAi = resolveConfigAiMode(config, false);
-              handleStartGame('quiz', { ...config, isAiMode: resolvedAi, aiMode: resolvedAi });
+              handleStartGame('quiz', {
+                ...config,
+                isAiMode: resolvedAi,
+                aiMode: resolvedAi
+              });
             }}
             onBack={handleReturnToMenu}
           />
@@ -895,7 +1024,7 @@ export const GameView = (props) => {
           <ScrambleSetup
             t={t}
             mainColor={mainColor}
-            onStart={(arg1, arg2) => {
+            onStart={(arg1, arg2 = undefined) => {
               const { config } = resolveSetupStartArgs('scramble', arg1, arg2);
               handleStartGame('scramble', { ...config, lang });
             }}
@@ -909,7 +1038,7 @@ export const GameView = (props) => {
           <MatchSetup
             mainColor={mainColor}
             initialAiMode={matchAiPreset}
-            onStart={(arg1, arg2) => {
+            onStart={(arg1, arg2 = undefined) => {
               const { config } = resolveSetupStartArgs('match', arg1, arg2);
               handleStartGame('match', config);
             }}
@@ -922,7 +1051,7 @@ export const GameView = (props) => {
         <div className="w-full h-full bg-white flex flex-col items-center justify-center p-6 overflow-hidden z-50">
           <FillBlankSetup
             mainColor={mainColor}
-            onStart={(arg1, arg2) => {
+            onStart={(arg1, arg2 = undefined) => {
               const { config } = resolveSetupStartArgs('fillblank', arg1, arg2);
               handleStartGame('fillblank', config);
             }}
@@ -935,8 +1064,12 @@ export const GameView = (props) => {
         <div className="w-full h-full bg-white flex flex-col items-center justify-center p-6 overflow-hidden z-50">
           <SpotMistakeSetup
             mainColor={mainColor}
-            onStart={(arg1, arg2) => {
-              const { config } = resolveSetupStartArgs('spotmistake', arg1, arg2);
+            onStart={(arg1, arg2 = undefined) => {
+              const { config } = resolveSetupStartArgs(
+                'spotmistake',
+                arg1,
+                arg2
+              );
               handleStartGame('spotmistake', config);
             }}
             onBack={handleReturnToMenu}
@@ -948,7 +1081,7 @@ export const GameView = (props) => {
         <div className="w-full h-full bg-white flex flex-col items-center justify-center p-6 overflow-hidden z-50">
           <OddOneOutSetup
             mainColor={mainColor}
-            onStart={(arg1, arg2) => {
+            onStart={(arg1, arg2 = undefined) => {
               const { config } = resolveSetupStartArgs('oddoneout', arg1, arg2);
               handleStartGame('oddoneout', config);
             }}
@@ -961,7 +1094,7 @@ export const GameView = (props) => {
         <div className="w-full h-full bg-white flex flex-col items-center justify-center p-6 overflow-hidden z-50">
           <ImageQuizSetup
             mainColor="emerald"
-            onStart={(arg1, arg2) => {
+            onStart={(arg1, arg2 = undefined) => {
               const { config } = resolveSetupStartArgs('imagequiz', arg1, arg2);
               handleStartGame('imagequiz', config);
             }}
@@ -974,8 +1107,12 @@ export const GameView = (props) => {
         <div className="w-full h-full bg-white flex flex-col items-center justify-center p-6 overflow-hidden z-50">
           <PronunciationSetup
             mainColor="indigo"
-            onStart={(arg1, arg2) => {
-              const { config } = resolveSetupStartArgs('pronunciation', arg1, arg2);
+            onStart={(arg1, arg2 = undefined) => {
+              const { config } = resolveSetupStartArgs(
+                'pronunciation',
+                arg1,
+                arg2
+              );
               handleStartGame('pronunciation', config);
             }}
             onBack={handleReturnToMenu}
@@ -987,7 +1124,7 @@ export const GameView = (props) => {
         <div className="w-full h-full bg-white flex flex-col items-center justify-center p-6 overflow-hidden z-50">
           <ListeningSetup
             mainColor="cyan"
-            onStart={(arg1, arg2) => {
+            onStart={(arg1, arg2 = undefined) => {
               const { config } = resolveSetupStartArgs('listening', arg1, arg2);
               handleStartGame('listening', config);
             }}
@@ -1000,7 +1137,7 @@ export const GameView = (props) => {
         <div className="w-full h-full bg-white flex flex-col items-center justify-center p-6 overflow-hidden z-50">
           <ReadingSetup
             mainColor="slate"
-            onStart={(arg1, arg2) => {
+            onStart={(arg1, arg2 = undefined) => {
               const { config } = resolveSetupStartArgs('reading', arg1, arg2);
               handleStartGame('reading', config);
             }}
@@ -1072,19 +1209,35 @@ export const GameView = (props) => {
           )}
 
           {gameType === 'imagequiz' && ImageQuizGame && (
-            <ImageQuizGame key={gameSessionId} {...sharedGameProps} mainColor="emerald" />
+            <ImageQuizGame
+              key={gameSessionId}
+              {...sharedGameProps}
+              mainColor="emerald"
+            />
           )}
 
           {gameType === 'pronunciation' && PronunciationGame && (
-            <PronunciationGame key={gameSessionId} {...sharedGameProps} mainColor="indigo" />
+            <PronunciationGame
+              key={gameSessionId}
+              {...sharedGameProps}
+              mainColor="indigo"
+            />
           )}
 
           {gameType === 'listening' && ListeningGame && (
-            <ListeningGame key={gameSessionId} {...sharedGameProps} mainColor="cyan" />
+            <ListeningGame
+              key={gameSessionId}
+              {...sharedGameProps}
+              mainColor="cyan"
+            />
           )}
 
           {gameType === 'reading' && ReadingGame && (
-            <ReadingGame key={gameSessionId} {...sharedGameProps} mainColor="slate" />
+            <ReadingGame
+              key={gameSessionId}
+              {...sharedGameProps}
+              mainColor="slate"
+            />
           )}
         </div>
       )}

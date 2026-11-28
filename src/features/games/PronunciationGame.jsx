@@ -1,28 +1,17 @@
 // ============================================================================
 // FILE 67/85: src/features/games/PronunciationGame.jsx
 // NGUỒN GỐC: tang_5.js (Block 5.20 - Pronunciation Logic & Wrapper V1.18)
-// PHIÊN BẢN: Ver 1.0
-// NGÀY GIỜ NÂNG CẤP: 27/11/2026 - 21:33 (GMT+7)
+// PHIÊN BẢN: Ver 1.1
+// NGÀY GIỜ NÂNG CẤP: 28/11/2026 - 06:18 (GMT+7)
 // NHIỆM VỤ: Động cơ xử lý Logic (usePronunciationLogic) và Container điều phối
 //           (PronunciationGame) cho trò chơi Vua Ngữ Âm (Pronunciation).
-//           Nâng cấp Ver 1.0 (Lượt 4.3 - Diệt 1H + 1M Radar & 0 Problems tsc):
-//           1. Diệt 1H (R05 fc_total_tokens) & 1M (R05 fc_ai_memory):
-//              Chuyển sang safeAddTotalTokens + AiMemoryManager +
-//              Utils.safeLocalStorageSet; gỡ window.handleSaveToNotebook.
-//           2. Diệt C19 & C16: Khóa safeLang ('en'|'zh'), truyền lang vào
-//              ExamEngine.hydrateQuestion, xóa 100% TTS 'vi-VN', nối trực tiếp
-//              speak/stopSpeaking, strip dấu *...*/<u>...</u> trước TTS/Bookmark/
-//              Memory và bổ sung kho dự phòng đầy đủ cho cả EN & ZH.
-//           3. Diệt S7 & S8: Dùng resolveActiveApiKey 4 tầng (không đá oan user
-//              dùng Key Pool/Paid Key), chạy mượt chế độ dự phòng khi thiếu key,
-//              chuẩn hóa term 4 từ cho RetryBag & đọc đạn qua getPendingItems().
-//           4. Diệt C20..C24 & S9: Gỡ StrictMode Deadlock (bootTimer 50ms +
-//              cancelled), khóa hasExitedRef + handleEndGameInternal diệt Ghost
-//              Session & lỗi xóa phạt thoát ngang, lọc deck sạch, timeout động
-//              cho ExamEngine/forgeMatrix (clearTimeout trong finally), pure
-//              setTimeLeft, reset selectedIndex sau wrong_retry, đủ props
-//              GameView Ver 1.4, onSaveToHarvest 2 tham số 12 cột & showToast
-//              chuẩn (text, type).
+//           Nâng cấp Ver 1.1 (Lượt 5.2 - Zero-TSC Polish):
+//           1. Diệt 1/1 lỗi TS2554 tại handleEndGameInternal: Khai báo tham số
+//              tùy chọn (customStats = undefined) kèm JSDoc chuẩn, khớp 100% cả
+//              lệnh gọi không đối số handleEndGameInternal() lẫn truyền stats.
+//           2. Bảo toàn 100% năng lực Ver 1.0 (0/0/0 Radar, Key 4 tầng,
+//              StrictMode-safe, kho dự phòng song ngữ EN/ZH, strip dấu *...*
+//              & hợp đồng GameView Ver 1.4).
 // ============================================================================
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
@@ -1099,7 +1088,11 @@ export const usePronunciationLogic = (cards, config, callbacks) => {
   // KẾT THÚC & THOÁT AN TOÀN (KHÓA hasExitedRef DIỆT GHOST SESSION)
   // ==========================================================================
   const handleEndGameInternal = useCallback(
-    (customStats) => {
+    /**
+     * Kết thúc ván chơi an toàn (nhận optional customStats hoặc tự fallback về latestStateRef).
+     * @param {Record<string, any>} [customStats]
+     */
+    (customStats = undefined) => {
       if (hasExitedRef.current) return;
       hasExitedRef.current = true;
       isGameActiveRef.current = false;

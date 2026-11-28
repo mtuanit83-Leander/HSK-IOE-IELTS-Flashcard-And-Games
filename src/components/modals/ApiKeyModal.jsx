@@ -1,14 +1,22 @@
 // ============================================================================
 // FILE 41/85: src/components/modals/ApiKeyModal.jsx
 // NGUỒN GỐC: tang_4.js (Block 4.6)
-// PHIÊN BẢN: Ver 1.1
-// NGÀY GIỜ NÂNG CẤP: 24/11/2026 - 22:47 (GMT+7)
+// PHIÊN BẢN: Ver 1.2
+// NGÀY GIỜ NÂNG CẤP: 28/11/2026 - 07:12 (GMT+7)
 // NHIỆM VỤ: Modal Quản lý API Key Radar (Kiểm tra sức khỏe Key, Ma trận RPD
 //           theo từng Key/Model, Công tắc Auto Cascade & Key trả phí);
 //           sạch 0 CRITICAL / 0 HIGH / 0 MEDIUM, khóa kín 2 tầng chống hồi sinh
 //           khóa legacy 'fc_apikey', Radar thông minh theo keyPoolRef diệt giấc
 //           ngủ 8s thừa, chống NaN:NaN/0p ở badge cooldown, tương thích 100%
 //           React 18 StrictMode và chuẩn A11y (Backdrop/Escape/role="dialog").
+//           Nâng cấp Ver 1.2 (Lượt 5.2 - Zero-TSC Polish):
+//           1. Diệt trọn 2/2 lỗi tsc --noEmit (2× TS2810 tại cancellablePingDelay)
+//              bằng kiểu tường minh `Promise<void>` + `resolve(undefined)` & JSDoc.
+//           2. Diệt D9: tự động dọn timer & đánh thức Promise cũ nếu bị gọi chồng.
+//           3. Diệt D10 & D11: bảo vệ bộ gõ IME (`!isComposing`) cho cả Escape
+//              lẫn Enter; nâng cấp khóa đóng Backdrop 2 nhịp chống bôi đen API Key.
+//           4. Diệt D12: dừng Radar lập tức khi xóa sạch kho đạn (`0` key),
+//              chuẩn hóa thuộc tính số (`min/max/step`) & `aria-label` cho slider.
 // ============================================================================
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -41,6 +49,8 @@ const FALLBACK_MODELS = [
 
 /**
  * Helper hiển thị thông báo an toàn qua hệ thống Toast toàn cục
+ * @param {string} msg
+ * @param {string} [type='info']
  */
 const notify = (msg, type = 'info') => {
   if (typeof window !== 'undefined' && typeof window.globalShowToast === 'function') {
@@ -52,6 +62,9 @@ const notify = (msg, type = 'info') => {
 
 /**
  * Đọc an toàn chuỗi từ localStorage (chống lỗi khi trình duyệt chặn Storage)
+ * @param {string} key
+ * @param {string} [fallback='']
+ * @returns {string}
  */
 const safeReadStorage = (key, fallback = '') => {
   if (!key || typeof localStorage === 'undefined') return fallback;
@@ -65,6 +78,8 @@ const safeReadStorage = (key, fallback = '') => {
 
 /**
  * Chuẩn hóa chuỗi API Key: gọt khoảng trắng & dấu ngoặc kép/đơn dư thừa
+ * @param {any} val
+ * @returns {string}
  */
 const cleanKeyStr = (val) => {
   if (typeof val !== 'string') return '';
@@ -73,6 +88,7 @@ const cleanKeyStr = (val) => {
 
 /**
  * Đọc danh sách án phạt cooldown an toàn từ geminiApi hoặc Storage
+ * @returns {Record<string, any>}
  */
 const readActiveCooldowns = () => {
   try {
@@ -89,6 +105,7 @@ const readActiveCooldowns = () => {
 
 /**
  * Modal Quản lý API Key & Radar Kiểm tra Sức khỏe Kho khóa (ApiKeyModal)
+ * @param {Record<string, any>} props
  */
 export const ApiKeyModal = ({
   isOpen,
@@ -97,14 +114,16 @@ export const ApiKeyModal = ({
   setApiKey,
   aiModel,
   setAiModel,
-  t = (k) => k
+  t = (/** @type {string} */ k) => k
 }) => {
   const apiKeyStorageKey = STORAGE_KEYS?.API_KEY || 'fc_gemini_api_key';
   const aiModelStorageKey = STORAGE_KEYS?.AI_MODEL || 'fc_ai_model';
 
-  const [keyPool, setKeyPool] = useState([]);
+  const [keyPool, setKeyPool] = useState(/** @type {string[]} */ ([]));
   const [isTesting, setIsTesting] = useState(false);
-  const [testResults, setTestResults] = useState({});
+  const [testResults, setTestResults] = useState(
+    /** @type {Record<string, any>} */ ({})
+  );
   const [newKeyInput, setNewKeyInput] = useState('');
 
   // State cho Cooldown Slider (Phút)
@@ -134,11 +153,18 @@ export const ApiKeyModal = ({
 
   const abortTestRef = useRef(false);
   const testRunIdRef = useRef(0);
-  const pingTimerRef = useRef(null);
-  const pingResolveRef = useRef(null);
-  const handleCloseModalRef = useRef(null);
+  const pingTimerRef = useRef(
+    /** @type {ReturnType<typeof setTimeout> | null} */ (null)
+  );
+  const pingResolveRef = useRef(/** @type {(() => void) | null} */ (null));
+  const handleCloseModalRef = useRef(/** @type {(() => void) | null} */ (null));
+  const backdropMouseDownRef = useRef(false);
 
-  // Chỉ phát Toast khi Modal đang mở (chặn Toast trễ sau khi người dùng đã đóng)
+  /**
+   * Chỉ phát Toast khi Modal đang mở (chặn Toast trễ sau khi người dùng đã đóng)
+   * @param {string} msg
+   * @param {string} [type='info']
+   */
   const safeNotify = (msg, type = 'info') => {
     if (isOpenRef.current) {
       notify(msg, type);
@@ -160,23 +186,46 @@ export const ApiKeyModal = ({
     }
   };
 
-  // Bộ đếm chờ có thể hủy tức thì (không treo 8s khi bấm Dừng hoặc đóng Modal)
+  /**
+   * Bộ đếm chờ có thể hủy tức thì (không treo 8s khi bấm Dừng hoặc đóng Modal)
+   * Tự dọn Promise/timer cũ nếu bị gọi chồng và đạt chuẩn 0 TS2810.
+   * @param {number} ms
+   * @returns {Promise<void>}
+   */
   const cancellablePingDelay = (ms) =>
-    new Promise((resolve) => {
-      if (abortTestRef.current) {
-        resolve();
-        return;
-      }
-      pingResolveRef.current = resolve;
-      pingTimerRef.current = setTimeout(() => {
-        pingTimerRef.current = null;
-        pingResolveRef.current = null;
-        resolve();
-      }, ms);
-    });
+    /** @type {Promise<void>} */ (
+      new Promise((resolve) => {
+        if (pingTimerRef.current) {
+          clearTimeout(pingTimerRef.current);
+          pingTimerRef.current = null;
+        }
+        if (pingResolveRef.current) {
+          const prevResolve = pingResolveRef.current;
+          pingResolveRef.current = null;
+          prevResolve();
+        }
+        if (abortTestRef.current) {
+          resolve(undefined);
+          return;
+        }
+        const done = () => {
+          if (pingTimerRef.current) {
+            clearTimeout(pingTimerRef.current);
+            pingTimerRef.current = null;
+          }
+          if (pingResolveRef.current === done) {
+            pingResolveRef.current = null;
+          }
+          resolve(undefined);
+        };
+        pingResolveRef.current = done;
+        pingTimerRef.current = setTimeout(done, ms);
+      })
+    );
 
   // Đóng Modal an toàn kèm hủy Radar nếu đang chạy
   const handleCloseModal = () => {
+    backdropMouseDownRef.current = false;
     cancelPingWorker();
     setIsTesting(false);
     if (onClose) onClose();
@@ -187,15 +236,17 @@ export const ApiKeyModal = ({
   useEffect(() => {
     return () => {
       prevIsOpenRef.current = false;
+      backdropMouseDownRef.current = false;
       cancelPingWorker();
     };
   }, []);
 
-  // Lắng nghe phím Escape để đóng Modal an toàn
+  // Lắng nghe phím Escape để đóng Modal an toàn (bảo vệ bộ gõ IME Tiếng Trung/Tiếng Việt)
   useEffect(() => {
     if (!isOpen || typeof window === 'undefined') return;
+    /** @param {KeyboardEvent} e */
     const handleKeyDown = (e) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !e.isComposing) {
         e.stopPropagation();
         if (typeof handleCloseModalRef.current === 'function') {
           handleCloseModalRef.current();
@@ -212,12 +263,14 @@ export const ApiKeyModal = ({
     prevIsOpenRef.current = isOpen;
 
     if (isOpen && !wasOpen) {
+      backdropMouseDownRef.current = false;
       cancelPingWorker();
       abortTestRef.current = false;
       setIsTesting(false);
 
       // Nạp và khử trùng kho Key theo thứ tự gốc
       const rawPool = Utils.safeJsonParse('fc_apikey_pool', []);
+      /** @type {string[]} */
       const dedupedPool = [];
       const seenKeys = new Set();
       if (Array.isArray(rawPool)) {
@@ -269,6 +322,7 @@ export const ApiKeyModal = ({
       setIsPremium(safeReadStorage('fc_is_premium_key', '') === 'true');
       setIsAutoCascade(safeReadStorage('fc_is_auto_cascade', '') !== 'false');
     } else if (!isOpen && wasOpen) {
+      backdropMouseDownRef.current = false;
       cancelPingWorker();
       setIsTesting(false);
     }
@@ -282,7 +336,10 @@ export const ApiKeyModal = ({
     }
   }, [isOpen, aiModel]);
 
-  // Đồng bộ đồng thời khóa chính & khóa legacy (nếu đang tồn tại)
+  /**
+   * Đồng bộ đồng thời khóa chính & khóa legacy (nếu đang tồn tại)
+   * @param {string} nextKey
+   */
   const syncPrimaryKeyStorage = (nextKey) => {
     Utils.safeLocalStorageSet(apiKeyStorageKey, nextKey || null);
     if (
@@ -318,7 +375,10 @@ export const ApiKeyModal = ({
     safeNotify('Đã thêm API Key mới!', 'success');
   };
 
-  // Xóa Key khỏi kho (khóa kín 2 tầng chống hồi sinh từ cả fc_gemini_api_key lẫn fc_apikey)
+  /**
+   * Xóa Key khỏi kho (khóa kín 2 tầng chống hồi sinh & dừng Radar ngay nếu kho rỗng)
+   * @param {string} keyToRemove
+   */
   const handleRemoveKey = (keyToRemove) => {
     const newPool = keyPool.filter((k) => k !== keyToRemove);
     keyPoolRef.current = newPool;
@@ -338,6 +398,9 @@ export const ApiKeyModal = ({
     const nextKey = newPool.length > 0 ? newPool[0] : '';
 
     if (newPool.length === 0) {
+      // Dừng ngay Radar đang quét để không kẹt nút "Dừng kiểm tra" trong giấc ngủ 8s
+      cancelPingWorker();
+      setIsTesting(false);
       // Kho đạn rỗng -> xóa sạch cả 2 khóa để tuyệt đối không hồi sinh Key legacy cũ
       Utils.safeLocalStorageSet(apiKeyStorageKey, null);
       if (LEGACY_API_KEY_STORAGE !== apiKeyStorageKey) {
@@ -366,7 +429,10 @@ export const ApiKeyModal = ({
     safeNotify('Đã xóa API Key khỏi kho đạn!', 'info');
   };
 
-  // Đặt làm Key ưu tiên số 1
+  /**
+   * Đặt làm Key ưu tiên số 1
+   * @param {string} k
+   */
   const handleSetPrimary = (k) => {
     const newPool = [k, ...keyPool.filter((item) => item !== k)];
     keyPoolRef.current = newPool;
@@ -377,7 +443,10 @@ export const ApiKeyModal = ({
     safeNotify('Đã đổi Key ưu tiên!', 'success');
   };
 
-  // Xử lý kéo Slider Cooldown 429 và cập nhật bất biến xuống Storage
+  /**
+   * Xử lý kéo Slider Cooldown 429 và cập nhật bất biến xuống Storage
+   * @param {string | number} val
+   */
   const handleCooldownChange = (val) => {
     const parsed = Number(val);
     const clampedVal = Number.isFinite(parsed)
@@ -510,7 +579,12 @@ export const ApiKeyModal = ({
     }
   };
 
-  // Phân giải Huy hiệu trạng thái thông minh (chống NaN:NaN & khóa sàn 1p)
+  /**
+   * Phân giải Huy hiệu trạng thái thông minh (chống NaN:NaN & khóa sàn 1p)
+   * @param {any} status
+   * @param {string} keyStr
+   * @param {Record<string, any>} cooldownsMap
+   */
   const getStatusBadge = (status, keyStr, cooldownsMap) => {
     const cleanK = cleanKeyStr(keyStr);
     const cdData = cooldownsMap[cleanK];
@@ -526,7 +600,7 @@ export const ApiKeyModal = ({
         startedAt && Number.isFinite(startedAt.getTime())
       );
 
-      if (hasValidStart) {
+      if (hasValidStart && startedAt) {
         const hours = startedAt.getHours().toString().padStart(2, '0');
         const minutes = startedAt.getMinutes().toString().padStart(2, '0');
         return (
@@ -623,7 +697,16 @@ export const ApiKeyModal = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="apikey-modal-title"
-      onClick={handleCloseModal}
+      onMouseDown={(e) => {
+        backdropMouseDownRef.current =
+          e.button === 0 && e.target === e.currentTarget;
+      }}
+      onClick={(e) => {
+        if (backdropMouseDownRef.current && e.target === e.currentTarget) {
+          handleCloseModal();
+        }
+        backdropMouseDownRef.current = false;
+      }}
       className="fixed inset-0 z-[220] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in"
     >
       <div
@@ -660,7 +743,11 @@ export const ApiKeyModal = ({
                 type="password"
                 value={newKeyInput}
                 onChange={(e) => setNewKeyInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddKey()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.nativeEvent?.isComposing) {
+                    handleAddKey();
+                  }
+                }}
                 className="flex-1 p-2.5 border rounded-lg text-sm focus:ring-2 focus:ring-purple-200 outline-none font-mono"
                 placeholder={t('apiKeyPlace') || 'Dán Gemini API Key vào đây...'}
               />
@@ -775,10 +862,11 @@ export const ApiKeyModal = ({
             </p>
             <input
               type="range"
-              min="10"
-              max="1440"
-              step="10"
+              min={10}
+              max={1440}
+              step={10}
               value={localCooldown}
+              aria-label="Thời gian phạt 429 (phút)"
               onChange={(e) => handleCooldownChange(e.target.value)}
               className="w-full h-1.5 bg-orange-200 rounded-lg appearance-none cursor-pointer accent-orange-500"
             />
@@ -933,7 +1021,8 @@ export const ApiKeyModal = ({
 
 // Gắn vào window để tương thích ngược trong quá trình chuyển đổi
 if (typeof window !== 'undefined') {
-  window.ApiKeyModal = ApiKeyModal;
+  const win = /** @type {any} */ (window);
+  win.ApiKeyModal = ApiKeyModal;
 }
 
 export default ApiKeyModal;
