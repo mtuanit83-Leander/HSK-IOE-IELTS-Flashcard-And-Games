@@ -16,17 +16,17 @@ default                                            variable  src/components/layo
 LayoutAlignWidget                                            src/components/layout/BottomNav.jsx:8:14             
 default                                            variable  src/components/layout/BottomNav.jsx:179:16           
 default                                            variable  src/components/layout/ControlBar.jsx:155:16          
-default                                            variable  src/components/layout/FlashcardDisplay.jsx:908:16    
+default                                            variable  src/components/layout/FlashcardDisplay.jsx:1094:16   
 default                                            variable  src/components/modals/AiChatModal.jsx:1145:16        
 default                                            variable  src/components/modals/AiConfigModal.jsx:238:16       
-default                                            variable  src/components/modals/ApiKeyModal.jsx:939:16         
+default                                            variable  src/components/modals/ApiKeyModal.jsx:1028:16        
 default                                            variable  src/components/modals/ExamPoolManagerModal.jsx:397:16
 default                                            variable  src/components/modals/HanziWriterModal.jsx:330:16    
 default                                                      src/components/modals/HelperModals.jsx:279:16        
 default                                            variable  src/components/modals/HelpModal.jsx:287:16           
 default                                            variable  src/components/modals/LinkManagerModal.jsx:719:16    
 default                                            variable  src/components/modals/ManualInputModal.jsx:814:16    
-default                                            variable  src/components/modals/NotebookModal.jsx:1574:16      
+default                                            variable  src/components/modals/NotebookModal.jsx:1797:16      
 default                                                      src/components/modals/ProgressModals.jsx:240:16      
 default                                            variable  src/components/modals/SaveLoadModal.jsx:144:16       
 default                                            variable  src/components/modals/SettingsModal.jsx:1398:16      
@@ -34,8 +34,8 @@ isIOS                                                        src/config/constant
 default                                            variable  src/config/i18n.js:270:16                            
 default                                            variable  src/config/prompts.js:48:16                          
 default                                            variable  src/context/AppContext.jsx:573:16                    
-SkillRadarChart                                              src/features/exam/ExamReportUI.jsx:17:14             
-default                                            variable  src/features/exam/ExamReportUI.jsx:471:16            
+SkillRadarChart                                              src/features/exam/ExamReportUI.jsx:156:14            
+default                                            variable  src/features/exam/ExamReportUI.jsx:801:16            
 default                                            variable  src/features/exam/ExamReviewModal.jsx:573:16         
 default                                            variable  src/features/exam/ExamUIShell.jsx:2374:16            
 applyAntiStreakShuffle                                       src/features/games/common/gameHelpers.js:155:14      
@@ -49,7 +49,7 @@ useFillBlankLogic                                            src/features/games/
 default                                            variable  src/features/games/FillBlankGame.jsx:1891:16         
 default                                            variable  src/features/games/FillBlankUI.jsx:1443:16           
 default                                            variable  src/features/games/GameMenu.jsx:977:16               
-default                                            variable  src/features/games/GameView.jsx:1100:16              
+default                                            variable  src/features/games/GameView.jsx:1253:16              
 useImageQuizLogic                                            src/features/games/ImageQuizGame.jsx:558:14          
 default                                            variable  src/features/games/ImageQuizGame.jsx:2294:16         
 default                                            variable  src/features/games/ImageQuizUI.jsx:1193:16           
@@ -61,8 +61,8 @@ default                                            variable  src/features/games/
 useOddOneOutLogic                                            src/features/games/OddOneOutGame.jsx:433:14          
 default                                            variable  src/features/games/OddOneOutGame.jsx:2029:16         
 default                                            variable  src/features/games/OddOneOutUI.jsx:1159:16           
-usePronunciationLogic                                        src/features/games/PronunciationGame.jsx:626:14      
-default                                            variable  src/features/games/PronunciationGame.jsx:2307:16     
+usePronunciationLogic                                        src/features/games/PronunciationGame.jsx:615:14      
+default                                            variable  src/features/games/PronunciationGame.jsx:2300:16     
 stripPronunciationMarkers                                    src/features/games/PronunciationUI.jsx:189:14        
 default                                            variable  src/features/games/PronunciationUI.jsx:1252:16       
 default                                            variable  src/features/games/QuizGame.jsx:2134:16              
@@ -76,15 +76,15 @@ useSpotMistakeLogic                                          src/features/games/
 default                                            variable  src/features/games/SpotMistakeGame.jsx:2362:16       
 default                                            variable  src/features/games/SpotMistakeUI.jsx:1495:16         
 default                                            variable  src/hooks/useAiCurator.js:238:16                     
-Block6_2_useAiLogic                                          src/hooks/useAiLogic.js:1640:14                      
-default                                            variable  src/hooks/useAiLogic.js:1651:16                      
+Block6_2_useAiLogic                                          src/hooks/useAiLogic.js:1682:14                      
+default                                            variable  src/hooks/useAiLogic.js:1691:16                      
 Block6_4_useAppLogic                                         src/hooks/useAppLogic.js:1633:14                     
 default                                            variable  src/hooks/useAppLogic.js:1642:16                     
-MASTER_DATA_KEYS                                             src/hooks/useCoreState.js:31:14                      
-DEFAULT_SETTINGS                                             src/hooks/useCoreState.js:136:14                     
-DEFAULT_AI_CONFIG                                            src/hooks/useCoreState.js:156:14                     
-Block6_1_useCoreState                                        src/hooks/useCoreState.js:1103:14                    
-default                                            variable  src/hooks/useCoreState.js:1110:16                    
+MASTER_DATA_KEYS                                             src/hooks/useCoreState.js:38:14                      
+DEFAULT_SETTINGS                                             src/hooks/useCoreState.js:179:14                     
+DEFAULT_AI_CONFIG                                            src/hooks/useCoreState.js:199:14                     
+Block6_1_useCoreState                                        src/hooks/useCoreState.js:1163:14                    
+default                                            variable  src/hooks/useCoreState.js:1171:16                    
 useDataLogic                                                 src/hooks/useDataIO.js:2023:14                       
 Block6_3_useDataIO                                           src/hooks/useDataIO.js:2024:14                       
 default                                            variable  src/hooks/useDataIO.js:2034:16                       
@@ -92,8 +92,8 @@ Block6_7_useExamLogic                                        src/hooks/useExamLo
 default                                            variable  src/hooks/useExamLogic.js:1383:16                    
 Block6_8_useExamPoolLogic                                    src/hooks/useExamPoolLogic.js:735:14                 
 default                                            variable  src/hooks/useExamPoolLogic.js:742:16                 
-Block6_5_useStudyProgress                                    src/hooks/useStudyProgress.js:1331:14                
-default                                            variable  src/hooks/useStudyProgress.js:1338:16                
+Block6_5_useStudyProgress                                    src/hooks/useStudyProgress.js:1482:14                
+default                                            variable  src/hooks/useStudyProgress.js:1490:16                
 default                                            variable  src/services/db.js:589:16                            
 withApiLock                                                  src/services/geminiApi.js:192:14                     
 setKeyCooldown                                               src/services/geminiApi.js:224:14                     

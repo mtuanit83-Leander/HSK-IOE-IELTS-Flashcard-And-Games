@@ -29,10 +29,10 @@
  [32mΓ£ô[39m tests/unit/engines.test.js[2m > [22mTß║ºng Engines ΓÇö Kiß╗âm ─æß╗ïnh To├án diß╗çn src/engines/**[2m > [22m3. ExamProfiles ΓÇö Sinh Blueprint cho to├án bß╗Ö bß╗Ö ─æß╗ü chuß║⌐n[2m > [22msinh Blueprint hß╗úp lß╗ç cho mß╗ìi profile (IOE, HSK, IELTS ΓÇö Std & Mini) vß╗¢i cß║ú chuß╗ùi v├á mß║úng Level
  [32mΓ£ô[39m tests/unit/engines.test.js[2m > [22mTß║ºng Engines ΓÇö Kiß╗âm ─æß╗ïnh To├án diß╗çn src/engines/**[2m > [22m4. GameAlgoEngine & FallbackDataEngine (Offline Resilience)[2m > [22mFallbackDataEngine c├│ dß╗» liß╗çu dß╗▒ ph├▓ng hß╗úp lß╗ç nß║┐u ─æ╞░ß╗úc khai b├ío
  [32mΓ£ô[39m tests/unit/engines.test.js[2m > [22mTß║ºng Engines ΓÇö Kiß╗âm ─æß╗ïnh To├án diß╗çn src/engines/**[2m > [22m4. GameAlgoEngine & FallbackDataEngine (Offline Resilience)[2m > [22mGameAlgoEngine / GameOfflineEngine vß║¡n h├ánh ß╗òn ─æß╗ïnh kh├┤ng crash tr├¬n bß╗Ö thß║╗ EN & ZH
- [32mΓ£ô[39m tests/unit/engines.test.js[2m > [22mTß║ºng Engines ΓÇö Kiß╗âm ─æß╗ïnh To├án diß╗çn src/engines/**[2m > [22m5. QueueEngine ΓÇö Khß╗ƒi tß║ío & Hß╗ºy sß║ích kh├┤ng r├▓ rß╗ë[2m > [22mcreateQueueCoordinator khß╗ƒi tß║ío, nß║íp thß╗¡ v├á destroy() an to├án[33m 1204[2mms[22m[39m
+ [32mΓ£ô[39m tests/unit/engines.test.js[2m > [22mTß║ºng Engines ΓÇö Kiß╗âm ─æß╗ïnh To├án diß╗çn src/engines/**[2m > [22m5. QueueEngine ΓÇö Khß╗ƒi tß║ío & Hß╗ºy sß║ích kh├┤ng r├▓ rß╗ë[2m > [22mcreateQueueCoordinator khß╗ƒi tß║ío, nß║íp thß╗¡ v├á destroy() an to├án[33m 1212[2mms[22m[39m
 
 [2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
 [2m      Tests [22m [1m[32m29 passed[39m[22m[90m (29)[39m
-[2m   Start at [22m 05:56:09
-[2m   Duration [22m 19.35s[2m (transform 547ms, setup 0ms, collect 341ms, tests 1.64s, environment 25.72s, prepare 2.38s)[22m
+[2m   Start at [22m 19:16:22
+[2m   Duration [22m 18.13s[2m (transform 542ms, setup 0ms, collect 350ms, tests 1.69s, environment 22.36s, prepare 2.14s)[22m
 
