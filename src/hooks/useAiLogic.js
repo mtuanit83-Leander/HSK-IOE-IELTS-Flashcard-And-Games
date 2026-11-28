@@ -1,27 +1,21 @@
 // ============================================================================
 // FILE 76/85: src/hooks/useAiLogic.js
 // NGUỒN GỐC: Tầng 6 - Block 6.2 (AI Logic - Version 1.23)
-// PHIÊN BẢN: Ver 1.2
-// NGÀY GIỜ NÂNG CẤP: 26/11/2026 - 16:08 (GMT+7)
+// PHIÊN BẢN: Ver 1.3
+// NGÀY GIỜ NÂNG CẤP: 28/11/2026 - 07:25 (GMT+7)
 // NHIỆM VỤ: Cung cấp hook useAiLogic xử lý tự động phát (Auto-Play) và giao tiếp
 //           với AI Gemini (Làm giàu thẻ, giải thích ngữ pháp, hàng đợi ngầm).
-//           Nâng cấp Ver 1.2 (Lượt 4.1 — Diệt 1H + 1M Radar & 0 Problems tsc):
-//           1. Diệt 1H (R05) & 1M (R06B): Chuyển fc_total_tokens sang
-//              safeAddTotalTokens dùng Utils.safeLocalStorageSet (chống NaN);
-//              gỡ sạch window.Utils & window.FcDB legacy, dùng thẳng ES Modules.
-//           2. Diệt C4, S9 & S10 (Kho Master Lai + React 18 StrictMode):
-//              - Tách toàn bộ side-effect persist ra khỏi state updaters qua
-//                hàng đợi sau commit pendingPersistMapRef + persistSeq.
-//              - Ngừng ghi rò rỉ fc_notebook_* xuống localStorage (chỉ lưu FcDB).
-//              - Đồng bộ bất biến Kho Master Lai qua getMasterDataCache /
-//                setMasterDataCache + FcDB.set + bumpMasterDataVersion().
-//              - Đối khớp thẻ 2 tầng (exact -> Unicode NFC lọc \u0332).
-//           3. Diệt S11, S12, S13, F11 & F13: Fallback nguồn học cho Auto-Play,
-//              giải phóng Promise treo ở wait()/speak(), hủy sạch sleep timers
-//              khi unmount + bootTimer 80ms chống StrictMode double-fire, và
-//              đọc API Key 4 tầng tương thích kép (fc_gemini_api_key / fc_apikey).
+//           Nâng cấp Ver 1.3 (Lượt 5.2 - Zero-TSC Polish, chốt 0 errors 80/80):
+//           1. Diệt trọn 2/2 lỗi tsc --noEmit cuối cùng (2× TS2810 tại
+//              cancellableQueueDelay & wait) bằng ép kiểu tường minh
+//              `Promise<void>` + `resolve(undefined)` và JSDoc đầy đủ.
+//           2. Diệt D20: Chuẩn hóa khóa chống chạy trùng `processingCardsRef`
+//              theo tổ hợp `${reqLang}:${reqMode}:${normalizeTermKey(cardTerm)}`
+//              chống gửi kép request cho từ khác hoa/thường hoặc Unicode NFD/NFC.
+//           3. Bảo toàn 100% kiến trúc Ver 1.2: Radar 0/0/0/0, Kho Master Lai
+//              bất biến (RAM Mirror 0ms <-> FcDB), hàng đợi persist chuẩn
+//              React 18 StrictMode và vòng đời Auto-Play gốc Block 6.2.
 // ============================================================================
-
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { STORAGE_KEYS, CONFIG_SAMPLES } from '@/config/constants';
@@ -35,10 +29,8 @@ import {
 import { FcDB } from '@/services/db';
 import { fillCardWithAi } from '@/services/geminiApi';
 
-
 // Giới hạn số lần ngủ đông GLOBAL_PAUSE liên tiếp trước khi tự dừng hàng đợi (tránh treo vô hạn)
 const MAX_GLOBAL_PAUSE_RETRIES = 4;
-
 
 /**
  * Chuẩn hóa mã ngôn ngữ học về 'en' | 'zh'
@@ -47,14 +39,12 @@ const MAX_GLOBAL_PAUSE_RETRIES = 4;
  */
 const normalizeLearningLang = (lang) => (lang === 'zh' ? 'zh' : 'en');
 
-
 /**
  * Chuẩn hóa chế độ dữ liệu về 'vocab' | 'sentence'
  * @param {any} mode
  * @returns {'vocab' | 'sentence'}
  */
 const normalizeDataMode = (mode) => (mode === 'sentence' ? 'sentence' : 'vocab');
-
 
 /**
  * Chuẩn hóa khóa từ vựng theo Unicode NFC + loại bỏ ký tự gạch chân \u0332
@@ -69,7 +59,6 @@ const normalizeTermKey = (val) => {
     .trim()
     .toLowerCase();
 };
-
 
 /**
  * Tìm chỉ mục thẻ theo 2 tầng: khớp chính xác trước -> fallback chuẩn hóa NFC
@@ -86,7 +75,6 @@ const findCardIndex = (list, cardTerm) => {
   return list.findIndex((c) => c && normalizeTermKey(c.term) === normTarget);
 };
 
-
 /**
  * Đọc an toàn chuỗi từ localStorage
  * @param {string} key
@@ -101,7 +89,6 @@ const safeStorageGet = (key) => {
   }
 };
 
-
 /**
  * [V1.23 + F13] Đọc Level trực tiếp từ LocalStorage qua Utils.safeJsonParse
  * @param {any} lang
@@ -112,7 +99,6 @@ const getDirectLevelContext = (lang) => {
   const storageKey = `fc_current_level_${safeLang}`;
   /** @type {string[]} */
   let result = [];
-
 
   try {
     const parsed = Utils?.safeJsonParse ? Utils.safeJsonParse(storageKey, null) : null;
@@ -131,7 +117,6 @@ const getDirectLevelContext = (lang) => {
     // Bỏ qua lỗi đọc cấp độ trực tiếp
   }
 
-
   // Quét dự phòng trong settings cũ nếu vẫn rỗng
   if (result.length === 0) {
     try {
@@ -146,10 +131,8 @@ const getDirectLevelContext = (lang) => {
     }
   }
 
-
   return result;
 };
-
 
 /**
  * [VER 1.2] Đọc động khoảng nghỉ giữa các thẻ từ fc_ai_config (luôn chặn sàn nhất quán ở 3000ms)
@@ -169,7 +152,6 @@ const getDynamicQueueDelayMs = (defaultMs = 5000) => {
   return defaultMs;
 };
 
-
 /**
  * [VER 1.2 - DIỆT F11] Đọc API Key khả dụng 4 tầng tương thích kép:
  * State -> STORAGE_KEYS.API_KEY (fc_gemini_api_key) -> fc_apikey (legacy) -> fc_paid_apikey -> fc_apikey_pool
@@ -181,26 +163,21 @@ const resolveActiveApiKey = (stateApiKey = '') => {
   const cleanKey = (val) =>
     typeof val === 'string' ? val.replace(/["'\s]/g, '').trim() : '';
 
-
   const fromState = cleanKey(stateApiKey);
   if (fromState.length >= 10) return fromState;
-
 
   try {
     const primaryKeyName = STORAGE_KEYS?.API_KEY || 'fc_gemini_api_key';
     const fromPrimary = cleanKey(safeStorageGet(primaryKeyName));
     if (fromPrimary.length >= 10) return fromPrimary;
 
-
     if (primaryKeyName !== 'fc_apikey') {
       const fromLegacy = cleanKey(safeStorageGet('fc_apikey'));
       if (fromLegacy.length >= 10) return fromLegacy;
     }
 
-
     const fromPaid = cleanKey(safeStorageGet('fc_paid_apikey'));
     if (fromPaid.length >= 10) return fromPaid;
-
 
     const pool = Utils?.safeJsonParse ? Utils.safeJsonParse('fc_apikey_pool', []) : [];
     if (Array.isArray(pool)) {
@@ -211,10 +188,8 @@ const resolveActiveApiKey = (stateApiKey = '') => {
     // Bỏ qua lỗi truy cập storage
   }
 
-
   return '';
 };
-
 
 /**
  * Xây dựng danh sách trường bắt buộc theo chế độ (chỉ bắt buộc ảnh ở chế độ Từ vựng)
@@ -236,7 +211,6 @@ const buildRequiredFields = (lang, dataMode) => {
   return fields;
 };
 
-
 /**
  * Kiểm tra đường dẫn ảnh hợp lệ qua helpers (hỗ trợ http/https/data:image và chặn chuỗi rác)
  * @param {any} val
@@ -253,7 +227,6 @@ const checkIsValidImage = (val) => {
   );
 };
 
-
 /**
  * Dựng URL ảnh sạch qua buildSmartImageUrl, tuyệt đối chặn fallback bằng chữ Hán hoặc câu dài
  * @param {any} aiImage
@@ -266,7 +239,6 @@ const checkIsValidImage = (val) => {
 const resolveSafeImageFallback = (aiImage, existingImage, fallbackTerm, lang, dataMode) => {
   if (checkIsValidImage(aiImage)) return String(aiImage).trim();
 
-
   const smartBuilder =
     typeof buildSmartImageUrl === 'function'
       ? buildSmartImageUrl
@@ -274,9 +246,7 @@ const resolveSafeImageFallback = (aiImage, existingImage, fallbackTerm, lang, da
       ? Utils.buildSmartImageUrl
       : null;
 
-
   if (!smartBuilder) return '';
-
 
   // 1. Ưu tiên chuyển đổi nếu AI hoặc thẻ cũ lưu từ khóa tiếng Anh sạch (không chứa chữ Hán)
   const candidateKeyword =
@@ -284,12 +254,10 @@ const resolveSafeImageFallback = (aiImage, existingImage, fallbackTerm, lang, da
     (typeof existingImage === 'string' && existingImage.trim()) ||
     '';
 
-
   if (candidateKeyword && !/[\u4e00-\u9fa5]/.test(candidateKeyword)) {
     const builtFromKeyword = smartBuilder(candidateKeyword, '', dataMode);
     if (builtFromKeyword) return builtFromKeyword;
   }
-
 
   // 2. Chỉ cho phép fallback bằng term ở chế độ Từ vựng Tiếng Anh (cấm tuyệt đối chữ Hán & Câu văn)
   if (
@@ -302,10 +270,8 @@ const resolveSafeImageFallback = (aiImage, existingImage, fallbackTerm, lang, da
     return smartBuilder('', fallbackTerm, dataMode) || '';
   }
 
-
   return '';
 };
-
 
 /**
  * Lọc bỏ các trường nháp/metadata trước khi lưu vào thẻ (chống phình LocalStorage & IndexedDB)
@@ -317,7 +283,6 @@ const stripTransientAiFields = (payload) => {
   const { _tokenUsage: _tu, posAnalysis: _pa, image_keyword: _ik, ...cleanData } = payload;
   return cleanData;
 };
-
 
 /**
  * Xác định danh sách thẻ đang hiển thị (State Targeting)
@@ -336,7 +301,6 @@ const getActiveCardsArray = (state) => {
   return Array.isArray(state.cards) ? state.cards : [];
 };
 
-
 /**
  * [VER 1.2 - DIỆT 1H RADAR] Cộng dồn tổng số Token an toàn qua Utils.safeLocalStorageSet + chống NaN
  * @param {any} tokenUsage
@@ -346,18 +310,15 @@ const safeAddTotalTokens = (tokenUsage, setTotalTokens) => {
   const used = Number(tokenUsage?.totalTokenCount);
   if (!Number.isFinite(used) || used <= 0) return;
 
-
   const rawPrev = Number(safeStorageGet('fc_total_tokens'));
   const prevSafe = Number.isFinite(rawPrev) && rawPrev > 0 ? Math.floor(rawPrev) : 0;
   const newTotal = prevSafe + Math.floor(used);
-
 
   Utils?.safeLocalStorageSet?.('fc_total_tokens', String(newTotal));
   if (typeof setTotalTokens === 'function') {
     setTotalTokens(newTotal);
   }
 };
-
 
 /**
  * [VER 1.2 - DIỆT 1M RADAR] Cầu nối gọi trực tiếp ES Module fillCardWithAi đủ 7 tham số
@@ -392,7 +353,6 @@ const callFillCardWithAi = async (
   );
 };
 
-
 /**
  * Helper trích xuất thông điệp lỗi an toàn cho tsc/checkJs
  * @param {unknown} err
@@ -405,7 +365,6 @@ const getErrorMessage = (err) => {
   }
   return String(err || 'Lỗi không xác định');
 };
-
 
 /**
  * Hook quản lý Auto-Play và các tác vụ AI Gemini (Làm giàu thẻ, Giải thích ngữ pháp, Hàng đợi ngầm)
@@ -438,11 +397,9 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
     studySourceName: coreStudySourceName
   } = core;
 
-
   // Giữ tham chiếu core mới nhất trong Ref để tuyệt đối không đưa object `core` vào useCallback deps
   const coreRef = useRef(core);
   coreRef.current = core;
-
 
   // Phong ấn callbacks vào Ref để tránh làm đổi tham chiếu runAutoPlay khi render lại
   const callbacksRef = useRef(callbacks);
@@ -450,12 +407,10 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
     callbacksRef.current = callbacks;
   }, [callbacks]);
 
-
   // Theo dõi vòng đời mount (StrictMode-safe) & quản lý dọn sạch timer ngủ đông (Diệt S13)
   const isMountedRef = useRef(true);
   /** @type {import('react').MutableRefObject<Set<{ id: ReturnType<typeof setTimeout>, resolve: () => void }>>} */
   const activeSleepTimersRef = useRef(new Set());
-
 
   // [VER 1.2 - DIỆT S12] Ref giải phóng Promise treo của wait() & speak() khi dừng/chuyển thẻ
   /** @type {import('react').MutableRefObject<(() => void) | null>} */
@@ -463,27 +418,22 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
   /** @type {import('react').MutableRefObject<(() => void) | null>} */
   const autoPlaySpeakResolveRef = useRef(null);
 
-
   // [VER 1.2 - DIỆT C4] Hàng đợi persist sau commit chuẩn React 18 StrictMode (Map khử trùng idempotent)
   /** @type {import('react').MutableRefObject<Map<string, { kind: 'db' | 'ls', key: string, data: any }>>} */
   const pendingPersistMapRef = useRef(new Map());
   const [persistSeq, setPersistSeq] = useState(0);
 
-
   // Cờ báo hiệu vòng lặp đang chạy và ID phiên chạy chống chồng chéo
   const isLoopRunning = useRef(false);
   const autoPlaySessionRef = useRef(0);
-
 
   // Hàng đợi tuần tự cho tính năng Làm giàu thẻ khi đang học
   /** @type {import('react').MutableRefObject<string[]>} */
   const enrichQueueRef = useRef([]);
   const isProcessingEnrichQueue = useRef(false);
 
-
   // Cờ theo dõi trạng thái Bật/Tắt thực tế của Học AI để chỉ gọi abort() khi chuyển Bật -> Tắt
   const wasLearnAiActiveRef = useRef(false);
-
 
   // [VER 1.2 - DIỆT S12] Hủy toàn bộ timer & giải phóng tức thì mọi Promise đang chờ của Auto-Play
   const cancelPendingAutoPlayWait = useCallback(() => {
@@ -503,30 +453,37 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
     }
   }, [autoPlayTimeoutRef]);
 
-
-  // [VER 1.2 - DIỆT S13] Hàm ngủ có thể hủy tức thì khi Unmount (cho AI Queue & Enrich Queue)
-  const cancellableQueueDelay = useCallback((ms) => {
-    if (!isMountedRef.current || ms <= 0) return Promise.resolve();
-    return new Promise((resolve) => {
-      /** @type {{ id: ReturnType<typeof setTimeout>, resolve: () => void }} */
-      const entry = {
-        id: /** @type {any} */ (null),
-        resolve: () => {}
-      };
-      let settled = false;
-      const done = () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(entry.id);
-        activeSleepTimersRef.current.delete(entry);
-        resolve();
-      };
-      entry.resolve = done;
-      entry.id = setTimeout(done, ms);
-      activeSleepTimersRef.current.add(entry);
-    });
-  }, []);
-
+  // [VER 1.3 - DIỆT TS2810 & S13] Hàm ngủ có thể hủy tức thì khi Unmount (cho AI Queue & Enrich Queue)
+  const cancellableQueueDelay = useCallback(
+    /**
+     * @param {number} ms
+     * @returns {Promise<void>}
+     */
+    (ms) => {
+      if (!isMountedRef.current || ms <= 0) return Promise.resolve();
+      return /** @type {Promise<void>} */ (
+        new Promise((resolve) => {
+          /** @type {{ id: ReturnType<typeof setTimeout>, resolve: () => void }} */
+          const entry = {
+            id: /** @type {any} */ (null),
+            resolve: () => {}
+          };
+          let settled = false;
+          const done = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(entry.id);
+            activeSleepTimersRef.current.delete(entry);
+            resolve(undefined);
+          };
+          entry.resolve = done;
+          entry.id = setTimeout(done, ms);
+          activeSleepTimersRef.current.add(entry);
+        })
+      );
+    },
+    []
+  );
 
   // Dọn dẹp toàn bộ timers & Promise đang chờ khi unmount (hỗ trợ remount StrictMode)
   useEffect(() => {
@@ -544,13 +501,11 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
     };
   }, [cancelPendingAutoPlayWait]);
 
-
   // [VER 1.2 - DIỆT C4] Thực thi ghi FcDB / Utils.safeLocalStorageSet sau khi React commit xong
   useEffect(() => {
     if (pendingPersistMapRef.current.size === 0) return;
     const tasks = Array.from(pendingPersistMapRef.current.values());
     pendingPersistMapRef.current.clear();
-
 
     tasks.forEach((task) => {
       if (task.kind === 'db') {
@@ -563,12 +518,16 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
     });
   }, [persistSeq]);
 
-
   // [VER 1.2 - DIỆT C4, S9, S10] Đồng bộ dữ liệu thẻ bất biến xuyên 5 kho + Kho Master Lai (RAM Mirror <-> FcDB)
   const syncCardAcrossPools = useCallback(
+    /**
+     * @param {string} cardTerm
+     * @param {Record<string, any>} patchData
+     * @param {string | null} [targetLang=null]
+     * @param {string | null} [targetMode=null]
+     */
     (cardTerm, patchData, targetLang = null, targetMode = null) => {
       if (!cardTerm || !patchData || typeof patchData !== 'object') return;
-
 
       const liveState = latestStateRef?.current || coreRef.current;
       const activeLang = normalizeLearningLang(liveState?.lang || coreLang);
@@ -580,13 +539,11 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
       const canPersistMainCardsLs =
         isSameActiveLang && isSameActiveMode && !liveState?.studySourceName;
 
-
       const sampleCfg = resolvedLang === 'zh' ? CONFIG_SAMPLES?.zh : CONFIG_SAMPLES?.en;
       const dataStorageKey = sampleCfg?.dataKey || `fc_data_${resolvedLang}`;
       const notebookDbKey = `fc_notebook_${resolvedLang}`;
       const masteredDbKey = `fc_mastered_${resolvedLang}`;
       const incorrectDbKey = `${STORAGE_KEYS?.INCORRECT_LIST || 'fc_incorrect_list'}_${resolvedLang}`;
-
 
       /**
        * Đẩy tác vụ ghi sau commit vào Map (idempotent dưới StrictMode)
@@ -598,7 +555,6 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
         if (!key) return;
         pendingPersistMapRef.current.set(`${kind}:${key}`, { kind, key, data });
       };
-
 
       /**
        * Pure updater: không thực thi side-effect I/O trực tiếp trong thân updater
@@ -616,7 +572,6 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
         if (lsKey) enqueuePersist('ls', lsKey, next);
         return next;
       };
-
 
       if (isSameActiveLang && isMountedRef.current) {
         if (isSameActiveMode && typeof setCards === 'function') {
@@ -655,7 +610,6 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
         ).catch(() => {});
       }
 
-
       // [DIỆT S9] Đồng bộ bất biến Kho Master Lai (RAM Mirror 0ms <-> IndexedDB) & bumpMasterDataVersion
       const masterDataKey = `fc_master_data_${resolvedLang}_${resolvedMode}`;
       (async () => {
@@ -668,11 +622,9 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
             return;
           }
 
-
           /** @type {Record<string, any>} */
           const nextMaster = { ...masterData };
           let updatedMaster = false;
-
 
           Object.keys(masterData).forEach((levelKey) => {
             const levelArr = masterData[levelKey];
@@ -685,7 +637,6 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
               updatedMaster = true;
             }
           });
-
 
           if (updatedMaster) {
             setMasterDataCache(masterDataKey, nextMaster);
@@ -713,53 +664,51 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
     ]
   );
 
-
   // ==================================================================================
-  // 1. CÁC HÀM TRÌ HOÃN (DELAYS — CHỐNG RÒ RỈ PROMISE TREO)
+  // 1. CÁC HÀM TRÌ HOÃN (DELAYS — CHỐNG RÒ RỈ PROMISE TREO & SẠCH 0 TS2810)
   // ==================================================================================
-  /**
-   * Hàm đợi an toàn dùng riêng cho AutoPlay (có thể bị ngắt & resolve tức thì bởi cancelPendingAutoPlayWait)
-   * @param {number} ms
-   * @returns {Promise<void>}
-   */
   const wait = useCallback(
+    /**
+     * Hàm đợi an toàn dùng riêng cho AutoPlay (có thể bị ngắt & resolve tức thì bởi cancelPendingAutoPlayWait)
+     * @param {number} ms
+     * @returns {Promise<void>}
+     */
     (ms) =>
-      new Promise((resolve) => {
-        if (autoPlayTimeoutRef?.current) {
-          clearTimeout(autoPlayTimeoutRef.current);
-          autoPlayTimeoutRef.current = null;
-        }
-        if (autoPlayWaitResolveRef.current) {
-          const prevResolve = autoPlayWaitResolveRef.current;
-          autoPlayWaitResolveRef.current = null;
-          prevResolve();
-        }
-
-
-        let settled = false;
-        const done = () => {
-          if (settled) return;
-          settled = true;
-          if (autoPlayWaitResolveRef.current === done) {
-            autoPlayWaitResolveRef.current = null;
-          }
+      /** @type {Promise<void>} */ (
+        new Promise((resolve) => {
           if (autoPlayTimeoutRef?.current) {
             clearTimeout(autoPlayTimeoutRef.current);
             autoPlayTimeoutRef.current = null;
           }
-          resolve();
-        };
+          if (autoPlayWaitResolveRef.current) {
+            const prevResolve = autoPlayWaitResolveRef.current;
+            autoPlayWaitResolveRef.current = null;
+            prevResolve();
+          }
 
+          let settled = false;
+          const done = () => {
+            if (settled) return;
+            settled = true;
+            if (autoPlayWaitResolveRef.current === done) {
+              autoPlayWaitResolveRef.current = null;
+            }
+            if (autoPlayTimeoutRef?.current) {
+              clearTimeout(autoPlayTimeoutRef.current);
+              autoPlayTimeoutRef.current = null;
+            }
+            resolve(undefined);
+          };
 
-        autoPlayWaitResolveRef.current = done;
-        const timerId = setTimeout(done, ms);
-        if (autoPlayTimeoutRef) {
-          autoPlayTimeoutRef.current = timerId;
-        }
-      }),
+          autoPlayWaitResolveRef.current = done;
+          const timerId = setTimeout(done, ms);
+          if (autoPlayTimeoutRef) {
+            autoPlayTimeoutRef.current = timerId;
+          }
+        })
+      ),
     [autoPlayTimeoutRef]
   );
-
 
   // ==================================================================================
   // 2. LOGIC AUTO-PLAY (STABLE VERSION - KHÔI PHỤC NGUYÊN BẢN BLOCK 6.2 + DIỆT S11/S12)
@@ -767,7 +716,6 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
   const runAutoPlay = useCallback(async () => {
     if (isLoopRunning.current) return;
     if (!latestStateRef?.current?.isAutoPlaying) return;
-
 
     isLoopRunning.current = true;
     const sessionId = ++autoPlaySessionRef.current;
@@ -778,7 +726,6 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
           autoPlaySessionRef.current === sessionId
       );
 
-
     try {
       const live = latestStateRef.current;
       const idx = live.currentCardIndex;
@@ -786,12 +733,10 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
       // [DIỆT S11] Ưu tiên state.cards[idx] (bảo toàn Shuffle), fallback getActiveCardsArray nếu rỗng
       const card = live.cards?.[idx] || getActiveCardsArray(live)?.[idx];
 
-
       if (!card) {
         isLoopRunning.current = false;
         return;
       }
-
 
       // --- KIỂM TRA SRS ---
       if (
@@ -809,15 +754,12 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
         return;
       }
 
-
       const textToSpeak = card.term;
       const repeatCount = Math.max(1, settings?.repeatCount || 1);
-
 
       // --- VÒNG LẶP LẠI ---
       for (let i = 0; i < repeatCount; i++) {
         if (!isSessionValid()) break;
-
 
         // 1. Reset mặt trước
         setIsContentHidden(false);
@@ -826,9 +768,7 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
           await wait(600);
         }
 
-
         if (!isSessionValid()) break;
-
 
         // 2. Đọc (Speak) kèm cơ chế giải phóng Promise & dọn timer an toàn chống rò rỉ
         const minTimePromise = wait(1500);
@@ -844,14 +784,12 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
           };
           autoPlaySpeakResolveRef.current = finishSpeak;
 
-
           if (typeof callbacksRef.current?.speak === 'function') {
             callbacksRef.current.speak(textToSpeak, null, null, finishSpeak);
           } else {
             finishSpeak();
           }
         });
-
 
         // Tính toán thời gian động dựa trên độ dài văn bản (150ms/ký tự, tối thiểu 10 giây)
         const dynamicTimeoutMs = Math.max(
@@ -864,7 +802,6 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
           speakTimeoutId = setTimeout(() => resolve('timeout'), dynamicTimeoutMs);
         });
 
-
         try {
           await Promise.all([
             Promise.race([speakPromise, timeoutPromise]),
@@ -875,13 +812,10 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
           autoPlaySpeakResolveRef.current = null;
         }
 
-
         if (!isSessionValid()) break;
         await wait(settings?.delayAfterRead || 1000);
 
-
         if (!isSessionValid()) break;
-
 
         // 3. Lật ra sau
         if (!latestStateRef.current.isFlipLocked) {
@@ -892,7 +826,6 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
         } else {
           await wait(settings?.delayFlip || 2000);
         }
-
 
         // 4. Nghỉ giữa các lần lặp
         if (i < repeatCount - 1) {
@@ -906,7 +839,6 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
         }
       }
 
-
       // --- CHUYỂN THẺ ---
       if (isSessionValid()) {
         if (latestStateRef.current.isFlipped) {
@@ -916,7 +848,6 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
         if (!isSessionValid()) return;
         await wait(settings?.delayNext || 1500);
         if (!isSessionValid()) return;
-
 
         isLoopRunning.current = false;
         if (typeof callbacksRef.current?.handleNext === 'function') {
@@ -935,12 +866,10 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
     }
   }, [latestStateRef, setIsFlipped, setIsContentHidden, wait]);
 
-
   // [EFFECT MASTER] - Khóa chặt dependency [isAutoPlaying, currentCardIndex] theo đúng Block 6.2 gốc
   // Tuyệt đối không đưa runAutoPlay/callbacks vào dependency để tránh hủy timer khi lật thẻ (setIsFlipped)
   useEffect(() => {
     cancelPendingAutoPlayWait();
-
 
     if (isAutoPlaying) {
       isLoopRunning.current = false;
@@ -954,13 +883,11 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
       }
     }
 
-
     return () => {
       cancelPendingAutoPlayWait();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAutoPlaying, currentCardIndex]);
-
 
   // ==================================================================================
   // 3. CÁC LOGIC KHÁC (AI QUEUE CHO SỔ TAY)
@@ -970,10 +897,8 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
     if (isAiQueueProcessing.current) return;
     isAiQueueProcessing.current = true;
 
-
     let consecutiveFailures = 0;
     let globalPauseRetries = 0;
-
 
     // Bọc try...finally ngoài vòng while đảm bảo 0% nguy cơ deadlock khóa hàng đợi
     try {
@@ -984,11 +909,9 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
         const reqLang = normalizeLearningLang(liveState?.lang || coreLang);
         const reqMode = normalizeDataMode(liveState?.dataMode || coreDataMode);
 
-
         let shouldDelay = false;
         let shouldShift = true;
         let customDelayMs = 0;
-
 
         try {
           if (!currentApiKey) {
@@ -998,10 +921,8 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
           const noteIdx = findCardIndex(currentNotebook, term);
           const noteCard = noteIdx !== -1 ? currentNotebook[noteIdx] : null;
 
-
           // Chỉ bắt buộc 'image' ở chế độ Từ vựng (!isSentence)
           const requiredFields = buildRequiredFields(reqLang, reqMode);
-
 
           const missingFields = noteCard
             ? requiredFields.filter((field) => {
@@ -1019,17 +940,13 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
               })
             : requiredFields;
 
-
           if (missingFields.length === 0) {
             continue;
           }
 
-
           shouldDelay = true;
 
-
           const levelContext = getDirectLevelContext(reqLang);
-
 
           const res = await callFillCardWithAi(
             term,
@@ -1041,14 +958,11 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
             noteCard || null
           );
 
-
           if (!isMountedRef.current) break;
-
 
           if (res && typeof res === 'object') {
             safeAddTotalTokens(res._tokenUsage, setTotalTokens);
             const cleanRes = stripTransientAiFields(res);
-
 
             if (missingFields.includes('image')) {
               const safeImg = resolveSafeImageFallback(
@@ -1065,7 +979,6 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
               }
             }
 
-
             syncCardAcrossPools(
               term,
               {
@@ -1076,7 +989,6 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
               reqMode
             );
           }
-
 
           consecutiveFailures = 0;
           globalPauseRetries = 0;
@@ -1142,7 +1054,6 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
     syncCardAcrossPools
   ]);
 
-
   // ==================================================================================
   // 4. LOGIC ENRICH CARD (Làm giàu thẻ học hiện tại)
   // ==================================================================================
@@ -1162,12 +1073,10 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
         return false;
       }
 
-
       const state = latestStateRef?.current || coreRef.current;
       const reqLang = normalizeLearningLang(state?.lang || coreLang);
       const reqMode = normalizeDataMode(state?.dataMode || coreDataMode);
       const activeArr = getActiveCardsArray(state);
-
 
       /** @type {string | null} */
       let cardTerm = null;
@@ -1184,7 +1093,6 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
         cardTerm = activeArr[idx]?.term || null;
       }
 
-
       if (!cardTerm) {
         if (!silent && typeof notify === 'function') {
           notify('Không xác định được từ vựng!', 'error');
@@ -1192,24 +1100,23 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
         return false;
       }
 
+      // [VER 1.3 - DIỆT D20] Khóa chống chạy trùng theo ngôn ngữ + chế độ + Unicode NFC
+      const processingKey = `${reqLang}:${reqMode}:${normalizeTermKey(cardTerm) || cardTerm}`;
 
-      if (processingCardsRef?.current?.has(cardTerm)) {
+      if (processingCardsRef?.current?.has(processingKey)) {
         if (!silent && typeof notify === 'function') {
           notify('Đang xử lý từ này...', 'info');
         }
         return false;
       }
 
-
-      processingCardsRef?.current?.add(cardTerm);
+      processingCardsRef?.current?.add(processingKey);
       if (!silent && isMountedRef.current) setIsAiLoading(true);
-
 
       try {
         const matchIdx = findCardIndex(activeArr, cardTerm);
         const currentCard = matchIdx !== -1 ? activeArr[matchIdx] : null;
         const requiredFields = buildRequiredFields(reqLang, reqMode);
-
 
         const missingFields = requiredFields.filter((f) => {
           const val = currentCard?.[f];
@@ -1224,7 +1131,6 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
           return !val || String(val).trim() === '';
         });
 
-
         // Trả về false nếu không gọi API, giúp quá trình chạy ngầm quét 0ms
         if (missingFields.length === 0) {
           if (!silent && typeof notify === 'function') {
@@ -1233,9 +1139,7 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
           return false;
         }
 
-
         const levelContext = getDirectLevelContext(reqLang);
-
 
         const enriched = await callFillCardWithAi(
           cardTerm,
@@ -1247,15 +1151,12 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
           currentCard || null
         );
 
-
         if (!enriched || typeof enriched !== 'object') {
           throw new Error('AI trả về dữ liệu rỗng.');
         }
 
-
         safeAddTotalTokens(enriched._tokenUsage, setTotalTokens);
         const cleanEnriched = stripTransientAiFields(enriched);
-
 
         if (missingFields.includes('image')) {
           const safeImg = resolveSafeImageFallback(
@@ -1272,16 +1173,13 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
           }
         }
 
-
         const enrichedData = {
           ...cleanEnriched,
           ai_explanation: cleanEnriched.example || currentCard?.example || 'Enriched',
           is_enriched: true
         };
 
-
         syncCardAcrossPools(cardTerm, enrichedData, reqLang, reqMode);
-
 
         if (!silent && typeof notify === 'function') {
           notify('Đã bổ sung thông tin cơ bản!', 'success');
@@ -1296,7 +1194,7 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
         }
         return false;
       } finally {
-        processingCardsRef?.current?.delete(cardTerm);
+        processingCardsRef?.current?.delete(processingKey);
         if (!silent && isMountedRef.current) setIsAiLoading(false);
       }
     },
@@ -1312,7 +1210,6 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
     ]
   );
 
-
   /**
    * @param {number} [index]
    */
@@ -1325,7 +1222,6 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
         return;
       }
 
-
       const state = latestStateRef?.current || coreRef.current;
       const reqLang = normalizeLearningLang(state?.lang || coreLang);
       const reqMode = normalizeDataMode(state?.dataMode || coreDataMode);
@@ -1334,14 +1230,11 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
       const targetCard = activeArr[targetIdx];
       const cardTerm = targetCard?.term;
 
-
       if (!cardTerm) return;
-
 
       if (isMountedRef.current) setIsAiLoading(true);
       try {
         const levelContext = getDirectLevelContext(reqLang);
-
 
         const result = await callFillCardWithAi(
           cardTerm,
@@ -1352,7 +1245,6 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
           levelContext,
           targetCard || null
         );
-
 
         if (result?.analysis) {
           safeAddTotalTokens(result._tokenUsage, setTotalTokens);
@@ -1378,7 +1270,6 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
     ]
   );
 
-
   /**
    * @param {string} term
    * @param {Record<string, any> | null} [existingData=null]
@@ -1393,16 +1284,13 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
         return null;
       }
 
-
       const state = latestStateRef?.current || coreRef.current;
       const reqLang = normalizeLearningLang(state?.lang || coreLang);
       const reqMode = normalizeDataMode(state?.dataMode || coreDataMode);
 
-
       if (isMountedRef.current) setIsAiLoading(true);
       try {
         const levelContext = getDirectLevelContext(reqLang);
-
 
         const res = await callFillCardWithAi(
           term,
@@ -1413,7 +1301,6 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
           levelContext,
           existingData
         );
-
 
         if (res && typeof res === 'object') {
           safeAddTotalTokens(res._tokenUsage, setTotalTokens);
@@ -1443,7 +1330,6 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
     [apiKey, coreDataMode, coreLang, latestStateRef, setIsAiLoading, setTotalTokens]
   );
 
-
   // ==================================================================================
   // 5. ĐỘNG CƠ HÀNG ĐỢI LÀM GIÀU THẺ (ENRICH QUEUE WORKER)
   // ==================================================================================
@@ -1451,10 +1337,8 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
     if (isProcessingEnrichQueue.current) return;
     isProcessingEnrichQueue.current = true;
 
-
     let consecutiveFailures = 0;
     let globalPauseRetries = 0;
-
 
     try {
       while (isMountedRef.current && enrichQueueRef.current.length > 0) {
@@ -1462,7 +1346,6 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
         let shouldDelay = false;
         let shouldShift = true;
         let customDelayMs = 0;
-
 
         try {
           const apiHit = await handleAiEnrichCard({ term: termToEnrich }, true);
@@ -1521,16 +1404,13 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
     }
   }, [cancellableQueueDelay, handleAiEnrichCard]);
 
-
   // Tự động làm sạch hàng đợi nền khi người dùng chuyển ngôn ngữ, chế độ hoặc nguồn học
   useEffect(() => {
     enrichQueueRef.current = [];
   }, [coreLang, coreDataMode, coreIsStudyingNotebook, coreStudySourceName]);
 
-
   // Tính số lượng thẻ hiện có của nguồn học đang active để làm dependency ổn định cho Effect
   const activeCardsCount = getActiveCardsArray(core).length;
-
 
   // Effect: Batch Enrich (Chạy Tuần Tự) — có bootTimer 80ms chống StrictMode double-fire (Diệt S13)
   useEffect(() => {
@@ -1543,10 +1423,8 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
         hasEffectiveApiKey
     );
 
-
     if (isLearnAiActive) {
       wasLearnAiActiveRef.current = true;
-
 
       if (
         typeof window !== 'undefined' &&
@@ -1556,10 +1434,8 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
         window.__currentGameAbortController = new AbortController();
       }
 
-
       const currentTerm = activeCards[currentCardIndex]?.term;
       if (!currentTerm) return undefined;
-
 
       // Trì hoãn 80ms để React 18 StrictMode không kích hoạt 2 luồng Gemini song song lúc mount
       const bootTimer = setTimeout(() => {
@@ -1567,12 +1443,10 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
         const latestCards = getActiveCardsArray(latestStateRef?.current || coreRef.current);
         if (latestCards.length === 0) return;
 
-
         /** @type {string[]} */
         const nextTerms = [];
         const liveTerm = latestCards[currentCardIndex]?.term;
         if (liveTerm) nextTerms.push(liveTerm);
-
 
         // Nạp thêm 2 thẻ kế tiếp
         for (let i = 1; i <= 2; i++) {
@@ -1583,25 +1457,20 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
           }
         }
 
-
         nextTerms.forEach((term) => {
           if (!enrichQueueRef.current.includes(term)) {
             enrichQueueRef.current.push(term);
           }
         });
 
-
         processEnrichQueue();
       }, 80);
-
 
       return () => clearTimeout(bootTimer);
     }
 
-
     // Dọn dẹp hàng đợi nếu tắt tính năng hoặc thoát màn hình
     enrichQueueRef.current = [];
-
 
     // CHỈ kích hoạt Kill Switch khi chế độ Học AI thực sự chuyển từ Bật -> Tắt
     if (wasLearnAiActiveRef.current) {
@@ -1626,7 +1495,6 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
     processEnrichQueue
   ]);
 
-
   return {
     runAutoPlay,
     processAiQueue,
@@ -1636,9 +1504,7 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
   };
 };
 
-
 export const Block6_2_useAiLogic = useAiLogic;
-
 
 if (typeof window !== 'undefined') {
   const win = /** @type {any} */ (window);
@@ -1646,6 +1512,5 @@ if (typeof window !== 'undefined') {
   win.Block14_useAiLogic = useAiLogic;
   win.useAiLogic = useAiLogic;
 }
-
 
 export default useAiLogic;
