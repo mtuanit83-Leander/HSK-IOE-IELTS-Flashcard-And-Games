@@ -1,8 +1,8 @@
 # BÁO CÁO RADAR RÀ SOÁT TOÀN ỨNG DỤNG FLASHCARD-3D
 
-* **Thời điểm quét:** 28/11/2026 - 07:26:21
+* **Thời điểm quét:** 28/11/2026 - 18:47:12
 * **Phạm vi quét:** `80` tệp mã nguồn trong `src/`
-* **Thời gian thực thi:** `305 ms`
+* **Thời gian thực thi:** `525 ms`
 
 ---
 
@@ -38,7 +38,7 @@ Các khóa dưới đây chưa có trong danh mục chuẩn `CANONICAL_FC_KEYS` 
 | `fc_debug_legacy_ai` | 3 | `src/engines/exam/index.js:1495`, `src/features/games/GameMenu.jsx:66`, `src/features/games/GameMenu.jsx:240` |
 | `fc_fillblank_config` | 1 | `src/features/games/FillBlankUI.jsx:23` |
 | `fc_game_auto_next_delay` | 1 | `src/features/games/QuizGame.jsx:151` |
-| `fc_gemini_api_key` | 11 | `src/components/modals/ApiKeyModal.jsx:119`, `src/components/modals/NotebookModal.jsx:306`, `src/components/modals/SettingsModal.jsx:633` |
+| `fc_gemini_api_key` | 12 | `src/components/modals/ApiKeyModal.jsx:119`, `src/components/modals/NotebookModal.jsx:306`, `src/components/modals/SettingsModal.jsx:633` |
 | `fc_global_api_pause` | 2 | `src/services/geminiApi.js:260`, `src/services/geminiApi.js:270` |
 | `fc_global_retry_bag_vi` | 1 | `src/hooks/useCoreState.js:601` |
 | `fc_imagequiz_config` | 2 | `src/features/games/ImageQuizUI.jsx:247`, `src/features/games/ImageQuizUI.jsx:285` |
