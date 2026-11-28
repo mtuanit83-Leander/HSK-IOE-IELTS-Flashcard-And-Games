@@ -1,24 +1,23 @@
 // ============================================================================
 // FILE 78/85: src/hooks/useStudyProgress.js
 // NGUỒN GỐC: Tầng 6 - Block 6.5 (Study Progress Logic - Version 1.02)
-// PHIÊN BẢN: Ver 1.1
-// NGÀY GIỜ NÂNG CẤP: 24/11/2026 - 14:59 (GMT+7)
+// PHIÊN BẢN: Ver 1.2
+// NGÀY GIỜ NÂNG CẤP: 28/11/2026 - 16:48 (GMT+7)
 // NHIỆM VỤ: Chuyên trách quản lý Hồ sơ học thuật của người dùng (Sổ tay,
 //           Đã thuộc, Lỗi sai) và Thuật toán SRS.
-//           Nâng cấp Ver 1.1 (Chốt Production ~9.8/10 — 0 CRITICAL / 0 MEDIUM):
-//           1. Khóa chặt đối khớp từ đồng âm khác id trong isMatchingCard
-//              (cấm fallthrough sang term) & thuật toán O(1) 3 tập cho
-//              handleRestoreAllMastered.
-//           2. Diệt 100% Lost Update trên toàn tuyến incorrectList
-//              (handleLogWrong đơn lẻ & batch mảng, handleRemoveWrong,
-//              handleMarkMastered) qua pure functional updater + hàng đợi
-//              pendingPersistTasksRef + nhịp persistSeq (gom 1 lần ghi
-//              IndexedDB duy nhất/tick + vá Cross-Lang tuần tự).
-//           3. Thống nhất getLiveList / getIsReviewMode, phòng thủ đa biến thể
-//              'sentences' -> 'sentence' trong normalizeDataMode, mở rộng
-//              Local-First Lookup đủ 6 nguồn (thêm mastered & incorrectList),
-//              timestamp xác định (baseTimestamp + idx) & vá đủ 2 kho Master
-//              trong Review Mode.
+//           Nâng cấp Ver 1.2 (Đồng bộ chuỗi 5 Hooks — Vá trọn SP1 & SP2):
+//           1. [SP1] Bảo toàn 100% thứ tự gốc `fc_data_${lang}` khi đang bật
+//              Trộn bài (`isShuffle === true`) trong toàn bộ 4 luồng:
+//              `handleMarkMastered`, `handleRestoreMastered`,
+//              `handleRestoreAllMastered` và `syncCardSrsAcrossStores`
+//              (chỉ vá cục bộ trên bộ thẻ gốc, không ghi đè mảng đã trộn).
+//           2. [SP2] Nâng cấp `resolveActiveApiKey` quét đủ 4 tầng chuẩn hệ thống
+//              (`preferredKey` -> `STORAGE_KEYS.API_KEY` (`fc_gemini_api_key`)
+//              -> `fc_apikey` (legacy) -> `fc_paid_apikey` -> `fc_apikey_pool`),
+//              đồng bộ 100% với `useAiLogic Ver 1.4` & `gameHelpers`.
+//           3. Chuẩn hóa JSDoc toàn tuyến (`0 Problems` `tsc --noEmit`),
+//              giữ nguyên 0 CRITICAL StrictMode, 0 Lost Update, Local-First
+//              Lookup 6 nguồn, tuyệt đối không gọi `bumpMasterDataVersion()`.
 // ============================================================================
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -30,27 +29,49 @@ import { FcDB } from '@/services/db';
 // MODULE HELPERS THUẦN KHIẾT (PURE & IMMUTABLE)
 // ============================================================================
 
-// Chuẩn hóa ngôn ngữ học hợp lệ của hệ thống ('en' | 'zh')
+/**
+ * Chuẩn hóa ngôn ngữ học hợp lệ của hệ thống ('en' | 'zh')
+ * @param {any} lang
+ * @returns {'en' | 'zh'}
+ */
 const normalizeLang = (lang) => (lang === 'zh' ? 'zh' : 'en');
 
-// Chuẩn hóa chế độ dữ liệu hợp lệ ('vocab' | 'sentence', phòng thủ chuỗi số nhiều)
+/**
+ * Chuẩn hóa chế độ dữ liệu hợp lệ ('vocab' | 'sentence', phòng thủ chuỗi số nhiều)
+ * @param {any} mode
+ * @returns {'vocab' | 'sentence'}
+ */
 const normalizeDataMode = (mode) =>
   mode === 'sentence' || mode === 'sentences' ? 'sentence' : 'vocab';
 
-// Chuẩn hóa khóa văn bản theo Unicode NFC + trim + lowercase (đồng bộ 1:1 useAppLogic Ver 1.1)
+/**
+ * Chuẩn hóa khóa văn bản theo Unicode NFC + trim + lowercase (đồng bộ 1:1 useAppLogic Ver 1.1)
+ * @param {any} val
+ * @returns {string}
+ */
 const normalizeKey = (val) => {
   if (val === undefined || val === null) return '';
   const str = String(val).trim().toLowerCase();
   return typeof str.normalize === 'function' ? str.normalize('NFC') : str;
 };
 
-// Trích xuất mã ID chuẩn hóa của thẻ (nếu có)
+/**
+ * Trích xuất mã ID chuẩn hóa của thẻ (nếu có)
+ * @param {any} card
+ * @returns {string}
+ */
 const getNormalizedCardId = (card) => {
   if (!card || card.id === undefined || card.id === null) return '';
   return String(card.id).trim();
 };
 
-// Đọc thống nhất danh sách mảng từ latestStateRef / coreRef
+/**
+ * Đọc thống nhất danh sách mảng từ latestStateRef / coreRef
+ * @param {Record<string, any> | null | undefined} activeCore
+ * @param {Record<string, any> | null | undefined} activeState
+ * @param {string} key
+ * @returns {any[]}
+ */
 const getLiveList = (activeCore, activeState, key) => {
   if (activeState && Array.isArray(activeState[key])) {
     return activeState[key];
@@ -61,7 +82,12 @@ const getLiveList = (activeCore, activeState, key) => {
   return [];
 };
 
-// Đọc thống nhất cờ chế độ Ôn tập (Sổ tay / Lỗi sai)
+/**
+ * Đọc thống nhất cờ chế độ Ôn tập (Sổ tay / Lỗi sai)
+ * @param {Record<string, any> | null | undefined} activeCore
+ * @param {Record<string, any> | null | undefined} activeState
+ * @returns {boolean}
+ */
 const getIsReviewMode = (activeCore, activeState) =>
   Boolean(
     activeState?.isStudyingNotebook ||
@@ -70,9 +96,24 @@ const getIsReviewMode = (activeCore, activeState) =>
       activeCore?.studySourceName
   );
 
-// Đối khớp thẻ an toàn chống đụng độ từ đồng âm:
-// - Khi CẢ 2 bên đều có id -> chỉ so khớp theo id (cấm fallthrough sang term)
-// - Chỉ fallback theo term chuẩn NFC khi ít nhất 1 bên không có id
+/**
+ * [SP1] Đọc thống nhất cờ Trộn bài (isShuffle) từ coreRef / latestStateRef
+ * @param {Record<string, any> | null | undefined} activeCore
+ * @param {Record<string, any> | null | undefined} activeState
+ * @returns {boolean}
+ */
+const getIsShuffleMode = (activeCore, activeState) =>
+  Boolean(activeCore?.isShuffle ?? activeState?.isShuffle);
+
+/**
+ * Đối khớp thẻ an toàn chống đụng độ từ đồng âm:
+ * - Khi CẢ 2 bên đều có id -> chỉ so khớp theo id (cấm fallthrough sang term)
+ * - Chỉ fallback theo term chuẩn NFC khi ít nhất 1 bên không có id
+ * @param {any} card
+ * @param {string} targetId
+ * @param {string} targetTermKey
+ * @returns {boolean}
+ */
 const isMatchingCard = (card, targetId, targetTermKey) => {
   if (!card || typeof card !== 'object') return false;
   const cardId = getNormalizedCardId(card);
@@ -86,7 +127,19 @@ const isMatchingCard = (card, targetId, targetTermKey) => {
   return false;
 };
 
-// Đọc chuỗi khóa đơn từ localStorage (chỉ đọc, hỗ trợ cả chuỗi thô lẫn chuỗi JSON)
+/**
+ * Làm sạch chuỗi API Key (bóc dấu ngoặc kép/đơn và khoảng trắng thừa)
+ * @param {any} val
+ * @returns {string}
+ */
+const cleanApiKeyString = (val) =>
+  typeof val === 'string' ? val.replace(/["'\s]/g, '').trim() : '';
+
+/**
+ * Đọc chuỗi khóa đơn từ localStorage (chỉ đọc, hỗ trợ cả chuỗi thô lẫn chuỗi JSON)
+ * @param {string} key
+ * @returns {string}
+ */
 const readSafeStorageString = (key) => {
   if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
     return '';
@@ -114,16 +167,27 @@ const readSafeStorageString = (key) => {
   }
 };
 
-// Quét API Key đủ 4 tầng chuẩn hệ thống: preferredKey -> fc_apikey -> fc_paid_apikey -> fc_apikey_pool
+/**
+ * [VER 1.2 - DIỆT SP2] Quét API Key đủ 4 tầng tương thích kép:
+ * preferredKey -> STORAGE_KEYS.API_KEY (fc_gemini_api_key) -> fc_apikey (legacy) -> fc_paid_apikey -> fc_apikey_pool
+ * @param {string} [preferredKey='']
+ * @returns {string}
+ */
 const resolveActiveApiKey = (preferredKey = '') => {
-  if (typeof preferredKey === 'string' && preferredKey.trim()) {
-    return preferredKey.trim();
-  }
-  const primaryKey = readSafeStorageString('fc_apikey');
-  if (primaryKey) return primaryKey;
+  const fromPreferred = cleanApiKeyString(preferredKey);
+  if (fromPreferred.length >= 10) return fromPreferred;
 
-  const paidKey = readSafeStorageString('fc_paid_apikey');
-  if (paidKey) return paidKey;
+  const primaryStorageKey = STORAGE_KEYS?.API_KEY || 'fc_gemini_api_key';
+  const fromPrimary = cleanApiKeyString(readSafeStorageString(primaryStorageKey));
+  if (fromPrimary.length >= 10) return fromPrimary;
+
+  if (primaryStorageKey !== 'fc_apikey') {
+    const fromLegacy = cleanApiKeyString(readSafeStorageString('fc_apikey'));
+    if (fromLegacy.length >= 10) return fromLegacy;
+  }
+
+  const fromPaid = cleanApiKeyString(readSafeStorageString('fc_paid_apikey'));
+  if (fromPaid.length >= 10) return fromPaid;
 
   const pool =
     Utils && typeof Utils.safeJsonParse === 'function'
@@ -131,23 +195,27 @@ const resolveActiveApiKey = (preferredKey = '') => {
       : [];
   if (Array.isArray(pool)) {
     for (const entry of pool) {
-      if (typeof entry === 'string' && entry.trim()) {
-        return entry.trim();
-      }
-      if (
-        entry &&
-        typeof entry === 'object' &&
-        typeof entry.key === 'string' &&
-        entry.key.trim()
-      ) {
-        return entry.key.trim();
+      const candidate =
+        typeof entry === 'string'
+          ? cleanApiKeyString(entry)
+          : entry && typeof entry === 'object'
+          ? cleanApiKeyString(entry.key)
+          : '';
+      if (candidate.length >= 10) {
+        return candidate;
       }
     }
   }
   return '';
 };
 
-// Ghi IndexedDB an toàn kèm try/catch chống Unhandled Promise Rejection
+/**
+ * Ghi IndexedDB an toàn kèm try/catch chống Unhandled Promise Rejection
+ * @param {string} key
+ * @param {any} value
+ * @param {string} [label=key]
+ * @returns {Promise<boolean>}
+ */
 const safeDbSet = async (key, value, label = key) => {
   if (!FcDB || typeof FcDB.set !== 'function') return false;
   try {
@@ -159,7 +227,11 @@ const safeDbSet = async (key, value, label = key) => {
   }
 };
 
-// Tính điểm độ giàu dữ liệu của một thẻ để ưu tiên chọn bản đầy đủ khi Local-First Lookup
+/**
+ * Tính điểm độ giàu dữ liệu của một thẻ để ưu tiên chọn bản đầy đủ khi Local-First Lookup
+ * @param {any} card
+ * @returns {number}
+ */
 const getCardRichnessScore = (card) => {
   if (!card || typeof card !== 'object') return 0;
   let score = 0;
@@ -171,7 +243,13 @@ const getCardRichnessScore = (card) => {
   return score;
 };
 
-// Gom toàn bộ thẻ từ 6 nguồn nội bộ (Active View + mastered + incorrectList + fc_data_ + 2 Kho Master Lai)
+/**
+ * Gom toàn bộ thẻ từ 6 nguồn nội bộ (Active View + mastered + incorrectList + fc_data_ + 2 Kho Master Lai)
+ * @param {any} targetLang
+ * @param {any[]} [activeViewCards=[]]
+ * @param {any[][]} [extraDecks=[]]
+ * @returns {Map<string, any>}
+ */
 const buildGlobalLookupMap = (
   targetLang,
   activeViewCards = [],
@@ -181,6 +259,7 @@ const buildGlobalLookupMap = (
   /** @type {Map<string, any>} */
   const lookupMap = new Map();
 
+  /** @param {any} card */
   const registerCard = (card) => {
     if (!card || typeof card !== 'object') return;
     const key = normalizeKey(card.term);
@@ -231,7 +310,14 @@ const buildGlobalLookupMap = (
   return lookupMap;
 };
 
-// Áp dụng biến đổi thuần khiết & bất biến lên một mảng thẻ phẳng
+/**
+ * Áp dụng biến đổi thuần khiết & bất biến lên một mảng thẻ phẳng
+ * @param {any[]} list
+ * @param {string} targetId
+ * @param {string} targetTermKey
+ * @param {(card: any) => any} transformFn
+ * @returns {{ list: any[], changed: boolean }}
+ */
 const applyTransformToList = (list, targetId, targetTermKey, transformFn) => {
   const safeList = Array.isArray(list) ? list : [];
   if (safeList.length === 0) {
@@ -250,7 +336,13 @@ const applyTransformToList = (list, targetId, targetTermKey, transformFn) => {
   return { list: changed ? nextList : safeList, changed };
 };
 
-// Áp dụng thao tác lọc xóa thuần khiết & bất biến lên một mảng thẻ phẳng
+/**
+ * Áp dụng thao tác lọc xóa thuần khiết & bất biến lên một mảng thẻ phẳng
+ * @param {any[]} list
+ * @param {string} targetId
+ * @param {string} targetTermKey
+ * @returns {{ list: any[], changed: boolean }}
+ */
 const applyRemoveFromList = (list, targetId, targetTermKey) => {
   const safeList = Array.isArray(list) ? list : [];
   if (safeList.length === 0 || (!targetId && !targetTermKey)) {
@@ -264,13 +356,19 @@ const applyRemoveFromList = (list, targetId, targetTermKey) => {
   return { list: changed ? nextList : safeList, changed };
 };
 
-// Áp dụng ghi nhận câu sai thuần khiết & bất biến (hỗ trợ cả đơn lẻ lẫn batch nhiều thẻ)
+/**
+ * Áp dụng ghi nhận câu sai thuần khiết & bất biến (hỗ trợ cả đơn lẻ lẫn batch nhiều thẻ)
+ * @param {any[]} list
+ * @param {Array<{ card: any, cardId: string, termKey: string, timestamp: number }>} entries
+ * @returns {{ list: any[], changed: boolean }}
+ */
 const applyUpsertIncorrectList = (list, entries) => {
   const safeList = Array.isArray(list) ? list : [];
   if (!Array.isArray(entries) || entries.length === 0) {
     return { list: safeList, changed: false };
   }
 
+  /** @type {any[] | null} */
   let nextList = null;
   let changed = false;
 
@@ -301,7 +399,14 @@ const applyUpsertIncorrectList = (list, entries) => {
   return { list: changed && nextList ? nextList : safeList, changed };
 };
 
-// Áp dụng biến đổi thuần khiết & bất biến lên Kho Master Lai dạng { [levelKey]: Card[] }
+/**
+ * Áp dụng biến đổi thuần khiết & bất biến lên Kho Master Lai dạng { [levelKey]: Card[] }
+ * @param {any} masterData
+ * @param {string} targetId
+ * @param {string} targetTermKey
+ * @param {(card: any) => any} transformFn
+ * @returns {{ masterData: any, changed: boolean }}
+ */
 const applyTransformToMasterData = (
   masterData,
   targetId,
@@ -345,6 +450,13 @@ const applyTransformToMasterData = (
 // ============================================================================
 // MAIN HOOK: useStudyProgress
 // ============================================================================
+
+/**
+ * Hook quản lý Hồ sơ học thuật (Sổ tay, Đã thuộc, Lỗi sai) và Thuật toán SRS
+ * @param {Record<string, any>} core
+ * @param {import('react').MutableRefObject<any>} latestStateRef
+ * @param {Record<string, any>} [callbacks={}]
+ */
 export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
   // Giữ tham chiếu mới nhất tới core & callbacks để toàn bộ action có danh tính ổn định
   /** @type {import('react').MutableRefObject<any>} */
@@ -361,12 +473,19 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
   const [persistSeq, setPersistSeq] = useState(0);
 
   // Helper phát thông báo an toàn
-  const notifyToast = useCallback((msg, type = 'success') => {
-    const fn = callbacksRef.current?.showToast;
-    if (typeof fn === 'function') {
-      fn(msg, type);
-    }
-  }, []);
+  const notifyToast = useCallback(
+    /**
+     * @param {string} msg
+     * @param {string} [type='success']
+     */
+    (msg, type = 'success') => {
+      const fn = callbacksRef.current?.showToast;
+      if (typeof fn === 'function') {
+        fn(msg, type);
+      }
+    },
+    []
+  );
 
   // ==========================================================================
   // 0. HIỆU ỨNG ĐỒNG BỘ LƯU TRỮ SAU KHI REACT COMMIT (SRS + INCORRECT PIPELINE)
@@ -380,6 +499,7 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
     const activeState = latestStateRef?.current || {};
     const currentLang = normalizeLang(activeCore.lang ?? activeState.lang);
     const currentIsReviewMode = getIsReviewMode(activeCore, activeState);
+    const currentIsShuffle = getIsShuffleMode(activeCore, activeState);
     const dbReady = Boolean(activeCore.isDbReady ?? activeState.isDbReady);
 
     /** @type {Set<string>} */
@@ -397,6 +517,7 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
           targetLang,
           targetMode,
           isReviewMode,
+          isShuffle,
           cardId,
           cardTermKey,
           transformCardFn,
@@ -404,7 +525,7 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
           syncIncorrect
         } = task;
 
-        // A. Đồng bộ bộ thẻ phẳng fc_data_${targetLang} (bảo vệ kho gốc khi ở Review Mode)
+        // A. Đồng bộ bộ thẻ phẳng fc_data_${targetLang} (bảo vệ thứ tự gốc khi ở Review Mode hoặc đang Shuffle)
         if (Utils && typeof Utils.safeLocalStorageSet === 'function') {
           const dataKey = `fc_data_${targetLang}`;
           const savedMainDeck =
@@ -425,6 +546,8 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
           } else if (
             !isReviewMode &&
             !currentIsReviewMode &&
+            !isShuffle &&
+            !currentIsShuffle &&
             targetLang === currentLang
           ) {
             const liveCards = getLiveList(activeCore, activeState, 'cards');
@@ -435,6 +558,7 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
 
           // B. Tiêm bất biến dữ liệu SRS vào Kho Master Lai (IndexedDB + RAM Mirror 0ms)
           // Review Mode quét đủ cả [targetMode, otherMode] (không break) để không bỏ sót câu 1 từ
+          // TUYỆT ĐỐI KHÔNG gọi bumpMasterDataVersion() (chống đẩy về Thẻ 1)
           if (typeof Utils.safeJsonParse === 'function') {
             const otherMode = targetMode === 'sentence' ? 'vocab' : 'sentence';
             const modesToCheck = isReviewMode
@@ -611,6 +735,10 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
 
   // Trình điều phối đồng bộ SRS xuyên kho (Updater thuần khiết 100%, 0 side-effect)
   const syncCardSrsAcrossStores = useCallback(
+    /**
+     * @param {any} sourceCard
+     * @param {(card: any) => any} transformCardFn
+     */
     (sourceCard, transformCardFn) => {
       const cardTermKey = normalizeKey(sourceCard?.term);
       const cardId = getNormalizedCardId(sourceCard);
@@ -623,10 +751,11 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
       const targetLang = normalizeLang(activeCore.lang ?? state.lang);
       const targetMode = normalizeDataMode(activeCore.dataMode);
       const isReviewMode = getIsReviewMode(activeCore, state);
+      const isShuffle = getIsShuffleMode(activeCore, state);
 
       // 1. Cập nhật mảng thẻ trên màn hình (thuần khiết 100%)
       if (typeof activeCore.setCards === 'function') {
-        activeCore.setCards((prev) => {
+        activeCore.setCards((/** @type {any[]} */ prev) => {
           const { list, changed } = applyTransformToList(
             prev,
             cardId,
@@ -643,7 +772,7 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
         isMatchingCard(c, cardId, cardTermKey)
       );
       if (hasInNotebook && typeof activeCore.setNotebook === 'function') {
-        activeCore.setNotebook((prev) => {
+        activeCore.setNotebook((/** @type {any[]} */ prev) => {
           const { list, changed } = applyTransformToList(
             prev,
             cardId,
@@ -663,7 +792,7 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
         hasPendingIncorrectUpsert ||
         liveIncorrect.some((c) => isMatchingCard(c, cardId, cardTermKey));
       if (hasInIncorrect && typeof activeCore.setIncorrectList === 'function') {
-        activeCore.setIncorrectList((prev) => {
+        activeCore.setIncorrectList((/** @type {any[]} */ prev) => {
           const { list, changed } = applyTransformToList(
             prev,
             cardId,
@@ -680,6 +809,7 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
         targetLang,
         targetMode,
         isReviewMode,
+        isShuffle,
         cardId,
         cardTermKey,
         transformCardFn,
@@ -696,6 +826,7 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
   // ==========================================================================
   // Hàm lưu Sổ tay (Hỗ trợ cả Toggle đơn lẻ theo NFC 1:1 với useAppLogic Ver 1.1 và Cập nhật hàng loạt)
   const handleNotebookSave = useCallback(
+    /** @param {any} payload */
     async (payload) => {
       const activeCore = coreRef.current || {};
       const state = latestStateRef?.current || {};
@@ -750,6 +881,10 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
 
   // Hàm lưu từ vựng từ bộ chọn (Word Selector) - 6-Source Local-First Lookup + 4-Tier API Key
   const handleSaveWords = useCallback(
+    /**
+     * @param {any} items
+     * @param {boolean} [isPhrase=false]
+     */
     async (items, isPhrase = false) => {
       const activeCore = coreRef.current || {};
       const state = latestStateRef?.current || {};
@@ -857,7 +992,7 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
         activeCore.setShowWordSelect(false);
       }
 
-      // Quét API Key đủ 4 tầng & kích hoạt AI dịch ngầm CHỈ cho những từ thực sự cần dịch
+      // Quét API Key đủ 4 tầng (đã vá SP2) & kích hoạt AI dịch ngầm CHỈ cho những từ thực sự cần dịch
       const activeApiKey = resolveActiveApiKey(activeCore.apiKey);
       const processAiQueue = callbacksRef.current?.processAiQueue;
       if (
@@ -869,7 +1004,7 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
       ) {
         const queuedKeys = new Set(
           activeCore.aiQueueRef.current
-            .map((entry) => normalizeKey(entry))
+            .map((/** @type {any} */ entry) => normalizeKey(entry))
             .filter(Boolean)
         );
         aiQueueTargets.forEach((term) => {
@@ -886,10 +1021,11 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
   );
 
   // ==========================================================================
-  // 2. QUẢN LÝ THẺ ĐÃ THUỘC (MASTERED ACTIONS)
+  // 2. QUẢN LÝ THẺ ĐÃ THUỘC (MASTERED ACTIONS — VÁ SP1 BẢO TOÀN THỨ TỰ GỐC)
   // ==========================================================================
   // Đánh dấu thẻ là đã thuộc (Xóa khỏi danh sách học, thêm vào Mastered & tự gỡ khỏi Lỗi sai)
   const handleMarkMastered = useCallback(
+    /** @param {any} [card] */
     async (card) => {
       const activeCore = coreRef.current || {};
       const state = latestStateRef?.current || {};
@@ -907,7 +1043,9 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
           : 0;
 
       const target =
-        card && typeof card === 'object' && (normalizeKey(card.term) || getNormalizedCardId(card))
+        card &&
+        typeof card === 'object' &&
+        (normalizeKey(card.term) || getNormalizedCardId(card))
           ? card
           : safeCards[currentCardIndex];
       const targetKey = normalizeKey(target?.term);
@@ -934,12 +1072,13 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
         activeCore.setIsFlipped(false);
       }
 
-      // Bảo vệ bộ thẻ gốc nếu đang ở chế độ ôn tập Sổ tay/Lỗi sai
+      // [VER 1.2 - DIỆT SP1] Bảo vệ thứ tự gốc fc_data_${lang} khi ở Review Mode HOẶC đang bật Shuffle
       const isReviewMode = getIsReviewMode(activeCore, state);
+      const isShuffleNow = getIsShuffleMode(activeCore, state);
       const dataKey = `fc_data_${safeLang}`;
 
       if (Utils && typeof Utils.safeLocalStorageSet === 'function') {
-        if (!isReviewMode) {
+        if (!isReviewMode && !isShuffleNow) {
           Utils.safeLocalStorageSet(dataKey, newCards);
         } else if (typeof Utils.safeJsonParse === 'function') {
           const savedMainDeck = Utils.safeJsonParse(dataKey, null);
@@ -963,7 +1102,7 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
         safeIncorrect.some((c) => isMatchingCard(c, targetId, targetKey));
       if (mightBeInIncorrect) {
         if (typeof activeCore.setIncorrectList === 'function') {
-          activeCore.setIncorrectList((prev) => {
+          activeCore.setIncorrectList((/** @type {any[]} */ prev) => {
             const { list, changed } = applyRemoveFromList(
               prev,
               targetId,
@@ -1000,6 +1139,7 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
 
   // Khôi phục thẻ từ Mastered về danh sách học
   const handleRestoreMastered = useCallback(
+    /** @param {any} card */
     async (card) => {
       const targetKey = normalizeKey(card?.term);
       const targetId = getNormalizedCardId(card);
@@ -1031,11 +1171,13 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
         activeCore.setIsFlipped(false);
       }
 
+      // [VER 1.2 - DIỆT SP1] Không ghi mảng đã trộn đè lên fc_data_${lang} khi đang bật Shuffle
       const isReviewMode = getIsReviewMode(activeCore, state);
+      const isShuffleNow = getIsShuffleMode(activeCore, state);
       const dataKey = `fc_data_${safeLang}`;
 
       if (Utils && typeof Utils.safeLocalStorageSet === 'function') {
-        if (!isReviewMode) {
+        if (!isReviewMode && !isShuffleNow) {
           Utils.safeLocalStorageSet(dataKey, newCards);
         } else if (typeof Utils.safeJsonParse === 'function') {
           const savedMainDeck = Utils.safeJsonParse(dataKey, []);
@@ -1097,7 +1239,11 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
       }
     });
 
-    // Tương đương logic 1:1 với isMatchingCard(c, mid, mk) nhưng đạt tốc độ O(1)
+    /**
+     * Tương đương logic 1:1 với isMatchingCard(c, mid, mk) nhưng đạt tốc độ O(1)
+     * @param {any} c
+     * @returns {boolean}
+     */
     const isInMastered = (c) => {
       if (!c || typeof c !== 'object') return false;
       const cid = getNormalizedCardId(c);
@@ -1124,11 +1270,13 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
       activeCore.setIsFlipped(false);
     }
 
+    // [VER 1.2 - DIỆT SP1] Bảo toàn thứ tự gốc fc_data_${lang} khi đang ở Review Mode HOẶC đang Shuffle
     const isReviewMode = getIsReviewMode(activeCore, state);
+    const isShuffleNow = getIsShuffleMode(activeCore, state);
     const dataKey = `fc_data_${safeLang}`;
 
     if (Utils && typeof Utils.safeLocalStorageSet === 'function') {
-      if (!isReviewMode) {
+      if (!isReviewMode && !isShuffleNow) {
         Utils.safeLocalStorageSet(dataKey, newCards);
       } else if (typeof Utils.safeJsonParse === 'function') {
         const savedMainDeck = Utils.safeJsonParse(dataKey, []);
@@ -1159,10 +1307,11 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
   // ==========================================================================
   // Ghi nhận câu sai vào Sổ tay lỗi sai (Hỗ trợ cả 1 thẻ đơn lẻ lẫn mảng thẻ batch trong 1 tick)
   const handleLogWrong = useCallback(
+    /** @param {any} cardOrCards */
     async (cardOrCards) => {
       const rawItems = Array.isArray(cardOrCards) ? cardOrCards : [cardOrCards];
       const baseNow = Date.now();
-      /** @type {Array<any>} */
+      /** @type {Array<{ card: any, cardId: string, termKey: string, timestamp: number }>} */
       const entries = [];
 
       rawItems.forEach((item, idx) => {
@@ -1191,7 +1340,7 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
 
       // Updater thuần khiết 100%: gọi liên tiếp trong cùng 1 vòng lặp vẫn tích lũy đầy đủ 0 mất dữ liệu
       if (typeof activeCore.setIncorrectList === 'function') {
-        activeCore.setIncorrectList((prev) => {
+        activeCore.setIncorrectList((/** @type {any[]} */ prev) => {
           const { list, changed } = applyUpsertIncorrectList(prev, entries);
           return changed ? list : prev;
         });
@@ -1210,6 +1359,7 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
 
   // Xóa một từ khỏi danh sách lỗi sai (chấp nhận cả chuỗi term lẫn object thẻ, 0 Lost Update)
   const handleRemoveWrong = useCallback(
+    /** @param {any} termOrCard */
     async (termOrCard) => {
       const isObj = Boolean(termOrCard && typeof termOrCard === 'object');
       const targetId = isObj ? getNormalizedCardId(termOrCard) : '';
@@ -1222,7 +1372,7 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
       const safeLang = normalizeLang(activeCore.lang ?? state.lang);
 
       if (typeof activeCore.setIncorrectList === 'function') {
-        activeCore.setIncorrectList((prev) => {
+        activeCore.setIncorrectList((/** @type {any[]} */ prev) => {
           const { list, changed } = applyRemoveFromList(
             prev,
             targetId,
@@ -1250,6 +1400,7 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
   // ==========================================================================
   // Chấm điểm SRS cho thẻ hiện tại
   const handleSrsGrade = useCallback(
+    /** @param {any} grade */
     (grade) => {
       const activeCore = coreRef.current || {};
       const current = latestStateRef?.current || {};
@@ -1331,8 +1482,9 @@ export const useStudyProgress = (core, latestStateRef, callbacks = {}) => {
 export const Block6_5_useStudyProgress = useStudyProgress;
 
 if (typeof window !== 'undefined') {
-  window.Block6_5_useStudyProgress = useStudyProgress;
-  window.useStudyProgress = useStudyProgress;
+  const win = /** @type {any} */ (window);
+  win.Block6_5_useStudyProgress = useStudyProgress;
+  win.useStudyProgress = useStudyProgress;
 }
 
 export default useStudyProgress;

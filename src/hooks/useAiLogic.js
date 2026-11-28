@@ -1,20 +1,30 @@
 // ============================================================================
 // FILE 76/85: src/hooks/useAiLogic.js
 // NGUỒN GỐC: Tầng 6 - Block 6.2 (AI Logic - Version 1.23)
-// PHIÊN BẢN: Ver 1.3
-// NGÀY GIỜ NÂNG CẤP: 28/11/2026 - 07:25 (GMT+7)
+// PHIÊN BẢN: Ver 1.4
+// NGÀY GIỜ NÂNG CẤP: 28/11/2026 - 16:35 (GMT+7)
 // NHIỆM VỤ: Cung cấp hook useAiLogic xử lý tự động phát (Auto-Play) và giao tiếp
 //           với AI Gemini (Làm giàu thẻ, giải thích ngữ pháp, hàng đợi ngầm).
-//           Nâng cấp Ver 1.3 (Lượt 5.2 - Zero-TSC Polish, chốt 0 errors 80/80):
-//           1. Diệt trọn 2/2 lỗi tsc --noEmit cuối cùng (2× TS2810 tại
-//              cancellableQueueDelay & wait) bằng ép kiểu tường minh
-//              `Promise<void>` + `resolve(undefined)` và JSDoc đầy đủ.
-//           2. Diệt D20: Chuẩn hóa khóa chống chạy trùng `processingCardsRef`
-//              theo tổ hợp `${reqLang}:${reqMode}:${normalizeTermKey(cardTerm)}`
-//              chống gửi kép request cho từ khác hoa/thường hoặc Unicode NFD/NFC.
-//           3. Bảo toàn 100% kiến trúc Ver 1.2: Radar 0/0/0/0, Kho Master Lai
-//              bất biến (RAM Mirror 0ms <-> FcDB), hàng đợi persist chuẩn
-//              React 18 StrictMode và vòng đời Auto-Play gốc Block 6.2.
+//           Nâng cấp Ver 1.4 (Hotfix Pháp y Chiều sâu — Diệt trọn 7/7 BUG-1..7):
+//           1. [BUG-1] Gỡ bỏ `bumpMasterDataVersion()` trong `syncCardAcrossPools`
+//              chấm dứt triệt để lỗi bị Động cơ "Vòi Nước" đẩy ngược về Thẻ 1,
+//              úp thẻ khi xem Giải thích ngữ pháp và tự trộn lại bài khi AI làm giàu.
+//           2. [BUG-2] Chuẩn hóa `getActiveCardsArray` ưu tiên `state.cards` đang
+//              hiển thị (khắc phục lỗi đọc nhầm `notebook` khi ôn Sổ tay lỗi sai
+//              hoặc Sổ tay có bật Shuffle).
+//           3. [BUG-3] Cửa sổ trượt ưu tiên (Sliding Window Priority) tái cấu trúc
+//              `enrichQueueRef` theo `[inFlight, Thẻ hiện tại, +1, +2]` chống phình
+//              hàng đợi, làm giàu ngay thẻ đang xem và tiết kiệm Token.
+//           4. [BUG-4] Thay lệnh `shift()` mù bằng xóa đúng định danh `indexOf/splice`
+//              cho cả `enrichQueueRef` và `aiQueueRef` chống xóa oan thẻ mới.
+//           5. [BUG-5] Nhận diện `AbortError` & phân kênh ngủ đông (`'ai' | 'enrich'`)
+//              hủy tức thì giấc ngủ `EnrichQueue` khi tắt công tắc AI (0ms mở khóa).
+//           6. [BUG-6] Chặn ghi đè thứ tự gốc `fc_data_${lang}` khi bật `isShuffle`
+//              hoặc Review Mode (chỉ vá cục bộ đúng thẻ), đồng thời quét đủ 2 kho
+//              Master `[resolvedMode, otherMode]` trong Review Mode.
+//           7. [BUG-7] Khắc phục điểm mù `latestStateRef` (luôn đọc tươi `dataMode`,
+//              `isAiModeLearn`, `viewMode`, `isShuffle` từ `coreRef.current`),
+//              giữ nguyên Radar 0/0/0/0 & 0 Problems `tsc --noEmit`.
 // ============================================================================
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -44,7 +54,8 @@ const normalizeLearningLang = (lang) => (lang === 'zh' ? 'zh' : 'en');
  * @param {any} mode
  * @returns {'vocab' | 'sentence'}
  */
-const normalizeDataMode = (mode) => (mode === 'sentence' ? 'sentence' : 'vocab');
+const normalizeDataMode = (mode) =>
+  mode === 'sentence' || mode === 'sentences' ? 'sentence' : 'vocab';
 
 /**
  * Chuẩn hóa khóa từ vựng theo Unicode NFC + loại bỏ ký tự gạch chân \u0332
@@ -285,18 +296,28 @@ const stripTransientAiFields = (payload) => {
 };
 
 /**
- * Xác định danh sách thẻ đang hiển thị (State Targeting)
+ * [VER 1.4 - DIỆT BUG-2] Xác định chính xác danh sách thẻ đang hiển thị trên màn hình
+ * Ưu tiên tuyệt đối `state.cards` (đã đồng bộ sẵn Shuffle & nguồn ôn tập Sổ tay/Lỗi sai từ useAppLogic)
  * @param {any} state
  * @returns {any[]}
  */
 const getActiveCardsArray = (state) => {
   if (!state) return [];
-  if (state.isStudyingNotebook) return Array.isArray(state.notebook) ? state.notebook : [];
-  if (state.studySourceName === 'mastered') {
+  if (Array.isArray(state.cards) && state.cards.length > 0) {
+    return state.cards;
+  }
+  const sourceName =
+    typeof state.studySourceName === 'string'
+      ? state.studySourceName.toLowerCase()
+      : '';
+  if (sourceName === 'mastered' || sourceName.includes('đã thuộc')) {
     return Array.isArray(state.mastered) ? state.mastered : [];
   }
-  if (state.studySourceName === 'incorrect') {
+  if (sourceName === 'incorrect' || sourceName.includes('cần nhớ')) {
     return Array.isArray(state.incorrectList) ? state.incorrectList : [];
+  }
+  if (state.isStudyingNotebook) {
+    return Array.isArray(state.notebook) ? state.notebook : [];
   }
   return Array.isArray(state.cards) ? state.cards : [];
 };
@@ -367,6 +388,24 @@ const getErrorMessage = (err) => {
 };
 
 /**
+ * [VER 1.4 - DIỆT BUG-5] Nhận diện lỗi hủy chủ động (AbortController / tắt công tắc AI)
+ * @param {unknown} err
+ * @returns {boolean}
+ */
+const isAbortError = (err) => {
+  if (!err) return false;
+  if (
+    typeof err === 'object' &&
+    'name' in err &&
+    /** @type {{ name?: any }} */ (err).name === 'AbortError'
+  ) {
+    return true;
+  }
+  const msg = getErrorMessage(err).toLowerCase();
+  return msg.includes('abort') || msg.includes('user toggled off ai');
+};
+
+/**
  * Hook quản lý Auto-Play và các tác vụ AI Gemini (Làm giàu thẻ, Giải thích ngữ pháp, Hàng đợi ngầm)
  * @param {Record<string, any>} core
  * @param {import('react').MutableRefObject<any>} latestStateRef
@@ -397,7 +436,7 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
     studySourceName: coreStudySourceName
   } = core;
 
-  // Giữ tham chiếu core mới nhất trong Ref để tuyệt đối không đưa object `core` vào useCallback deps
+  // Giữ tham chiếu core mới nhất trong Ref (0ms, không bị điểm mù `dataMode`/`isAiModeLearn` như latestStateRef)
   const coreRef = useRef(core);
   coreRef.current = core;
 
@@ -407,9 +446,9 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
     callbacksRef.current = callbacks;
   }, [callbacks]);
 
-  // Theo dõi vòng đời mount (StrictMode-safe) & quản lý dọn sạch timer ngủ đông (Diệt S13)
+  // Theo dõi vòng đời mount (StrictMode-safe) & quản lý dọn sạch timer ngủ đông theo kênh (Diệt S13 & BUG-5)
   const isMountedRef = useRef(true);
-  /** @type {import('react').MutableRefObject<Set<{ id: ReturnType<typeof setTimeout>, resolve: () => void }>>} */
+  /** @type {import('react').MutableRefObject<Set<{ id: ReturnType<typeof setTimeout>, resolve: () => void, channel: 'ai' | 'enrich' }>>} */
   const activeSleepTimersRef = useRef(new Set());
 
   // [VER 1.2 - DIỆT S12] Ref giải phóng Promise treo của wait() & speak() khi dừng/chuyển thẻ
@@ -427,13 +466,31 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
   const isLoopRunning = useRef(false);
   const autoPlaySessionRef = useRef(0);
 
-  // Hàng đợi tuần tự cho tính năng Làm giàu thẻ khi đang học
+  // Hàng đợi tuần tự cho tính năng Làm giàu thẻ khi đang học + theo dõi từ đang bay (BUG-3)
   /** @type {import('react').MutableRefObject<string[]>} */
   const enrichQueueRef = useRef([]);
+  /** @type {import('react').MutableRefObject<string | null>} */
+  const inFlightEnrichTermRef = useRef(null);
   const isProcessingEnrichQueue = useRef(false);
 
   // Cờ theo dõi trạng thái Bật/Tắt thực tế của Học AI để chỉ gọi abort() khi chuyển Bật -> Tắt
   const wasLearnAiActiveRef = useRef(false);
+
+  // [VER 1.4 - DIỆT BUG-5] Hủy tức thì các timer ngủ đông theo kênh ('ai' | 'enrich' | 'all')
+  const cancelSleepTimersByChannel = useCallback(
+    /** @param {'ai' | 'enrich' | 'all'} channel */
+    (channel) => {
+      const entries = Array.from(activeSleepTimersRef.current);
+      entries.forEach((entry) => {
+        if (channel === 'all' || entry.channel === channel) {
+          clearTimeout(entry.id);
+          activeSleepTimersRef.current.delete(entry);
+          entry.resolve();
+        }
+      });
+    },
+    []
+  );
 
   // [VER 1.2 - DIỆT S12] Hủy toàn bộ timer & giải phóng tức thì mọi Promise đang chờ của Auto-Play
   const cancelPendingAutoPlayWait = useCallback(() => {
@@ -453,20 +510,22 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
     }
   }, [autoPlayTimeoutRef]);
 
-  // [VER 1.3 - DIỆT TS2810 & S13] Hàm ngủ có thể hủy tức thì khi Unmount (cho AI Queue & Enrich Queue)
+  // [VER 1.4 - DIỆT TS2810, S13 & BUG-5] Hàm ngủ có thể hủy tức thì theo kênh hoặc khi Unmount
   const cancellableQueueDelay = useCallback(
     /**
      * @param {number} ms
+     * @param {'ai' | 'enrich'} [channel='ai']
      * @returns {Promise<void>}
      */
-    (ms) => {
+    (ms, channel = 'ai') => {
       if (!isMountedRef.current || ms <= 0) return Promise.resolve();
       return /** @type {Promise<void>} */ (
         new Promise((resolve) => {
-          /** @type {{ id: ReturnType<typeof setTimeout>, resolve: () => void }} */
+          /** @type {{ id: ReturnType<typeof setTimeout>, resolve: () => void, channel: 'ai' | 'enrich' }} */
           const entry = {
             id: /** @type {any} */ (null),
-            resolve: () => {}
+            resolve: () => {},
+            channel
           };
           let settled = false;
           const done = () => {
@@ -492,14 +551,10 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
       isMountedRef.current = false;
       cancelPendingAutoPlayWait();
       enrichQueueRef.current = [];
-      const entries = Array.from(activeSleepTimersRef.current);
-      activeSleepTimersRef.current.clear();
-      entries.forEach((entry) => {
-        clearTimeout(entry.id);
-        entry.resolve();
-      });
+      inFlightEnrichTermRef.current = null;
+      cancelSleepTimersByChannel('all');
     };
-  }, [cancelPendingAutoPlayWait]);
+  }, [cancelPendingAutoPlayWait, cancelSleepTimersByChannel]);
 
   // [VER 1.2 - DIỆT C4] Thực thi ghi FcDB / Utils.safeLocalStorageSet sau khi React commit xong
   useEffect(() => {
@@ -518,7 +573,9 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
     });
   }, [persistSeq]);
 
-  // [VER 1.2 - DIỆT C4, S9, S10] Đồng bộ dữ liệu thẻ bất biến xuyên 5 kho + Kho Master Lai (RAM Mirror <-> FcDB)
+  // [VER 1.4 - DIỆT BUG-1, BUG-6, BUG-7, C4, S9, S10]
+  // Đồng bộ dữ liệu thẻ bất biến xuyên 5 kho + Kho Master Lai (RAM Mirror <-> FcDB)
+  // TUYỆT ĐỐI KHÔNG gọi `bumpMasterDataVersion()` khi vá thẻ tại chỗ (đồng bộ quy ước AppContext & useStudyProgress)
   const syncCardAcrossPools = useCallback(
     /**
      * @param {string} cardTerm
@@ -529,15 +586,25 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
     (cardTerm, patchData, targetLang = null, targetMode = null) => {
       if (!cardTerm || !patchData || typeof patchData !== 'object') return;
 
-      const liveState = latestStateRef?.current || coreRef.current;
-      const activeLang = normalizeLearningLang(liveState?.lang || coreLang);
-      const activeMode = normalizeDataMode(liveState?.dataMode || coreDataMode);
+      const liveCore = coreRef.current || {};
+      const liveState = latestStateRef?.current || {};
+      const activeLang = normalizeLearningLang(liveCore.lang ?? liveState.lang ?? coreLang);
+      const activeMode = normalizeDataMode(liveCore.dataMode ?? liveState.dataMode ?? coreDataMode);
       const resolvedLang = targetLang ? normalizeLearningLang(targetLang) : activeLang;
       const resolvedMode = targetMode ? normalizeDataMode(targetMode) : activeMode;
       const isSameActiveLang = activeLang === resolvedLang;
       const isSameActiveMode = activeMode === resolvedMode;
-      const canPersistMainCardsLs =
-        isSameActiveLang && isSameActiveMode && !liveState?.studySourceName;
+      const isReviewMode = Boolean(
+        liveCore.isStudyingNotebook ||
+          liveState.isStudyingNotebook ||
+          liveCore.studySourceName ||
+          liveState.studySourceName
+      );
+      const isShuffleNow = Boolean(liveCore.isShuffle ?? liveState.isShuffle);
+
+      // [DIỆT BUG-6] Chỉ ghi đè toàn bộ fc_data_${lang} khi đang ở màn hình chính, đúng ngôn ngữ/chế độ & KHÔNG bật Shuffle
+      const canOverwriteMainCardsLs =
+        isSameActiveLang && isSameActiveMode && !isReviewMode && !isShuffleNow;
 
       const sampleCfg = resolvedLang === 'zh' ? CONFIG_SAMPLES?.zh : CONFIG_SAMPLES?.en;
       const dataStorageKey = sampleCfg?.dataKey || `fc_data_${resolvedLang}`;
@@ -574,9 +641,9 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
       };
 
       if (isSameActiveLang && isMountedRef.current) {
-        if (isSameActiveMode && typeof setCards === 'function') {
+        if ((isSameActiveMode || isReviewMode) && typeof setCards === 'function') {
           setCards((/** @type {any[]} */ prev) =>
-            updateList(prev, null, canPersistMainCardsLs ? dataStorageKey : null)
+            updateList(prev, null, canOverwriteMainCardsLs ? dataStorageKey : null)
           );
         }
         // [DIỆT S10] Sổ tay, Đã thuộc, Lỗi sai CHỈ lưu vào FcDB (IndexedDB), không rò rỉ ra localStorage
@@ -610,46 +677,65 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
         ).catch(() => {});
       }
 
-      // [DIỆT S9] Đồng bộ bất biến Kho Master Lai (RAM Mirror 0ms <-> IndexedDB) & bumpMasterDataVersion
-      const masterDataKey = `fc_master_data_${resolvedLang}_${resolvedMode}`;
-      (async () => {
+      // [DIỆT BUG-6] Khi đang Shuffle, Review Mode hoặc chuyển tab: vá cục bộ đúng 1 thẻ trong fc_data_${resolvedLang}
+      // để giữ nguyên 100% thứ tự gốc khi tắt Shuffle và không mất dữ liệu vừa làm giàu khi thoát Review Mode
+      if (!canOverwriteMainCardsLs && Utils?.safeJsonParse && Utils?.safeLocalStorageSet) {
         try {
-          let masterData = getMasterDataCache(masterDataKey);
-          if (!masterData || typeof masterData !== 'object' || Array.isArray(masterData)) {
-            masterData = await FcDB.get(masterDataKey);
-          }
-          if (!masterData || typeof masterData !== 'object' || Array.isArray(masterData)) {
-            return;
-          }
-
-          /** @type {Record<string, any>} */
-          const nextMaster = { ...masterData };
-          let updatedMaster = false;
-
-          Object.keys(masterData).forEach((levelKey) => {
-            const levelArr = masterData[levelKey];
-            if (!Array.isArray(levelArr)) return;
-            const mIdx = findCardIndex(levelArr, cardTerm);
-            if (mIdx !== -1) {
-              const nextLevelArr = [...levelArr];
-              nextLevelArr[mIdx] = { ...nextLevelArr[mIdx], ...patchData };
-              nextMaster[levelKey] = nextLevelArr;
-              updatedMaster = true;
-            }
-          });
-
-          if (updatedMaster) {
-            setMasterDataCache(masterDataKey, nextMaster);
-            await FcDB.set(masterDataKey, nextMaster);
-            if (
-              isMountedRef.current &&
-              typeof coreRef.current?.bumpMasterDataVersion === 'function'
-            ) {
-              coreRef.current.bumpMasterDataVersion();
+          const savedFlat = Utils.safeJsonParse(dataStorageKey, null);
+          if (Array.isArray(savedFlat) && savedFlat.length > 0) {
+            const flatIdx = findCardIndex(savedFlat, cardTerm);
+            if (flatIdx !== -1) {
+              const nextFlat = [...savedFlat];
+              nextFlat[flatIdx] = { ...nextFlat[flatIdx], ...patchData };
+              Utils.safeLocalStorageSet(dataStorageKey, nextFlat);
             }
           }
         } catch (err) {
-          console.warn(`[useAiLogic] Lỗi đồng bộ Kho Master Lai (${masterDataKey}):`, err);
+          console.warn(`[useAiLogic] Lỗi vá cục bộ ${dataStorageKey}:`, err);
+        }
+      }
+
+      // [DIỆT BUG-1, BUG-6 & S9] Đồng bộ bất biến Kho Master Lai (RAM Mirror 0ms <-> IndexedDB)
+      // - Review Mode quét đủ 2 chế độ [resolvedMode, otherMode] đồng bộ 1:1 với useStudyProgress.js
+      // - TUYỆT ĐỐI KHÔNG gọi bumpMasterDataVersion() (tránh kích nổ Động cơ "Vòi Nước" đẩy về Thẻ 1!)
+      const otherMode = resolvedMode === 'sentence' ? 'vocab' : 'sentence';
+      const modesToSync = isReviewMode ? [resolvedMode, otherMode] : [resolvedMode];
+
+      (async () => {
+        for (const mode of modesToSync) {
+          const masterDataKey = `fc_master_data_${resolvedLang}_${mode}`;
+          try {
+            let masterData = getMasterDataCache(masterDataKey);
+            if (!masterData || typeof masterData !== 'object' || Array.isArray(masterData)) {
+              masterData = await FcDB.get(masterDataKey);
+            }
+            if (!masterData || typeof masterData !== 'object' || Array.isArray(masterData)) {
+              continue;
+            }
+
+            /** @type {Record<string, any>} */
+            const nextMaster = { ...masterData };
+            let updatedMaster = false;
+
+            Object.keys(masterData).forEach((levelKey) => {
+              const levelArr = masterData[levelKey];
+              if (!Array.isArray(levelArr)) return;
+              const mIdx = findCardIndex(levelArr, cardTerm);
+              if (mIdx !== -1) {
+                const nextLevelArr = [...levelArr];
+                nextLevelArr[mIdx] = { ...nextLevelArr[mIdx], ...patchData };
+                nextMaster[levelKey] = nextLevelArr;
+                updatedMaster = true;
+              }
+            });
+
+            if (updatedMaster) {
+              setMasterDataCache(masterDataKey, nextMaster);
+              await FcDB.set(masterDataKey, nextMaster);
+            }
+          } catch (err) {
+            console.warn(`[useAiLogic] Lỗi đồng bộ Kho Master Lai (${masterDataKey}):`, err);
+          }
         }
       })();
     },
@@ -899,25 +985,31 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
 
     let consecutiveFailures = 0;
     let globalPauseRetries = 0;
+    let abortRetries = 0;
 
     // Bọc try...finally ngoài vòng while đảm bảo 0% nguy cơ deadlock khóa hàng đợi
     try {
       while (isMountedRef.current && aiQueueRef.current.length > 0) {
         const term = aiQueueRef.current[0];
         const currentApiKey = resolveActiveApiKey(apiKey);
-        const liveState = latestStateRef?.current || coreRef.current;
-        const reqLang = normalizeLearningLang(liveState?.lang || coreLang);
-        const reqMode = normalizeDataMode(liveState?.dataMode || coreDataMode);
+        const liveCore = coreRef.current || {};
+        const liveState = latestStateRef?.current || {};
+        const reqLang = normalizeLearningLang(liveCore.lang ?? liveState.lang ?? coreLang);
+        const reqMode = normalizeDataMode(liveCore.dataMode ?? liveState.dataMode ?? coreDataMode);
 
         let shouldDelay = false;
-        let shouldShift = true;
+        let shouldRemove = true;
         let customDelayMs = 0;
 
         try {
           if (!currentApiKey) {
             continue;
           }
-          const currentNotebook = Array.isArray(liveState?.notebook) ? liveState.notebook : [];
+          const currentNotebook = Array.isArray(liveState?.notebook)
+            ? liveState.notebook
+            : Array.isArray(liveCore?.notebook)
+            ? liveCore.notebook
+            : [];
           const noteIdx = findCardIndex(currentNotebook, term);
           const noteCard = noteIdx !== -1 ? currentNotebook[noteIdx] : null;
 
@@ -992,9 +1084,19 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
 
           consecutiveFailures = 0;
           globalPauseRetries = 0;
+          abortRetries = 0;
         } catch (e) {
           const errMsg = getErrorMessage(e);
-          if (errMsg.includes('GLOBAL_PAUSE')) {
+          if (isAbortError(e)) {
+            // Request bị cắt do người dùng vừa tắt công tắc Học AI ở màn hình chính -> thử lại nhẹ tối đa 2 lần
+            abortRetries++;
+            if (abortRetries <= 2) {
+              shouldRemove = false;
+              customDelayMs = 1200;
+            } else {
+              shouldDelay = false;
+            }
+          } else if (errMsg.includes('GLOBAL_PAUSE')) {
             globalPauseRetries++;
             if (globalPauseRetries >= MAX_GLOBAL_PAUSE_RETRIES) {
               if (typeof callbacksRef.current?.showToast === 'function') {
@@ -1006,7 +1108,7 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
               aiQueueRef.current = [];
               break;
             }
-            shouldShift = false;
+            shouldRemove = false;
             customDelayMs = 15500;
             console.warn(
               `[AI Queue] Tạm nghỉ 15.5s để né 429 (lần ${globalPauseRetries}/${MAX_GLOBAL_PAUSE_RETRIES})... Giữ lại từ: ${term}`
@@ -1027,14 +1129,18 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
             }
           }
         } finally {
-          if (shouldShift && aiQueueRef.current.length > 0) {
-            aiQueueRef.current.shift();
+          // [VER 1.4 - DIỆT BUG-4] Xóa chính xác theo định danh, không dùng shift() mù
+          if (shouldRemove) {
+            const idxInQueue = aiQueueRef.current.indexOf(term);
+            if (idxInQueue !== -1) {
+              aiQueueRef.current.splice(idxInQueue, 1);
+            }
           }
-          if (isMountedRef.current) {
+          if (isMountedRef.current && aiQueueRef.current.length > 0) {
             if (customDelayMs > 0) {
-              await cancellableQueueDelay(customDelayMs);
+              await cancellableQueueDelay(customDelayMs, 'ai');
             } else if (shouldDelay) {
-              await cancellableQueueDelay(getDynamicQueueDelayMs(5000));
+              await cancellableQueueDelay(getDynamicQueueDelayMs(5000), 'ai');
             }
           }
         }
@@ -1073,9 +1179,11 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
         return false;
       }
 
-      const state = latestStateRef?.current || coreRef.current;
-      const reqLang = normalizeLearningLang(state?.lang || coreLang);
-      const reqMode = normalizeDataMode(state?.dataMode || coreDataMode);
+      const liveCore = coreRef.current || {};
+      const liveState = latestStateRef?.current || {};
+      const state = { ...liveCore, ...liveState };
+      const reqLang = normalizeLearningLang(liveCore.lang ?? liveState.lang ?? coreLang);
+      const reqMode = normalizeDataMode(liveCore.dataMode ?? liveState.dataMode ?? coreDataMode);
       const activeArr = getActiveCardsArray(state);
 
       /** @type {string | null} */
@@ -1222,9 +1330,11 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
         return;
       }
 
-      const state = latestStateRef?.current || coreRef.current;
-      const reqLang = normalizeLearningLang(state?.lang || coreLang);
-      const reqMode = normalizeDataMode(state?.dataMode || coreDataMode);
+      const liveCore = coreRef.current || {};
+      const liveState = latestStateRef?.current || {};
+      const state = { ...liveCore, ...liveState };
+      const reqLang = normalizeLearningLang(liveCore.lang ?? liveState.lang ?? coreLang);
+      const reqMode = normalizeDataMode(liveCore.dataMode ?? liveState.dataMode ?? coreDataMode);
       const activeArr = getActiveCardsArray(state);
       const targetIdx = typeof index === 'number' ? index : state.currentCardIndex;
       const targetCard = activeArr[targetIdx];
@@ -1284,9 +1394,10 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
         return null;
       }
 
-      const state = latestStateRef?.current || coreRef.current;
-      const reqLang = normalizeLearningLang(state?.lang || coreLang);
-      const reqMode = normalizeDataMode(state?.dataMode || coreDataMode);
+      const liveCore = coreRef.current || {};
+      const liveState = latestStateRef?.current || {};
+      const reqLang = normalizeLearningLang(liveCore.lang ?? liveState.lang ?? coreLang);
+      const reqMode = normalizeDataMode(liveCore.dataMode ?? liveState.dataMode ?? coreDataMode);
 
       if (isMountedRef.current) setIsAiLoading(true);
       try {
@@ -1331,7 +1442,7 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
   );
 
   // ==================================================================================
-  // 5. ĐỘNG CƠ HÀNG ĐỢI LÀM GIÀU THẺ (ENRICH QUEUE WORKER)
+  // 5. ĐỘNG CƠ HÀNG ĐỢI LÀM GIÀU THẺ (ENRICH QUEUE WORKER — DIỆT BUG-3, BUG-4, BUG-5)
   // ==================================================================================
   const processEnrichQueue = useCallback(async () => {
     if (isProcessingEnrichQueue.current) return;
@@ -1341,80 +1452,126 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
     let globalPauseRetries = 0;
 
     try {
-      while (isMountedRef.current && enrichQueueRef.current.length > 0) {
+      while (
+        isMountedRef.current &&
+        coreRef.current?.isAiModeLearn &&
+        coreRef.current?.viewMode === 'learn' &&
+        enrichQueueRef.current.length > 0
+      ) {
         const termToEnrich = enrichQueueRef.current[0];
         let shouldDelay = false;
-        let shouldShift = true;
+        let shouldRemove = true;
         let customDelayMs = 0;
+        let shouldAbortLoop = false;
 
+        inFlightEnrichTermRef.current = termToEnrich;
         try {
           const apiHit = await handleAiEnrichCard({ term: termToEnrich }, true);
           shouldDelay = apiHit;
           consecutiveFailures = 0;
           globalPauseRetries = 0;
         } catch (e) {
-          const errMsg = getErrorMessage(e);
-          if (errMsg.includes('GLOBAL_PAUSE')) {
-            globalPauseRetries++;
-            if (globalPauseRetries >= MAX_GLOBAL_PAUSE_RETRIES) {
-              if (typeof callbacksRef.current?.showToast === 'function') {
-                callbacksRef.current.showToast(
-                  'Máy chủ AI đang giới hạn tần suất (429) kéo dài. Tiến trình Làm giàu thẻ tự động đã tạm dừng!',
-                  'error'
-                );
-              }
-              enrichQueueRef.current = [];
-              break;
-            }
-            shouldShift = false;
-            customDelayMs = 15500;
-            console.warn(
-              `[Enrich Queue] Tạm nghỉ 15.5s để né 429 (lần ${globalPauseRetries}/${MAX_GLOBAL_PAUSE_RETRIES})... Giữ lại từ: ${termToEnrich}`
-            );
+          // [VER 1.4 - DIỆT BUG-5] Không ngủ 5s và không đếm lỗi khi người dùng chủ động tắt công tắc AI
+          if (
+            isAbortError(e) ||
+            !coreRef.current?.isAiModeLearn ||
+            coreRef.current?.viewMode !== 'learn'
+          ) {
+            shouldDelay = false;
+            customDelayMs = 0;
+            shouldAbortLoop = true;
           } else {
-            shouldDelay = true;
-            console.warn(`Background enrich error for ${termToEnrich}:`, e);
-            consecutiveFailures++;
-            if (consecutiveFailures >= 3) {
-              if (typeof callbacksRef.current?.showToast === 'function') {
-                callbacksRef.current.showToast(
-                  'Máy chủ AI quá tải. Tiến trình Làm giàu thẻ tự động đã bị dừng!',
-                  'error'
+            const errMsg = getErrorMessage(e);
+            if (errMsg.includes('GLOBAL_PAUSE')) {
+              globalPauseRetries++;
+              if (globalPauseRetries >= MAX_GLOBAL_PAUSE_RETRIES) {
+                if (typeof callbacksRef.current?.showToast === 'function') {
+                  callbacksRef.current.showToast(
+                    'Máy chủ AI đang giới hạn tần suất (429) kéo dài. Tiến trình Làm giàu thẻ tự động đã tạm dừng!',
+                    'error'
+                  );
+                }
+                enrichQueueRef.current = [];
+                shouldAbortLoop = true;
+              } else {
+                shouldRemove = false;
+                customDelayMs = 15500;
+                console.warn(
+                  `[Enrich Queue] Tạm nghỉ 15.5s để né 429 (lần ${globalPauseRetries}/${MAX_GLOBAL_PAUSE_RETRIES})... Giữ lại từ: ${termToEnrich}`
                 );
               }
-              enrichQueueRef.current = [];
-              break;
+            } else {
+              shouldDelay = true;
+              console.warn(`Background enrich error for ${termToEnrich}:`, e);
+              consecutiveFailures++;
+              if (consecutiveFailures >= 3) {
+                if (typeof callbacksRef.current?.showToast === 'function') {
+                  callbacksRef.current.showToast(
+                    'Máy chủ AI quá tải. Tiến trình Làm giàu thẻ tự động đã bị dừng!',
+                    'error'
+                  );
+                }
+                enrichQueueRef.current = [];
+                shouldAbortLoop = true;
+              }
             }
           }
         } finally {
-          if (shouldShift && enrichQueueRef.current.length > 0) {
-            enrichQueueRef.current.shift();
+          if (inFlightEnrichTermRef.current === termToEnrich) {
+            inFlightEnrichTermRef.current = null;
           }
-          if (isMountedRef.current) {
-            if (customDelayMs > 0) {
-              await cancellableQueueDelay(customDelayMs);
-            } else if (shouldDelay) {
-              await cancellableQueueDelay(getDynamicQueueDelayMs(5000));
+          // [VER 1.4 - DIỆT BUG-4] Xóa chính xác theo định danh chống xóa oan thẻ ưu tiên mới
+          if (shouldRemove) {
+            const idxInQueue = enrichQueueRef.current.indexOf(termToEnrich);
+            if (idxInQueue !== -1) {
+              enrichQueueRef.current.splice(idxInQueue, 1);
             }
+          }
+        }
+
+        if (
+          shouldAbortLoop ||
+          !isMountedRef.current ||
+          !coreRef.current?.isAiModeLearn ||
+          coreRef.current?.viewMode !== 'learn'
+        ) {
+          break;
+        }
+
+        // Chỉ ngủ đông giữa 2 thẻ khi thực sự vẫn còn thẻ kế tiếp cần làm giàu (tránh khóa 5s vô ích)
+        if (enrichQueueRef.current.length > 0) {
+          if (customDelayMs > 0) {
+            await cancellableQueueDelay(customDelayMs, 'enrich');
+          } else if (shouldDelay) {
+            await cancellableQueueDelay(getDynamicQueueDelayMs(5000), 'enrich');
           }
         }
       }
     } finally {
+      inFlightEnrichTermRef.current = null;
       isProcessingEnrichQueue.current = false;
     }
   }, [cancellableQueueDelay, handleAiEnrichCard]);
 
-  // Tự động làm sạch hàng đợi nền khi người dùng chuyển ngôn ngữ, chế độ hoặc nguồn học
+  // Tự động làm sạch hàng đợi nền & đánh thức timer ngủ đông khi đổi ngôn ngữ, chế độ hoặc nguồn học
   useEffect(() => {
     enrichQueueRef.current = [];
-  }, [coreLang, coreDataMode, coreIsStudyingNotebook, coreStudySourceName]);
+    cancelSleepTimersByChannel('enrich');
+  }, [
+    coreLang,
+    coreDataMode,
+    coreIsStudyingNotebook,
+    coreStudySourceName,
+    cancelSleepTimersByChannel
+  ]);
 
   // Tính số lượng thẻ hiện có của nguồn học đang active để làm dependency ổn định cho Effect
   const activeCardsCount = getActiveCardsArray(core).length;
 
-  // Effect: Batch Enrich (Chạy Tuần Tự) — có bootTimer 80ms chống StrictMode double-fire (Diệt S13)
+  // Effect: Batch Enrich (Cửa sổ trượt ưu tiên — Diệt BUG-3, BUG-5 & StrictMode S13)
   useEffect(() => {
-    const activeCards = getActiveCardsArray(latestStateRef?.current || coreRef.current);
+    const combinedState = { ...(coreRef.current || {}), ...(latestStateRef?.current || {}) };
+    const activeCards = getActiveCardsArray(combinedState);
     const hasEffectiveApiKey = Boolean(resolveActiveApiKey(apiKey));
     const isLearnAiActive = Boolean(
       coreViewMode === 'learn' &&
@@ -1439,38 +1596,55 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
 
       // Trì hoãn 80ms để React 18 StrictMode không kích hoạt 2 luồng Gemini song song lúc mount
       const bootTimer = setTimeout(() => {
-        if (!isMountedRef.current) return;
-        const latestCards = getActiveCardsArray(latestStateRef?.current || coreRef.current);
+        if (!isMountedRef.current || !coreRef.current?.isAiModeLearn) return;
+        const freshState = { ...(coreRef.current || {}), ...(latestStateRef?.current || {}) };
+        const latestCards = getActiveCardsArray(freshState);
         if (latestCards.length === 0) return;
 
-        /** @type {string[]} */
-        const nextTerms = [];
-        const liveTerm = latestCards[currentCardIndex]?.term;
-        if (liveTerm) nextTerms.push(liveTerm);
+        const liveIndex =
+          typeof freshState.currentCardIndex === 'number' &&
+          freshState.currentCardIndex >= 0 &&
+          freshState.currentCardIndex < latestCards.length
+            ? freshState.currentCardIndex
+            : currentCardIndex;
 
-        // Nạp thêm 2 thẻ kế tiếp
-        for (let i = 1; i <= 2; i++) {
-          const nextIdx = (currentCardIndex + i) % latestCards.length;
+        // [VER 1.4 - DIỆT BUG-3] Tái cấu trúc hàng đợi theo cửa sổ trượt [inFlight, Thẻ hiện tại, +1, +2]
+        /** @type {string[]} */
+        const windowTerms = [];
+        const liveTerm = latestCards[liveIndex]?.term;
+        if (liveTerm) windowTerms.push(liveTerm);
+
+        const lookahead = Math.min(2, latestCards.length - 1);
+        for (let i = 1; i <= lookahead; i++) {
+          const nextIdx = (liveIndex + i) % latestCards.length;
           const nextTerm = latestCards[nextIdx]?.term;
-          if (nextTerm && !nextTerms.includes(nextTerm)) {
-            nextTerms.push(nextTerm);
+          if (nextTerm && !windowTerms.includes(nextTerm)) {
+            windowTerms.push(nextTerm);
           }
         }
 
-        nextTerms.forEach((term) => {
-          if (!enrichQueueRef.current.includes(term)) {
-            enrichQueueRef.current.push(term);
+        /** @type {string[]} */
+        const rebuiltQueue = [];
+        const activeInFlight = inFlightEnrichTermRef.current;
+        if (activeInFlight) {
+          rebuiltQueue.push(activeInFlight);
+        }
+        windowTerms.forEach((term) => {
+          if (!rebuiltQueue.includes(term)) {
+            rebuiltQueue.push(term);
           }
         });
 
+        enrichQueueRef.current = rebuiltQueue;
         processEnrichQueue();
       }, 80);
 
       return () => clearTimeout(bootTimer);
     }
 
-    // Dọn dẹp hàng đợi nếu tắt tính năng hoặc thoát màn hình
+    // Dọn dẹp hàng đợi & hủy ngay giấc ngủ Enrich nếu tắt tính năng hoặc thoát màn hình Learn
     enrichQueueRef.current = [];
+    cancelSleepTimersByChannel('enrich');
 
     // CHỈ kích hoạt Kill Switch khi chế độ Học AI thực sự chuyển từ Bật -> Tắt
     if (wasLearnAiActiveRef.current) {
@@ -1492,7 +1666,8 @@ export const useAiLogic = (core, latestStateRef, callbacks = {}) => {
     activeCardsCount,
     apiKey,
     latestStateRef,
-    processEnrichQueue
+    processEnrichQueue,
+    cancelSleepTimersByChannel
   ]);
 
   return {
