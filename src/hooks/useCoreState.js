@@ -1,20 +1,24 @@
 // ============================================================================
 // FILE 75/85: src/hooks/useCoreState.js
 // NGUỒN GỐC: Tầng 6 - Block 6.1 (Core State - Version 2.4)
-// PHIÊN BẢN: Ver 1.2
-// NGÀY GIỜ NÂNG CẤP: 28/11/2026 - 07:05 (GMT+7)
+// PHIÊN BẢN: Ver 1.3
+// NGÀY GIỜ NÂNG CẤP: 28/11/2026 - 22:05 (GMT+7)
 // NHIỆM VỤ: Quản lý toàn bộ State gốc, layoutAlign, khởi tạo & tự động di cư
 //           4 Kho Master Data sang IndexedDB + RAM Mirror 0ms (FcDB),
 //           vận hành Động cơ "Vòi nước" tách bạch tuyệt đối Từ Vựng <-> Câu Văn,
 //           chốt chặn chống ghi đè chéo EN <-> CN, bảo vệ uiLang ('vi'|'en'|'zh'),
 //           chống lỗi Regex link Publish CSV và giữ trạng thái Shuffle an toàn.
-//           Nâng cấp Ver 1.2 (Lượt 5.2 - Zero-TSC Polish):
-//           1. Diệt trọn 3/3 lỗi tsc --noEmit (3× TS2339 tại loadFont) bằng
-//              thu hẹp kiểu chuẩn DOM `instanceof HTMLLinkElement` + JSDoc.
-//           2. Diệt D5: lưu `null` (xóa hẳn khóa) khi xóa sạch `apiKey` khớp
-//              `ApiKeyModal Ver 1.1` và bổ sung fallback di cư từ `'fc_apikey'`.
-//           3. Diệt D8: gỡ nhánh dự phòng legacy `window.FcDB` và
-//              `Utils?.fetchWithFallback`, sử dụng 100% ES Modules trực tiếp.
+//           Nâng cấp Ver 1.3 (Hotfix Tải API Key Google Sheet — Diệt KEY-1, KEY-2, KEY-4):
+//           1. [KEY-1] Thay Regex cũ chặn dấu "." trong Auto-load API Key bằng bộ lọc
+//              chuẩn `isValidApiKeyCandidate` & `extractApiKeysFromText`, hỗ trợ trọn vẹn
+//              cả API Key định dạng mới có dấu chấm (`AQ.Ab8RN...`) lẫn cũ (`AIzaSy...`),
+//              đồng thời chặn tiêu đề cột thuần chữ, chuỗi ngày giờ thuần số & tên file.
+//           2. [KEY-2] Nâng cấp `resolveApiKeySheetFetchUrl` gọt ngoặc kép/khoảng trắng
+//              hai đầu và bảo toàn tham số Tab `gid` (`&gid=...`) khi chuyển sang GViz CSV.
+//           3. [KEY-4] Đồng bộ fallback khóa URL Sheet về `'fc_apikey_sheet_url'` (giữ đọc
+//              dự phòng `'fc_apikey_sheet'`), bảo toàn Key đang chọn khi F5 nếu vẫn còn
+//              trong Pool, và đồng bộ dọn khóa legacy `'fc_apikey'` khi xóa sạch `apiKey`.
+//           4. Giữ nguyên 100% Ver 1.2: Radar 0/0/0/0, 0 lỗi tsc --noEmit, 100% ES Modules.
 // ============================================================================
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -155,12 +159,15 @@ const safeReadStringStorage = (key, fallback = '') => {
 };
 
 /**
- * Chuẩn hóa URL Sheet thành endpoint GViz CSV (bảo vệ nguyên vẹn link Publish /d/e/.../pub?output=csv)
+ * [KEY-2] Chuẩn hóa URL Sheet thành endpoint GViz CSV
+ * (Gọt ngoặc kép rác, bảo vệ link Publish /d/e/.../pub?output=csv và giữ nguyên tham số Tab gid)
  * @param {any} rawUrl
  * @returns {string}
  */
 const resolveApiKeySheetFetchUrl = (rawUrl) => {
-  const trimmed = String(rawUrl || '').trim();
+  const trimmed = String(rawUrl || '')
+    .replace(/^["'\s]+|["'\s]+$/g, '')
+    .trim();
   if (!trimmed) return '';
   const isPublishedOrCsv =
     /\/d\/e\//i.test(trimmed) ||
@@ -170,10 +177,73 @@ const resolveApiKeySheetFetchUrl = (rawUrl) => {
   if (trimmed.includes('docs.google.com') && !isPublishedOrCsv) {
     const match = trimmed.match(/\/d\/([a-zA-Z0-9-_]+)/);
     if (match && match[1] && match[1].length > 10) {
-      return `https://docs.google.com/spreadsheets/d/${match[1]}/gviz/tq?tqx=out:csv`;
+      const gidMatch = trimmed.match(/[?#&]gid=(\d+)/i);
+      const gidParam = gidMatch && gidMatch[1] ? `&gid=${gidMatch[1]}` : '';
+      return `https://docs.google.com/spreadsheets/d/${match[1]}/gviz/tq?tqx=out:csv${gidParam}`;
     }
   }
   return trimmed;
+};
+
+/**
+ * [KEY-1] Kiểm tra chuỗi ứng viên có phải API Key Google/Gemini hợp lệ
+ * (Hỗ trợ đầy đủ cả định dạng mới có dấu chấm AQ.* lẫn định dạng cũ AIza*)
+ * @param {string} token
+ * @returns {boolean}
+ */
+const isValidApiKeyCandidate = (token) => {
+  if (!token || typeof token !== 'string') return false;
+  // 1. Độ dài 20..256 ký tự, chỉ gồm chữ, số, dấu chấm '.', gạch dưới '_', gạch nối '-'
+  if (!/^[A-Za-z0-9._-]{20,256}$/.test(token)) return false;
+  // 2. Chặn dấu chấm ở đầu/cuối hoặc dấu chấm kép ".."
+  if (token.startsWith('.') || token.endsWith('.') || token.includes('..')) {
+    return false;
+  }
+  // 3. Bắt buộc có cả chữ cái và chữ số (loại tiêu đề cột thuần chữ & chuỗi ngày giờ thuần số)
+  if (!/[A-Za-z]/.test(token) || !/\d/.test(token)) return false;
+  // 4. Loại bỏ tên miền / tên tệp phổ biến lỡ ghi trong Sheet
+  if (
+    /\.(?:com|net|org|vn|io|dev|app|gov|edu|google|csv|tsv|xlsx|xls|json|txt|html|htm|pdf|doc|docx)$/i.test(
+      token
+    )
+  ) {
+    return false;
+  }
+  return true;
+};
+
+/**
+ * [KEY-1 + KEY-4] Bóc tách và khử trùng lặp danh sách API Key từ văn bản CSV/TSV/Text
+ * @param {string} rawText
+ * @returns {string[]}
+ */
+const extractApiKeysFromText = (rawText) => {
+  if (!rawText || typeof rawText !== 'string') return [];
+  const rawTokens = rawText
+    .replace(/^\uFEFF/, '')
+    .split(/[\r\n,;\t\s"'()[\]{}<>]+/);
+
+  /** @type {Set<string>} */
+  const uniqueKeys = new Set();
+
+  for (const rawToken of rawTokens) {
+    const token = rawToken.trim();
+    if (!token || token.includes('/')) continue;
+
+    if (token.includes(':') || token.includes('=')) {
+      const subParts = token.split(/[:=]+/);
+      for (const part of subParts) {
+        const cleanPart = part.trim();
+        if (isValidApiKeyCandidate(cleanPart)) {
+          uniqueKeys.add(cleanPart);
+        }
+      }
+    } else if (isValidApiKeyCandidate(token)) {
+      uniqueKeys.add(token);
+    }
+  }
+
+  return Array.from(uniqueKeys);
 };
 
 export const DEFAULT_SETTINGS = {
@@ -368,19 +438,22 @@ export const useCoreState = () => {
   const [isAiModeGame, setIsAiModeGame] = useState(false);
   const [resetPending, setResetPending] = useState(false);
 
-  // URLs
+  // URLs (đồng bộ khóa chuẩn 'fc_apikey_sheet_url' + giữ đọc dự phòng 'fc_apikey_sheet')
   const [exportUrl, setExportUrl] = useState(() =>
     safeReadStringStorage(STORAGE_KEYS?.EXPORT_URL || 'fc_export_url', '')
   );
-  const [apiKeySheetUrl, setApiKeySheetUrl] = useState(
-    () =>
-      safeReadStringStorage(
-        STORAGE_KEYS?.API_KEY_SHEET || 'fc_apikey_sheet',
-        ''
-      ) ||
+  const [apiKeySheetUrl, setApiKeySheetUrl] = useState(() => {
+    const primarySheetKey =
+      STORAGE_KEYS?.API_KEY_SHEET || 'fc_apikey_sheet_url';
+    return (
+      safeReadStringStorage(primarySheetKey, '') ||
+      (primarySheetKey !== 'fc_apikey_sheet'
+        ? safeReadStringStorage('fc_apikey_sheet', '')
+        : '') ||
       DEFAULT_API_KEY_SHEET ||
       ''
-  );
+    );
+  });
   const [importUrl, setImportUrl] = useState('');
   const [defaultUrl, setDefaultUrl] = useState('');
 
@@ -900,7 +973,11 @@ export const useCoreState = () => {
 
   useEffect(() => {
     const primaryKey = STORAGE_KEYS?.API_KEY || 'fc_gemini_api_key';
-    Utils?.safeLocalStorageSet(primaryKey, apiKey ? apiKey : null);
+    const cleanKey = typeof apiKey === 'string' ? apiKey.trim() : '';
+    Utils?.safeLocalStorageSet(primaryKey, cleanKey ? cleanKey : null);
+    if (!cleanKey && primaryKey !== 'fc_apikey') {
+      Utils?.safeLocalStorageSet('fc_apikey', null);
+    }
   }, [apiKey]);
 
   useEffect(() => {
@@ -974,13 +1051,17 @@ export const useCoreState = () => {
     }
   }, [isShuffle]);
 
-  // 6. Auto-load API Key (hỗ trợ chuẩn GViz & Publish CSV, lọc regex chặt & khử trùng lặp)
+  // 6. Auto-load API Key (hỗ trợ GViz + gid & Publish CSV, nhận cả AQ.* & AIza*, bảo toàn Key đang chọn)
   useEffect(() => {
     let cancelled = false;
-    const savedSheetUrl = safeReadStringStorage(
-      STORAGE_KEYS?.API_KEY_SHEET || 'fc_apikey_sheet',
-      ''
-    );
+    const primarySheetKey =
+      STORAGE_KEYS?.API_KEY_SHEET || 'fc_apikey_sheet_url';
+    const savedSheetUrl =
+      safeReadStringStorage(primarySheetKey, '') ||
+      (primarySheetKey !== 'fc_apikey_sheet'
+        ? safeReadStringStorage('fc_apikey_sheet', '')
+        : '');
+
     if (
       savedSheetUrl &&
       savedSheetUrl.trim().length > 5 &&
@@ -994,17 +1075,15 @@ export const useCoreState = () => {
         })
         .then((text) => {
           if (cancelled || !text || text.trim().startsWith('<')) return;
-          const keys = Array.from(
-            new Set(
-              text
-                .split(/[\r\n,]+/)
-                .map((k) => k.replace(/^["'\s]+|["'\s]+$/g, ''))
-                .filter((k) => /^[A-Za-z0-9_-]{20,}$/.test(k))
-            )
-          );
+          const keys = extractApiKeysFromText(text);
           if (keys.length > 0) {
             Utils?.safeLocalStorageSet('fc_apikey_pool', keys);
-            setApiKey(keys[0]);
+            setApiKey((prev) => {
+              const cleanPrev = typeof prev === 'string' ? prev.trim() : '';
+              return cleanPrev && keys.includes(cleanPrev)
+                ? cleanPrev
+                : keys[0];
+            });
             console.log(
               `[System] Auto-set API Key from Sheet (Pool size: ${keys.length})`
             );
@@ -1065,9 +1144,6 @@ export const useCoreState = () => {
     showAiChat,
     showHelp,
     showSaveLoadModal,
-    showHanziSelector,
-    showHanziWriter,
-    currentHanziChar,
     showExamPoolManager,
     showAiConfigModal,
     wordSelectTarget,

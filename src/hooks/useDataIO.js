@@ -1,24 +1,25 @@
 // ============================================================================
 // FILE 77/85: src/hooks/useDataIO.js
 // NGUỒN GỐC: Tầng 6 - Block 6.3 (Data I/O & Persistence - Version 1.03)
-// PHIÊN BẢN: Ver 1.2
-// NGÀY GIỜ NÂNG CẤP: 28/11/2026 - 05:36 (GMT+7)
+// PHIÊN BẢN: Ver 1.3
+// NGÀY GIỜ NÂNG CẤP: 28/11/2026 - 21:58 (GMT+7)
 // NHIỆM VỤ: "Người vận chuyển" (The Porter) thế hệ mới cho Kiến trúc Kho Master Lai
 //           (IndexedDB + RAM Mirror 0ms): tách sạch side-effect khỏi React updater
 //           (StrictMode-safe), tối ưu GViz ngắt sớm 0 request khi Sheet Private &
 //           quét batch 3 request song song, bộ đếm Loading chống chồng chéo, tối ưu
 //           thứ tự đồng bộ handleAddCard không hồi quy và sao lưu/phục hồi Full FcDB.
-//           Nâng cấp Ver 1.2 (Giai đoạn 5 - Lượt 5.1 - Diệt 1M Radar & 0 tsc):
-//           1. Diệt 1/1 MEDIUM Radar (R06B): Gỡ sạch window.Utils?.fetchWithFallback,
-//              window.FcDB, window.DEFAULT_SHEETS, window.DEFAULT_API_KEY_SHEET — dùng
-//              100% ES Module imports chuẩn.
-//           2. Diệt S16: Bọc JSDoc chuẩn TS 5.x (XLSXNamespace, JSON.parse(String),
-//              getErrorMessage, tham số tùy chọn) để xanh sạch 0 Problems tsc --noEmit;
-//              trì hoãn URL.revokeObjectURL 1000ms chống hủy tải file sao lưu trên Safari/iOS.
-//           3. Diệt S17: Chặn triệt để tái sinh ngôn ngữ cũ fc_lang = 'vi' khi phục hồi
-//              (và khi xuất) tệp sao lưu .json đời cũ.
-//           4. Diệt S18: Chuẩn hóa Unicode NFC trong mergeUnique của handleImportToNotebook
-//              và bổ sung 'noopener,noreferrer' cho window.open ở handleDownloadTemplate.
+//           Nâng cấp Ver 1.3 (Hotfix Tải API Key Google Sheet — Diệt KEY-1..KEY-4):
+//           1. [KEY-1] Thay Regex cũ chặn dấu "." bằng bộ lọc chuẩn
+//              `isValidApiKeyCandidate` & `extractApiKeysFromText`, hỗ trợ trọn vẹn
+//              cả API Key định dạng mới có dấu chấm (`AQ.Ab8RN...`) lẫn cũ (`AIzaSy...`),
+//              đồng thời chặn tiêu đề cột thuần chữ, chuỗi ngày giờ thuần số & tên file.
+//           2. [KEY-2] Nâng cấp `resolveApiKeySheetFetchUrl` gọt ngoặc kép/khoảng trắng
+//              và bảo toàn tham số Tab `gid` (`&gid=...`) khi chuyển sang GViz CSV.
+//           3. [KEY-3] Tách rõ thông báo lỗi quyền Public/HTML/mạng vs Sheet không có
+//              API Key hợp lệ trong `handleFetchApiKey`.
+//           4. [KEY-4] Tách CSV/TSV linh hoạt (`\r\n`, `,`, `;`, `\t`, khoảng trắng,
+//              BOM UTF-8, `Label:Key`), đồng bộ khóa `STORAGE_KEYS.API_KEY` tức thì &
+//              dọn khóa legacy `'fc_apikey'` cũ; giữ nguyên 0/0/0/0 Radar & 0 tsc.
 // ============================================================================
 
 import { useEffect, useCallback, useRef } from 'react';
@@ -201,22 +202,86 @@ const extractGoogleSheetId = (rawUrl) => {
   return null;
 };
 
-// Chuẩn hóa URL lấy API Key (hỗ trợ cả link Sheet chuẩn lẫn link Publish CSV)
+// [KEY-2] Chuẩn hóa URL lấy API Key (gọt ngoặc kép rác, hỗ trợ cả Sheet chuẩn, Publish CSV & bảo toàn gid)
 /**
  * @param {any} rawUrl
  * @returns {string}
  */
 const resolveApiKeySheetFetchUrl = (rawUrl) => {
-  const trimmed = String(rawUrl || '').trim();
+  const trimmed = String(rawUrl || '')
+    .replace(/^["'\s]+|["'\s]+$/g, '')
+    .trim();
   if (!trimmed) return '';
   if (trimmed.includes('/gviz/tq') || isPublishedSheetCsvUrl(trimmed)) {
     return trimmed;
   }
   const sheetId = extractGoogleSheetId(trimmed);
   if (sheetId) {
-    return `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv`;
+    const gidMatch = trimmed.match(/[?#&]gid=(\d+)/i);
+    const gidParam = gidMatch && gidMatch[1] ? `&gid=${gidMatch[1]}` : '';
+    return `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv${gidParam}`;
   }
   return trimmed;
+};
+
+// [KEY-1] Kiểm tra chuỗi ứng viên có phải API Key Google/Gemini hợp lệ (hỗ trợ cả AIza* & AQ.*)
+/**
+ * @param {string} token
+ * @returns {boolean}
+ */
+const isValidApiKeyCandidate = (token) => {
+  if (!token || typeof token !== 'string') return false;
+  // 1. Độ dài 20..256 ký tự, chỉ gồm chữ, số, dấu chấm '.', gạch dưới '_', gạch nối '-'
+  if (!/^[A-Za-z0-9._-]{20,256}$/.test(token)) return false;
+  // 2. Chặn dấu chấm ở đầu/cuối hoặc dấu chấm kép ".."
+  if (token.startsWith('.') || token.endsWith('.') || token.includes('..')) {
+    return false;
+  }
+  // 3. Bắt buộc có cả chữ cái và chữ số (loại tiêu đề cột thuần chữ & chuỗi ngày giờ thuần số)
+  if (!/[A-Za-z]/.test(token) || !/\d/.test(token)) return false;
+  // 4. Loại bỏ tên miền / tên tệp phổ biến lỡ ghi trong Sheet
+  if (
+    /\.(?:com|net|org|vn|io|dev|app|gov|edu|google|csv|tsv|xlsx|xls|json|txt|html|htm|pdf|doc|docx)$/i.test(
+      token
+    )
+  ) {
+    return false;
+  }
+  return true;
+};
+
+// [KEY-1 + KEY-4] Bóc tách và khử trùng lặp danh sách API Key từ văn bản CSV/TSV/Text
+/**
+ * @param {string} rawText
+ * @returns {string[]}
+ */
+const extractApiKeysFromText = (rawText) => {
+  if (!rawText || typeof rawText !== 'string') return [];
+  const rawTokens = rawText
+    .replace(/^\uFEFF/, '')
+    .split(/[\r\n,;\t\s"'()[\]{}<>]+/);
+
+  /** @type {Set<string>} */
+  const uniqueKeys = new Set();
+
+  for (const rawToken of rawTokens) {
+    const token = rawToken.trim();
+    if (!token || token.includes('/')) continue;
+
+    if (token.includes(':') || token.includes('=')) {
+      const subParts = token.split(/[:=]+/);
+      for (const part of subParts) {
+        const cleanPart = part.trim();
+        if (isValidApiKeyCandidate(cleanPart)) {
+          uniqueKeys.add(cleanPart);
+        }
+      }
+    } else if (isValidApiKeyCandidate(token)) {
+      uniqueKeys.add(token);
+    }
+  }
+
+  return Array.from(uniqueKeys);
 };
 
 // Kiểm tra đường dẫn trỏ tới tệp Excel (.xlsx / .xls) kể cả khi có query string
@@ -1560,59 +1625,86 @@ export const useDataIO = (core, latestStateRef, callbacks = {}) => {
   };
 
   // ==================================================================================
-  // 5. CÁC HÀM TIỆN ÍCH HỆ THỐNG
+  // 5. CÁC HÀM TIỆN ÍCH HỆ THỐNG (TẢI API KEY HỖ TRỢ ĐẦY ĐỦ AIza* & AQ.*)
   // ==================================================================================
   /**
    * @param {string} url
    */
   const handleFetchApiKey = async (url) => {
-    const cleanUrl = String(url || '').trim();
+    const cleanUrl = String(url || '')
+      .replace(/^["'\s]+|["'\s]+$/g, '')
+      .trim();
     if (!cleanUrl) return;
     const liveCore = coreRef.current || core;
     beginLoading();
     try {
       let text = '';
+      let fetchedValidCsv = false;
+      let sawBlockedHtml = false;
+      /** @type {string[]} */
+      const candidateUrls = [];
+
       const resolvedUrl = resolveApiKeySheetFetchUrl(cleanUrl);
-      if (resolvedUrl) {
+      if (resolvedUrl) candidateUrls.push(resolvedUrl);
+      if (cleanUrl && cleanUrl !== resolvedUrl) candidateUrls.push(cleanUrl);
+
+      for (const targetUrl of candidateUrls) {
         try {
-          const res = await callFetchWithFallback(resolvedUrl);
-          if (res && (typeof res.ok !== 'boolean' || res.ok)) {
-            const fetchedText = await res.text();
-            if (fetchedText && !fetchedText.trim().startsWith('<')) {
-              text = fetchedText;
-            }
+          const res = await callFetchWithFallback(targetUrl);
+          if (!res || (typeof res.ok === 'boolean' && !res.ok)) {
+            continue;
           }
+          const fetchedText = await res.text();
+          const trimmedText = String(fetchedText || '').trim();
+          if (!trimmedText) continue;
+          if (trimmedText.startsWith('<')) {
+            sawBlockedHtml = true;
+            continue;
+          }
+          text = fetchedText;
+          fetchedValidCsv = true;
+          break;
         } catch (e) {
           console.warn('API Key Sheet Fetch failed:', getErrorMessage(e));
         }
       }
-      if (!text && resolvedUrl !== cleanUrl) {
-        const res = await callFetchWithFallback(cleanUrl);
-        if (res && (typeof res.ok !== 'boolean' || res.ok)) {
-          const fetchedText = await res.text();
-          if (fetchedText && !fetchedText.trim().startsWith('<')) {
-            text = fetchedText;
-          }
+
+      if (!fetchedValidCsv) {
+        if (typeof showToast === 'function') {
+          showToast(
+            sawBlockedHtml
+              ? 'Không thể đọc Google Sheet (kiểm tra quyền chia sẻ Public "Bất kỳ ai có liên kết")!'
+              : 'Không thể tải dữ liệu từ link Google Sheet!',
+            'error'
+          );
         }
+        return;
       }
 
-      const keys = Array.from(
-        new Set(
-          String(text || '')
-            .split(/[\r\n,]+/)
-            .map((k) => k.replace(/^["'\s]+|["'\s]+$/g, ''))
-            .filter((k) => /^[A-Za-z0-9_-]{20,}$/.test(k))
-        )
-      );
+      const keys = extractApiKeysFromText(text);
 
       if (keys.length > 0) {
+        const currentCore = coreRef.current || liveCore;
+        const primaryKeyName = STORAGE_KEYS?.API_KEY || 'fc_gemini_api_key';
+        const currentActiveKey =
+          typeof currentCore.apiKey === 'string' ? currentCore.apiKey.trim() : '';
+        const nextActiveKey =
+          currentActiveKey && keys.includes(currentActiveKey)
+            ? currentActiveKey
+            : keys[0];
+
         Utils.safeLocalStorageSet('fc_apikey_pool', keys);
-        (coreRef.current || liveCore).setApiKey(keys[0]);
+        Utils.safeLocalStorageSet(primaryKeyName, nextActiveKey);
+        if (primaryKeyName !== 'fc_apikey') {
+          Utils.safeLocalStorageSet('fc_apikey', null);
+        }
+        currentCore.setApiKey(nextActiveKey);
+
         if (typeof showToast === 'function') {
           showToast(`Đã nạp ${keys.length} API Key!`, 'success');
         }
       } else if (typeof showToast === 'function') {
-        showToast('Không tìm thấy Key hợp lệ', 'warning');
+        showToast('Không tìm thấy API Key hợp lệ trong Sheet!', 'warning');
       }
     } catch (e) {
       if (typeof showToast === 'function') {
